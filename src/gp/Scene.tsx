@@ -277,6 +277,8 @@ export function Circuit({ race }: { race: Race }) {
     const samples = race.data.samples as unknown as Sample[];
     const mesh = buildTrackMesh(densify(samples), { arcSteps: 18 });
     const L = race.L;
+    const uFinish = (race.data.info as { finish?: number }).finish ?? L;
+    const uEnd = samples[samples.length - 1].u;
 
     // A race track: asphalt across the flat floor with white edge lines, the
     // walls white. Texture x runs along the track (one repeat per 4 units,
@@ -415,14 +417,14 @@ export function Circuit({ race }: { race: Race }) {
     const dashes = (() => {
       const parts: THREE.BufferGeometry[] = [];
       const inGap = (a: number, b: number) => samples.some((s) => s.gap && s.u >= a - 0.5 && s.u <= b + 0.5);
-      for (let u = 12; u < L - 3; u += 4) {
+      for (let u = 12; u < uEnd - 3; u += 4) {
         if (inGap(u, u + 2.2)) continue;
         for (const lat of [-0.7, 0.7]) parts.push(bandGeometry(samples, u, Math.min(u + 2.2, L - 1), lat - 0.03, lat + 0.03, 0.03));
       }
       return mergeGeometries(parts);
     })();
     const arrows: THREE.BufferGeometry[] = [];
-    for (let u = 16; u < L - 6; u += 10) {
+    for (let u = 16; u < uEnd - 6; u += 10) {
       const s = samples[Math.round((u - samples[0].u) / 0.5)];
       if (Math.abs(s.curv) > 0.06 || samples.some((q) => q.gap && Math.abs(q.u - u) < 1.5)) continue;
       arrows.push(bandGeometry(samples, u - 0.9, u + 0.9, -0.55, 0.55, 0.03));
@@ -530,7 +532,7 @@ export function Circuit({ race }: { race: Race }) {
       dashes,
       laneNumbers,
       startLine: bandGeometry(samples, -0.12, 0.12, null, null, 0.014),
-      finishLine: bandGeometry(samples, L - 0.3, L + 0.3, null, null, 0.014),
+      finishLine: bandGeometry(samples, uFinish - 0.3, uFinish + 0.3, null, null, 0.014),
       pillarMesh,
       groundY,
       center: [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...zs) + Math.max(...zs)) / 2] as [number, number],
@@ -1488,7 +1490,8 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
 export function Confetti({ race, t }: { race: Race; t: number }) {
   const { mesh, pieces, origin } = useMemo(() => {
     const samples = race.data.samples as unknown as Sample[];
-    const s = samples[Math.round((race.L - samples[0].u) / 0.5)];
+    const uF = (race.data.info as { finish?: number }).finish ?? race.L;
+    const s = samples[Math.round((uF - samples[0].u) / 0.5)];
     const geo = new THREE.PlaneGeometry(0.14, 0.08);
     const mat = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.4, metalness: 0.4 });
     const mesh = new THREE.InstancedMesh(geo, mat, 300);

@@ -214,7 +214,10 @@ function TimingTower({ race, f, s }: { race: Race; f: number; s: number }) {
     <div style={{ position: "absolute", top: 40 * s, left: 40 * s, width: 290 * s, borderRadius: 18 * s, overflow: "hidden", background: card, boxShadow: shadow }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: `${10 * s}px ${16 * s}px`, background: yellow, fontSize: 24 * s, fontWeight: 900 }}>
         <span>{race.data.info.gp.toUpperCase()}</span>
-        <span style={{ fontVariantNumeric: "tabular-nums" }}>{started ? race.raceSeconds(f).toFixed(1) : "GRID"}</span>
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          {race.LAPS > 1 && started ? <span style={{ fontSize: 17 * s, marginRight: 10 * s, color: "#3a3d46" }}>LAP {Math.min(race.LAPS, race.lapOf(race.ranking(f)[0], f) + 1)}/{race.LAPS}</span> : null}
+          {started ? race.raceSeconds(f).toFixed(1) : "GRID"}
+        </span>
       </div>
       <div style={{ position: "relative", height: race.N * ROW + 10 * s }}>
         {race.marbles.map((m, i) => {
@@ -362,6 +365,19 @@ function Toasts({ race, f, s, layout }: { race: Race; f: number; s: number; layo
   const out = interpolate(local, [life - race.sec(0.4), life], [1, 0], clamp);
   const a = race.marbles[ev.a];
   const b = race.marbles[ev.b];
+  if ((ev as { kind: string }).kind === "bestlap") {
+    const e = ev as unknown as { a: number; frames: number; lap: number };
+    return (
+      <div style={{ position: "absolute", left: layout === "portrait" ? 40 * s : 360 * s, bottom: (layout === "portrait" ? 560 : 50) * s, opacity: k * out, transform: `translateX(${(1 - k) * -60 * s}px)` }}>
+        <Chip s={s} bg={card} size={28}>
+          <span style={{ background: "#b03cff", color: "white", padding: `${2 * s}px ${8 * s}px`, borderRadius: 6 * s, fontSize: 18 * s }}>BEST LAP</span>
+          <MarbleDot s={s} color={a.color} flag={flagOf(a)} />
+          {a.name.toUpperCase()}
+          <span style={{ color: "#5b606e", fontVariantNumeric: "tabular-nums" }}>{(e.frames / race.fps).toFixed(2)}s · lap {e.lap + 1}</span>
+        </Chip>
+      </div>
+    );
+  }
   if ((ev as { kind: string }).kind === "dq")
     return (
       <div style={{ position: "absolute", left: layout === "portrait" ? 40 * s : 360 * s, bottom: (layout === "portrait" ? 560 : 50) * s, opacity: k * out, transform: `translateX(${(1 - k) * -60 * s}px)` }}>
@@ -390,13 +406,14 @@ function Toasts({ race, f, s, layout }: { race: Race; f: number; s: number; layo
 
 /** While a regroup gate holds the leaders: who has arrived, and the gate going green. */
 function RegroupChip({ race, f, s, layout }: { race: Race; f: number; s: number; layout: Layout }) {
-  const gates = ((race.data as unknown as { regroups?: { u: number; firstFrame: number | null; openFrame: number | null }[] }).regroups ?? []).filter(
-    (g) => g.firstFrame !== null && f >= g.firstFrame && g.openFrame !== null && f < g.openFrame + race.sec(1.2),
+  // Every pass of a gate: the opens it has made plus the one in progress.
+  const gates = ((race.data as unknown as { regroups?: { u: number; firstFrame: number | null; openFrame: number | null; opens?: number[] }[] }).regroups ?? []).flatMap((g) =>
+    [...(g.opens ?? []), ...(g.openFrame !== null ? [g.openFrame] : [])].map((openFrame) => ({ u: g.u, openFrame, firstFrame: openFrame - race.sec(7) })),
   );
-  const g = gates[0];
+  const g = gates.find((x) => f >= x.firstFrame && f < x.openFrame + race.sec(1.2) && race.marbles.some((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f) && race.uOf(i, f) >= x.u - 1.6 && race.uOf(i, f) < x.u + 2));
   if (!g) return null;
   const racing = race.marbles.filter((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f));
-  const here = race.marbles.filter((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f) && race.progress(i, f) >= g.u - 1.6).length;
+  const here = race.marbles.filter((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f) && race.uOf(i, f) >= g.u - 1.6 && race.uOf(i, f) < g.u + 2).length;
   const open = f >= g.openFrame!;
   const k = spring({ frame: f - g.firstFrame!, fps: race.fps, config: { damping: 16 } });
   const out = interpolate(f, [g.openFrame! + race.sec(0.8), g.openFrame! + race.sec(1.2)], [1, 0], clamp);
@@ -479,13 +496,14 @@ function ReplayGraphics({ race, frame, s }: { race: Race; frame: number; s: numb
   );
 }
 
-function Card({ race, s, layout, children, title, frame, at }: { race: Race; s: number; layout: Layout; children: React.ReactNode; title: string; frame: number; at: number }) {
+function Card({ race, s, layout, children, title, frame, at, footer }: { race: Race; s: number; layout: Layout; children: React.ReactNode; title: string; frame: number; at: number; footer?: React.ReactNode }) {
   const k = spring({ frame: frame - at, fps: race.fps, config: { damping: 18 } });
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", background: `rgba(243,244,247,${0.55 * k})` }}>
       <div style={{ width: (layout === "portrait" ? 960 : 1000) * s, background: card, borderRadius: 30 * s, overflow: "hidden", boxShadow: "0 40px 120px rgba(20,24,40,0.25)", opacity: k, transform: `translateY(${(1 - k) * 60 * s}px)` }}>
         <div style={{ padding: `${18 * s}px ${30 * s}px`, background: yellow, fontSize: 32 * s, fontWeight: 900, letterSpacing: 1 * s }}>{title}</div>
-        <div style={{ padding: `${14 * s}px ${30 * s}px ${22 * s}px`, display: "grid", gridAutoFlow: "column", gridTemplateColumns: race.N > 12 ? "1fr 1fr" : "1fr", gridTemplateRows: `repeat(${Math.ceil(race.N / (race.N > 12 ? 2 : 1))}, auto)`, columnGap: 30 * s }}>{children}</div>
+        <div style={{ padding: `${14 * s}px ${30 * s}px ${footer ? 8 : 22}px`, display: "grid", gridAutoFlow: "column", gridTemplateColumns: race.N > 12 ? "1fr 1fr" : "1fr", gridTemplateRows: `repeat(${Math.ceil(race.N / (race.N > 12 ? 2 : 1))}, auto)`, columnGap: 30 * s }}>{children}</div>
+        {footer && <div style={{ padding: `0 ${30 * s}px ${20 * s}px`, display: "flex", justifyContent: "center" }}>{footer}</div>}
       </div>
     </AbsoluteFill>
   );
@@ -495,7 +513,28 @@ function Results({ race, frame, s, layout }: { race: Race; frame: number; s: num
   const at = race.timeline.results.at;
   const results = race.data.results;
   return (
-    <Card race={race} s={s} layout={layout} frame={frame} at={at} title={`${race.data.info.title.toUpperCase()} · RESULTS`}>
+    <Card
+      race={race}
+      s={s}
+      layout={layout}
+      frame={frame}
+      at={at}
+      title={`${race.data.info.title.toUpperCase()} · RESULTS`}
+      footer={(() => {
+        const best = race.bestLapBy(race.lastFrame);
+        if (!best) return null;
+        const m = race.marbles[best.marble];
+        return (
+          <Chip s={s} bg="#b03cff" size={30}>
+            <span style={{ color: "white", letterSpacing: 2 * s, fontSize: 18 * s }}>BEST LAP</span>
+            <MarbleDot s={s} color={m.color} flag={flagOf(m)} size={26} />
+            <span style={{ color: "white" }}>
+              {m.name.toUpperCase()} · {((best.end - best.start) / race.fps).toFixed(2)}s
+            </span>
+          </Chip>
+        );
+      })()}
+    >
       {results.map((r, k) => {
         const m = race.marbles[r.marble];
         const inn = spring({ frame: frame - at - race.sec(0.2) - k * race.sec(0.1), fps: race.fps, config: { damping: 18 } });

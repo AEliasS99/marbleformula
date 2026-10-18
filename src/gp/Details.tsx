@@ -336,7 +336,7 @@ export function Cyclorama({ race, color }: { race: Race; color: string }) {
 /** Timing gate at the finish: emitter boxes on both rims and a faint red beam across. */
 export function TimingGate({ race }: { race: Race }) {
   const samples = race.data.samples as unknown as Sample[];
-  const s = frameAt(samples, race.L);
+  const s = frameAt(samples, (race.data.info as { finish?: number }).finish ?? race.L);
   const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(v(s.t), v(s.n), v(s.r)));
   const W = HALF + TRACK.wall / 2;
   const h = TRACK_DEPTH + 0.12;

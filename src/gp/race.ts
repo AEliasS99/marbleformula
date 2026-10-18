@@ -66,7 +66,19 @@ function build(data: RoundData) {
       quat: [qa.x, qa.y, qa.z, qa.w] as Quat,
     };
   };
-  const progress = (i: number, f: number) => frames[f][i][7];
+  const progress = (i: number, f: number) => frames[f][i][7]; // total: lap * L + u
+  const GRID = 9.5;
+  /** Lap index (0-based) and lap-local u of a marble at frame f. */
+  const lapOf = (i: number, f: number) => Math.floor((progress(i, f) + GRID) / L);
+  const uOf = (i: number, f: number) => progress(i, f) - lapOf(i, f) * L;
+  const LAPS = (data.info as { laps?: number }).laps ?? 1;
+  const lapsDone = (data as unknown as { laps?: { marble: number; lap: number; start: number; end: number }[] }).laps ?? [];
+  /** Best completed descent by frame f: the fastest lap so far. */
+  const bestLapBy = (f: number) => {
+    let best: { marble: number; lap: number; start: number; end: number } | null = null;
+    for (const l of lapsDone) if (l.end <= f && (best === null || l.end - l.start < best.end - best.start)) best = l;
+    return best;
+  };
 
   const finishedBy = (i: number, f: number) => {
     const ff = marbles[i].finishFrame;
@@ -220,6 +232,11 @@ function build(data: RoundData) {
     simAt,
     marblePose,
     progress,
+    lapOf,
+    uOf,
+    LAPS,
+    lapsDone,
+    bestLapBy,
     finishedBy,
     dqBy,
     ranking,

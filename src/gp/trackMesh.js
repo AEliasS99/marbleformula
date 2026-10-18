@@ -102,7 +102,7 @@ const at = (s, lateral, up) => [
  * `caps` (end plates) — plus one merged triangle soup for the physics collider.
  * UVs: u = units along the track / 4, v = 0..1 across.
  */
-export function buildTrackMesh(samples, { arcSteps = FILLET_STEPS } = {}) {
+export function buildTrackMesh(samples, { arcSteps = FILLET_STEPS, endCaps = true } = {}) {
   const limits = sideLimits(samples);
   const parts = { floor: geo(), rim: geo(), shell: geo() };
   const profiles = samples.map((s) => troughProfile(arcSteps, s.w ?? HALF));
@@ -140,10 +140,13 @@ export function buildTrackMesh(samples, { arcSteps = FILLET_STEPS } = {}) {
   // End caps: a plate across the whole section (stops marbles behind the grid
   // and at the end of the run-off).
   const caps = geo();
-  const capAt = [
-    [samples[0], 0, false],
-    [samples[samples.length - 1], samples.length - 1, true],
-  ];
+  // No end plates when the lift cabin docks at both ends of the track.
+  const capAt = endCaps
+    ? [
+        [samples[0], 0, false],
+        [samples[samples.length - 1], samples.length - 1, true],
+      ]
+    : [];
   // Where the track resumes after a gap, a plate closes its open end.
   for (let k = 0; k < samples.length - 1; k++) if (samples[k].gap && !samples[k + 1].gap) capAt.push([samples[k], k, false]);
   for (const [s, k, flip] of capAt) {

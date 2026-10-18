@@ -24,6 +24,20 @@ type Vortex = {
 };
 type Roller = { pos: Vec3; quat: Quat; radius: number; length: number; omega: number; phase: number };
 type Fan = { u0: number; u1: number; side: number; dir: Vec3; pos: Vec3; quat: Quat; accel: number; period: number; phase: number };
+type Elevator = {
+  center: Vec3;
+  fwd: Vec3;
+  slope: number;
+  length: number;
+  width: number;
+  wall: number;
+  lift: number;
+  u: number;
+  cabinY: number[];
+  doors: [number, number][];
+  cycles: { closeAt: number; riseAt?: number; topAt?: number; openAt?: number }[];
+  bar: { pos: Vec3; quat: Quat; size: Vec3; lift: number };
+};
 type Regroup = { u: number; pos: Vec3; quat: Quat; size: Vec3; lift: number; time: number; firstFrame: number | null; openFrame: number | null };
 
 const chrome = { color: "#eceef3", metalness: 1, roughness: 0.07 } as const;
@@ -98,6 +112,51 @@ const knurlTex = () =>
 export function Machines({ race, t }: { race: Race; t: number }) {
   const data = race.data as unknown as { vortices?: Vortex[]; rollers?: Roller[]; fans?: Fan[]; regroups?: Regroup[]; samples: { p: Vec3; n: Vec3 }[] };
   const regroups = data.regroups ?? [];
+  const elevator = (data as unknown as { elevator?: Elevator }).elevator ?? null;
+  const cabinRef = useRef<THREE.Group | null>(null);
+  const backDoorRef = useRef<THREE.Mesh | null>(null);
+  const frontDoorRef = useRef<THREE.Mesh | null>(null);
+  const evBarRef = useRef<THREE.Group | null>(null);
+  const cableRefs = useRef<(THREE.Mesh | null)[]>([]);
+  /** Cabin frame: local x forward (down the floor's slope), y the floor normal, z right. */
+  const evFrame = useMemo(() => {
+    if (!elevator) return null;
+    const fwd = new THREE.Vector3(...elevator.fwd).normalize();
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    const yaw = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(fwd, new THREE.Vector3(0, 1, 0), right));
+    const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.atan(elevator.slope));
+    return { fwd, right, quat: yaw.multiply(tilt) };
+  }, [elevator]);
+  const evAt = (t: number) => {
+    if (!elevator) return { h: 0, back: 1, front: 0 };
+    const f = Math.max(0, Math.min(elevator.cabinY.length - 1, Math.floor(t)));
+    const f1 = Math.min(elevator.cabinY.length - 1, f + 1);
+    const a = Math.min(1, Math.max(0, t - f));
+    const d = elevator.doors;
+    return { h: elevator.cabinY[f] + (elevator.cabinY[f1] - elevator.cabinY[f]) * a, back: d[f][0] + (d[f1][0] - d[f][0]) * a, front: d[f][1] + (d[f1][1] - d[f][1]) * a };
+  };
+  const evBarOpen = (t: number) => {
+    // The bar is up while the cabin loads: cabin at the bottom with its back door down.
+    const p = evAt(t);
+    return p.h < 0.01 ? p.back : 0;
+  };
+  const applyElevator = (t: number) => {
+    if (!elevator || !evFrame) return;
+    const p = evAt(t);
+    cabinRef.current?.position.set(elevator.center[0], elevator.center[1] + p.h, elevator.center[2]);
+    backDoorRef.current?.position.set(-elevator.length / 2 + 0.06, elevator.wall / 2 - elevator.wall * p.back, 0);
+    frontDoorRef.current?.position.set(elevator.length / 2 - 0.06, elevator.wall / 2 - elevator.wall * p.front, 0);
+    const bl = elevator.bar.lift * evBarOpen(t);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion(...elevator.bar.quat)).multiplyScalar(bl);
+    evBarRef.current?.position.set(elevator.bar.pos[0] + up.x, elevator.bar.pos[1] + up.y, elevator.bar.pos[2] + up.z);
+    // Cables from the cabin's roof corners up to the head frame: scale to the remaining height.
+    const remaining = Math.max(0.05, elevator.lift + 2.0 - p.h);
+    cableRefs.current.forEach((c) => {
+      if (!c) return;
+      c.scale.set(1, remaining, 1);
+      c.position.y = elevator.wall + remaining / 2;
+    });
+  };
   const regroupRefs = useRef<(THREE.Group | null)[]>([]);
   const lampRefs = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
   /** The bar's lift along the track normal at simulation frame t. */
@@ -115,7 +174,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
   const rollers = data.rollers ?? [];
   const fans = data.fans ?? [];
   const groundY = useMemo(() => Math.min(...data.samples.map((s) => s.p[1])) - 1.4, [data]);
-  const tex = useMemo(() => ({ hazard: hazardTex(), bar: hazardTex([1, 1]), knurl: knurlTex(), sign: signTex("REGROUP") }), []);
+  const tex = useMemo(() => ({ hazard: hazardTex(), bar: hazardTex([1, 1]), knurl: knurlTex(), sign: signTex("REGROUP"), lift: signTex("LIFT TOWER") }), []);
   const bowls = useMemo(
     () =>
       vortices.map((v) => {
@@ -136,6 +195,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
       subframe.subscribe((vf) => {
         const s = race.simAt(vf).t / race.fps;
         rollers.forEach((r, i) => rollerRefs.current[i]?.quaternion.copy(rollerQuat(r, s)));
+        applyElevator(race.simAt(vf).t);
         regroups.forEach((g, i) => {
           regroupRefs.current[i]?.position.set(...barPos(g, race.simAt(vf).t));
           const m = lampRefs.current[i];
@@ -241,6 +301,122 @@ export function Machines({ race, t }: { race: Race; t: number }) {
           </group>
         );
       })}
+
+      {elevator && evFrame && (() => {
+        const p = evAt(t);
+        const L = elevator.length;
+        const W = elevator.width;
+        const H = elevator.wall;
+        const top = elevator.lift;
+        const groundH = elevator.center[1] - groundY;
+        const postOff = [
+          [-L / 2 - 0.5, -W / 2 - 0.5],
+          [-L / 2 - 0.5, W / 2 + 0.5],
+          [L / 2 + 0.5, -W / 2 - 0.5],
+          [L / 2 + 0.5, W / 2 + 0.5],
+        ] as [number, number][];
+        const yawOnly = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(evFrame.fwd, new THREE.Vector3(0, 1, 0), evFrame.right));
+        const bl = elevator.bar.lift * evBarOpen(t);
+        const barUp = new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion(...elevator.bar.quat)).multiplyScalar(bl);
+        return (
+          <group>
+            {/* The tower: four lattice columns from the ground past the top dock, a head frame with the winding gear. */}
+            <group position={[elevator.center[0], elevator.center[1], elevator.center[2]]} quaternion={yawOnly}>
+              {postOff.map(([x, z], k) => (
+                <group key={k} position={[x, 0, z]}>
+                  <mesh position={[0, (top + 3 - groundH) / 2, 0]} castShadow>
+                    <boxGeometry args={[0.3, top + 3 + groundH, 0.3]} />
+                    <meshStandardMaterial {...steel} />
+                  </mesh>
+                  {Array.from({ length: Math.ceil((top + 3 + groundH) / 2.5) }, (_, j) => (
+                    <mesh key={j} position={[0, -groundH + j * 2.5 + 1.25, 0]} rotation-y={Math.PI / 4}>
+                      <boxGeometry args={[0.5, 0.06, 0.06]} />
+                      <meshStandardMaterial {...dark} />
+                    </mesh>
+                  ))}
+                </group>
+              ))}
+              {/* Cross braces between the columns on the two long sides. */}
+              {[-1, 1].map((e) =>
+                Array.from({ length: Math.ceil((top + 3 + groundH) / 5) }, (_, j) => (
+                  <mesh key={`${e}${j}`} position={[0, -groundH + j * 5 + 2.5, e * (W / 2 + 0.5)]} rotation-z={j % 2 ? 0.75 : -0.75}>
+                    <boxGeometry args={[Math.hypot(L + 1, 5), 0.08, 0.08]} />
+                    <meshStandardMaterial {...steel} />
+                  </mesh>
+                )),
+              )}
+              <mesh position={[0, top + 3.2, 0]} castShadow>
+                <boxGeometry args={[L + 1.6, 0.5, W + 1.6]} />
+                <meshStandardMaterial {...dark} />
+              </mesh>
+              <mesh position={[0, top + 3.9, 0]} rotation-x={Math.PI / 2} castShadow>
+                <cylinderGeometry args={[0.6, 0.6, 1.2, 32]} />
+                <meshStandardMaterial {...chrome} />
+              </mesh>
+              <mesh position={[0, top + 4.6, 0]} rotation-x={-Math.PI / 2}>
+                <planeGeometry args={[L + 1, 0.7]} />
+                <meshStandardMaterial map={tex.lift} roughness={0.5} side={THREE.DoubleSide} />
+              </mesh>
+            </group>
+            {/* The cabin: a sloped floor plate, clear side walls in chrome frames, two sliding doors, cables. */}
+            <group ref={cabinRef} position={[elevator.center[0], elevator.center[1] + p.h, elevator.center[2]]} quaternion={evFrame.quat}>
+              <mesh position={[0, -0.06, 0]} castShadow receiveShadow>
+                <boxGeometry args={[L + 0.2, 0.12, W]} />
+                <meshStandardMaterial map={tex.knurl} metalness={0.7} roughness={0.4} />
+              </mesh>
+              {[-1, 1].map((e) => (
+                <group key={e} position={[0, H / 2, e * (W / 2 - 0.05)]}>
+                  <mesh>
+                    <boxGeometry args={[L + 0.2, H, 0.05]} />
+                    <meshPhysicalMaterial color="#f4f8ff" transparent opacity={0.12} roughness={0.03} clearcoat={1} side={THREE.DoubleSide} depthWrite={false} />
+                  </mesh>
+                  <mesh position={[0, H / 2, 0]}>
+                    <boxGeometry args={[L + 0.3, 0.08, 0.12]} />
+                    <meshStandardMaterial {...chrome} />
+                  </mesh>
+                  {[-L / 2, L / 2].map((x) => (
+                    <mesh key={x} position={[x, 0, 0]}>
+                      <boxGeometry args={[0.1, H, 0.12]} />
+                      <meshStandardMaterial {...chrome} />
+                    </mesh>
+                  ))}
+                </group>
+              ))}
+              <mesh ref={backDoorRef} position={[-L / 2 + 0.06, H / 2 - H * p.back, 0]}>
+                <boxGeometry args={[0.08, H, W - 0.1]} />
+                <meshStandardMaterial map={tex.bar} roughness={0.45} />
+              </mesh>
+              <mesh ref={frontDoorRef} position={[L / 2 - 0.06, H / 2 - H * p.front, 0]}>
+                <boxGeometry args={[0.08, H, W - 0.1]} />
+                <meshStandardMaterial map={tex.bar} roughness={0.45} />
+              </mesh>
+              {[-1, 1].map((e) =>
+                [-1, 1].map((g) => (
+                  <mesh key={`${e}${g}`} ref={(el) => void (cableRefs.current[(e + 1) + (g + 1) / 2] = el)} position={[e * (L / 2 - 0.3), H + (elevator.lift + 2 - p.h) / 2, g * (W / 2 - 0.3)]}>
+                    <cylinderGeometry args={[0.025, 0.025, 1, 8]} />
+                    <meshStandardMaterial {...dark} />
+                  </mesh>
+                )),
+              )}
+            </group>
+            {/* The holding bar on the track before the dock. */}
+            <group ref={evBarRef} position={[elevator.bar.pos[0] + barUp.x, elevator.bar.pos[1] + barUp.y, elevator.bar.pos[2] + barUp.z]} quaternion={elevator.bar.quat}>
+              <mesh castShadow>
+                <boxGeometry args={elevator.bar.size} />
+                <meshStandardMaterial map={tex.bar} roughness={0.4} />
+              </mesh>
+            </group>
+            <group position={elevator.bar.pos} quaternion={elevator.bar.quat}>
+              {[-1, 1].map((e) => (
+                <mesh key={e} position={[0, elevator.bar.lift / 2 + 0.5, e * (W2 + 0.16)]} castShadow>
+                  <boxGeometry args={[0.26, elevator.bar.lift + 1.8, 0.26]} />
+                  <meshStandardMaterial {...dark} />
+                </mesh>
+              ))}
+            </group>
+          </group>
+        );
+      })()}
 
       {regroups.map((g, i) => {
         const open = g.openFrame !== null && t >= g.openFrame;

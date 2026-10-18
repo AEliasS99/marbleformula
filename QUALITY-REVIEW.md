@@ -114,6 +114,12 @@ The rainbow studio became an outdoor circuit: asphalt floor with aggregate grain
 - Low warm sun (~32°), less sky fill, contrast/saturation grade after ACES, AO 5; rubber streaks and oil on the asphalt, panel joints and grime on the walls.
 - Sound: agitator motor, roller buzz and fan rush heard from the camera; crowd swells on top-five overtakes and groans at a DQ; gate buzzer and clunk; a quiet 124 bpm bed under the race.
 
+### Three laps and the lift tower (v14)
+
+- The lap ends at a lift tower that returns the field to the grid; three laps, ~250 s of racing, ~5 min of video. Every obstacle gets its locked camera on every lap; the lift gets a crane shot riding up beside the cabin.
+- BEST LAP: lap times as descents, a purple toast on every improvement, the race's best on the results card; the tower shows the leader's lap.
+- Found on the way: a per-frame (not per-substep) cabin step kicked riders out; a pile arriving at speed climbed 1.6 walls (now 2.4, cabin 4.2 long); the cabin must stay docked on the last lap.
+
 ### D. Rendering speed
 
 - Current: 15 min per race, 1 tab (parallel tabs produced garbled frames).
