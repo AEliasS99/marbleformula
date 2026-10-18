@@ -57,11 +57,11 @@ const GRID = { lanes: 10, rows: 2, rowGap: 1.0 };
 // wall, i.e. pressed against it, on the floor) is out of the race. Narrow and
 // short, so it catches only the unlucky few that get bounced into the wall there.
 const DQ = {
-  len: +(process.env.DQ_LEN ?? 0.15), // three laps: three passes over every pad
+  len: +(process.env.DQ_LEN ?? 0.12), // three laps: three passes over every pad
   width: 0.42,
   reach: +(process.env.DQ_REACH ?? 0.37),
   offset: +(process.env.DQ_OFF ?? 6.0),
-  every: +(process.env.DQ_EVERY ?? 3), // a pad at every n-th machine
+  every: +(process.env.DQ_EVERY ?? 4), // a pad at every n-th machine
   types: ["bumpers", "spinner", "hammer", "turntable", "pusher"], // not the slalom or the splitter: those press everyone to the walls
 };
 
@@ -81,7 +81,9 @@ const RUNOFF = 16; // (single-lap layouts) track after the finish line
 const LAPS = 3;
 // Cabin 4.2 × 4.4: the whole field fits in one layer; walls 2.4 so a pile
 // arriving at speed cannot climb out.
-const ELEVATOR = { cabin: 4.2, width: 4.4, wall: 2.4, need: 0.6, hold: 6, close: 0.5, rise: 5.0, open: 0.45, unload: 4, descend: 3.2, barLift: 1.7 };
+// It goes by arrivals: a short hold after the first marble aboard (or a third
+// of the field), not a wait for everyone; a quick cycle so the next load is soon.
+const ELEVATOR = { cabin: 4.2, width: 4.4, wall: 2.4, need: 0.34, hold: 2.5, close: 0.45, rise: 4.0, open: 0.4, unload: 2.5, descend: 2.4, barLift: 1.7 };
 const SAMPLE = 0.5; // centreline sample spacing
 // Gravity is scaled up from 9.81: at real gravity a 0.7-unit marble behaves like
 // a 70 cm ball (slow, floaty bounces). Stronger gravity makes it look and move
@@ -731,6 +733,8 @@ function buildObstacles(course, sync = {}) {
           pos: pointInFrame(s, side * (W2 + TRACK.wall / 2), TRACK_DEPTH + height / 2 - 0.05).map(r3),
           quat: quatArr(frameQuat(s)),
           size: [GUARD.segment + 0.04, height, 0.05],
+          side,
+          depth: 0.3, // collider depth, outward: a pile cannot pop a marble through the thin panel
           restitution: 0.3,
         });
       }
@@ -803,7 +807,10 @@ export function turntableQuat(tt, t) {
 }
 // Pivot height puts the head's centre at marble height (0.35) in mid-swing;
 // at the extremes it rises to ~0.8, and it reaches lat ±1.55 of the 2.1 half-width.
-const HAMMER = { pivot: 0.35 + 3.0, length: 3.0, head: [1.0, 0.5, 0.5], amp: (34 * Math.PI) / 180, period: 2.0 };
+// Amplitude 24°: the head's reach (3·sin 24° = 1.22) leaves 0.88 to the wall,
+// more than a marble, so nothing is ever pinched between head and wall (a
+// pinched marble pops through the thin wall shell or the head).
+const HAMMER = { pivot: 0.35 + 3.0, length: 3.0, head: [1.0, 0.5, 0.5], amp: (24 * Math.PI) / 180, period: 1.7 };
 // A spinning plate set into the floor: marbles crossing it are dragged sideways.
 const TURNTABLE = { radius: 1.6, thickness: 0.08, speed: 3.0 };
 // A block that slides out from one wall across most of the track and back.
@@ -878,15 +885,23 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
     world.createCollider(RAPIER.ColliderDesc.cylinder(v.depth / 2 + v.throat, 0.12).setTranslation(0, -v.depth / 2 - v.throat, 0).setCollisionGroups(GROUP_TRACK), body);
     return body;
   });
+  // Barriers are thin on screen but deep in the collider (extending away from
+  // the pile): a pile pressing on a thin box pops marbles out the far side.
+  const BARRIER_DEPTH = 0.6;
   const regroupBodies = obstacles.regroups.map((g) => {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...g.pos).setRotation(rot(g.quat)));
     world.createCollider(
-      RAPIER.ColliderDesc.cuboid(g.size[0] / 2, g.size[1] / 2, g.size[2] / 2).setFriction(0.2).setRestitution(0.2).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK),
+      RAPIER.ColliderDesc.cuboid(BARRIER_DEPTH / 2, g.size[1] / 2, g.size[2] / 2)
+        .setTranslation(BARRIER_DEPTH / 2 - g.size[0] / 2, 0, 0)
+        .setFriction(0.2)
+        .setRestitution(0.2)
+        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
+        .setCollisionGroups(GROUP_TRACK),
       body,
     );
     return body;
   });
-  const regroupState = obstacles.regroups.map(() => ({ first: null, open: null, opens: [] }));
+  const regroupState = obstacles.regroups.map(() => ({ first: null, open: null, opens: [], lift: 0, lifts: [] }));
 
   // The lift: cabin (sloped floor, side walls) and two doors, all kinematic,
   // plus a bar on the track that holds arrivals while the cabin is away.
@@ -902,10 +917,12 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
   const cabinPart = (hx, hy, hz, x, y, z) =>
     world.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz).setTranslation(x, y, z).setFriction(0.6).setRestitution(0.15).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK), cabinBody);
   cabinPart(EV.length / 2 + 0.1, 0.06, EV.width / 2, 0, -0.06, 0); // floor
-  for (const e of [-1, 1]) cabinPart(EV.length / 2 + 0.1, EV.wall / 2, 0.05, 0, EV.wall / 2, e * (EV.width / 2 - 0.05)); // side walls
+  for (const e of [-1, 1]) cabinPart(EV.length / 2 + 0.1, EV.wall / 2, 0.25, 0, EV.wall / 2, e * (EV.width / 2 + 0.15)); // side walls, deep outward
   const doorBody = (x) => {
     const b = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(evCentre.x, evCentre.y, evCentre.z).setRotation(rot([evQuat.x, evQuat.y, evQuat.z, evQuat.w])));
-    world.createCollider(RAPIER.ColliderDesc.cuboid(0.05, EV.wall / 2, EV.width / 2).setTranslation(x, EV.wall / 2, 0).setFriction(0.3).setRestitution(0.15).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK), b);
+    // Deep outward (away from the riders): the pile cannot pop a marble through.
+    const out = Math.sign(x) * 0.25;
+    world.createCollider(RAPIER.ColliderDesc.cuboid(0.3, EV.wall / 2, EV.width / 2).setTranslation(x + out, EV.wall / 2, 0).setFriction(0.3).setRestitution(0.15).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK), b);
     return b;
   };
   const backDoor = doorBody(-EV.length / 2 + 0.05);
@@ -914,7 +931,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
   const barS = course.frameAt(course.END - 0.6);
   const bar = { pos: pointInFrame(barS, 0, 0.47), quat: quatArr2(frameQuat(barS)), size: [0.12, 0.9, TRACK.width - 0.08], lift: ELEVATOR.barLift, n: barS.n };
   const barBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...bar.pos).setRotation(rot(bar.quat)));
-  world.createCollider(RAPIER.ColliderDesc.cuboid(bar.size[0] / 2, bar.size[1] / 2, bar.size[2] / 2).setFriction(0.2).setRestitution(0.2).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK), barBody);
+  world.createCollider(RAPIER.ColliderDesc.cuboid(0.3, bar.size[1] / 2, bar.size[2] / 2).setTranslation(0.3 - bar.size[0] / 2, 0, 0).setFriction(0.2).setRestitution(0.2).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK), barBody);
   // Cycle state, in frames: loading at the bottom until quorum or timeout,
   // then close, rise, open, unload, close, descend, open.
   const ev = { state: "loading", since: 0, first: null, cycles: [], cabinY: [], doors: [] };
@@ -964,7 +981,9 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(...o.pos).setRotation(rot(o.quat)));
     const desc =
       o.shape === "box"
-        ? RAPIER.ColliderDesc.cuboid(o.size[0] / 2, o.size[1] / 2, o.size[2] / 2)
+        ? o.depth
+          ? RAPIER.ColliderDesc.cuboid(o.size[0] / 2, o.size[1] / 2, o.depth / 2).setTranslation(0, 0, o.side * (o.depth / 2 - o.size[2] / 2))
+          : RAPIER.ColliderDesc.cuboid(o.size[0] / 2, o.size[1] / 2, o.size[2] / 2)
         : RAPIER.ColliderDesc.cylinder(o.height / 2, o.radius);
     desc
       .setFriction(0.2)
@@ -1317,6 +1336,13 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
         st.open = null;
         st.first = null;
       }
+      // The bar's lift, 0..1, eased toward open or closed; the renderer replays this exact curve.
+      {
+        const target = st.open !== null ? 1 : 0;
+        const stepMax = 1 / (REGROUP.time * FPS);
+        st.lift += Math.max(-stepMax, Math.min(stepMax, target - st.lift));
+        st.lifts.push(r3(st.lift * st.lift * (3 - 2 * st.lift)));
+      }
       if (st.open !== null) return;
       const racing = MARBLES.filter((_, i) => finishFrame[i] === null && dqFrame[i] === null).length;
       const here = frames[f].filter((m, i) => finishFrame[i] === null && dqFrame[i] === null && uLocal(m[7]) >= g.u - 1.6 && uLocal(m[7]) < g.u + 2).length;
@@ -1343,8 +1369,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
       }
       obstacles.regroups.forEach((g, k) => {
         const st = regroupState[k];
-        const k1 = st.open === null ? 0 : Math.min(1, (t - st.open / FPS) / g.time);
-        const lift = g.lift * k1 * k1 * (3 - 2 * k1);
+        const lift = g.lift * (st.lifts[st.lifts.length - 1] ?? 0);
         const n = samples[Math.round((g.u + GRID_LENGTH) / SAMPLE)].n;
         regroupBodies[k].setNextKinematicTranslation({ x: g.pos[0] + n[0] * lift, y: g.pos[1] + n[1] * lift, z: g.pos[2] + n[2] * lift });
       });
@@ -1633,7 +1658,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
     pushers: obstacles.pushers,
     rollers: obstacles.rollers,
     fans: obstacles.fans,
-    regroups: obstacles.regroups.map((g, k) => ({ ...g, firstFrame: regroupState[k].first, openFrame: regroupState[k].open, opens: regroupState[k].opens })),
+    regroups: obstacles.regroups.map((g, k) => ({ ...g, firstFrame: regroupState[k].first, openFrame: regroupState[k].open, opens: regroupState[k].opens, lifts: regroupState[k].lifts })),
     elevator: { ...course.elevator, cycles: ev.cycles, cabinY: ev.cabinY, doors: ev.doors, bar: { pos: bar.pos.map(r3), quat: bar.quat, size: bar.size, lift: bar.lift } },
     laps,
     vortices: obstacles.vortices,

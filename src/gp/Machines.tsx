@@ -38,7 +38,7 @@ type Elevator = {
   cycles: { closeAt: number; riseAt?: number; topAt?: number; openAt?: number }[];
   bar: { pos: Vec3; quat: Quat; size: Vec3; lift: number };
 };
-type Regroup = { u: number; pos: Vec3; quat: Quat; size: Vec3; lift: number; time: number; firstFrame: number | null; openFrame: number | null };
+type Regroup = { u: number; pos: Vec3; quat: Quat; size: Vec3; lift: number; time: number; firstFrame: number | null; openFrame: number | null; lifts?: number[] };
 
 const chrome = { color: "#eceef3", metalness: 1, roughness: 0.07 } as const;
 const steel = { color: "#dfe2e8", metalness: 1, roughness: 0.25 } as const;
@@ -161,6 +161,13 @@ export function Machines({ race, t }: { race: Race; t: number }) {
   const lampRefs = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
   /** The bar's lift along the track normal at simulation frame t. */
   const barLift = (g: Regroup, t: number) => {
+    // The bake's per-frame curve (it opens and closes once per lap); interpolated between frames.
+    if (g.lifts && g.lifts.length) {
+      const f = Math.max(0, Math.min(g.lifts.length - 1, Math.floor(t)));
+      const f1 = Math.min(g.lifts.length - 1, f + 1);
+      const a = Math.min(1, Math.max(0, t - f));
+      return g.lift * (g.lifts[f] + (g.lifts[f1] - g.lifts[f]) * a);
+    }
     if (g.openFrame === null) return 0;
     const k = Math.max(0, Math.min(1, (t - g.openFrame) / (g.time * race.fps)));
     return g.lift * k * k * (3 - 2 * k);
@@ -200,7 +207,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
           regroupRefs.current[i]?.position.set(...barPos(g, race.simAt(vf).t));
           const m = lampRefs.current[i];
           if (m) {
-            const open = g.openFrame !== null && race.simAt(vf).t >= g.openFrame;
+            const open = barLift(g, race.simAt(vf).t) > g.lift * 0.5;
             m.color.set(open ? "#4cff6a" : "#ff3344");
             m.emissive.set(open ? "#19e04a" : "#ff1f2f");
           }
@@ -419,7 +426,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
       })()}
 
       {regroups.map((g, i) => {
-        const open = g.openFrame !== null && t >= g.openFrame;
+        const open = barLift(g, t) > g.lift * 0.5;
         return (
           <group key={`g${i}`}>
             {/* The bar: hazard-striped, lifting straight up when the gate opens. */}

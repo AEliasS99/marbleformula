@@ -414,7 +414,7 @@ function RegroupChip({ race, f, s, layout }: { race: Race; f: number; s: number;
   if (!g) return null;
   const racing = race.marbles.filter((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f));
   const here = race.marbles.filter((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f) && race.uOf(i, f) >= g.u - 1.6 && race.uOf(i, f) < g.u + 2).length;
-  const open = f >= g.openFrame!;
+  const open = f >= g.openFrame! + race.sec(0.3); // the bar takes half a second to lift
   const k = spring({ frame: f - g.firstFrame!, fps: race.fps, config: { damping: 16 } });
   const out = interpolate(f, [g.openFrame! + race.sec(0.8), g.openFrame! + race.sec(1.2)], [1, 0], clamp);
   return (

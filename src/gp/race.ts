@@ -133,17 +133,39 @@ function build(data: RoundData) {
   };
 
   // Timing tower slots, eased; ranks re-read a few times a second or on a finish.
+  // Two marbles still racing only trade rows once one is a clear 0.4 units
+  // ahead: in a pile (a gate, the lift) their progress ties within noise and
+  // the rows would otherwise shuffle without end.
   const rowSlots: number[][] = [];
   {
-    const start = ranking(0);
-    let rank = marbles.map((_, i) => start.indexOf(i));
+    let order = ranking(0);
+    const settle = (f: number) => {
+      for (let pass = 0; pass < order.length; pass++) {
+        let swapped = false;
+        for (let k = 0; k + 1 < order.length; k++) {
+          const a = order[k];
+          const b = order[k + 1];
+          const ka = rankKey(a, f);
+          const kb = rankKey(b, f);
+          const better = kb[0] !== ka[0] ? kb[0] < ka[0] : ka[0] === 1 ? progress(b, f) - progress(a, f) > 0.4 : kb[1] < ka[1];
+          if (better) {
+            order[k] = b;
+            order[k + 1] = a;
+            swapped = true;
+          }
+        }
+        if (!swapped) break;
+      }
+    };
+    let rank = marbles.map((_, i) => order.indexOf(i));
     let slots = rank.slice();
     const every = Math.round(fps / 3);
     const ease = 1 - Math.pow(1 - 0.45, 30 / fps);
     for (let f = 0; f <= lastFrame; f++) {
       if (f % every === 0 || marbles.some((m) => m.finishFrame === f || (m as { dqFrame?: number | null }).dqFrame === f)) {
-        const o = ranking(f);
-        rank = marbles.map((_, i) => o.indexOf(i));
+        if (f < timeline.raceStart) order = ranking(f);
+        else settle(f);
+        rank = marbles.map((_, i) => order.indexOf(i));
       }
       slots = slots.map((s, i) => s + (rank[i] - s) * ease);
       rowSlots.push(slots);

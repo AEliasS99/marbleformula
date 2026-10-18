@@ -142,6 +142,9 @@ Debug switches for `--round` runs:
 | No locked camera at the rollers | Guard panels (now 2.0 high) blocked the director's sight-line rays | Guards and the bowl are in a "clear" collision group the rays skip |
 | Marbles over the wall behind a regroup gate, and after the hammer | Twenty marbles piled three high behind the bar; the hammer launched marbles six units up | Per-zone guard heights (2.0 at gates, jumps, the vortex exit, the hammer's run-out), a gentler hammer (34°, restitution 0.3) |
 | The fan parked marbles against the wall | At 9 u/s² the gust's wall friction beat the 6.5° slope | Gust 6 u/s² |
+| Marbles popped through gate bars, cabin doors and guard panels | A pile pressing on a thin (0.05–0.12) box: penetration recovery pushes the deepest marble out the far side | Barrier colliders are 0.3–0.6 deep, extended away from the pile; the visible panel stays thin |
+| The hammer pushed marbles through the wall shell | Its reach left 0.4 to the wall: a marble got pinched between head and shell | Amplitude 24° leaves 0.88, more than a marble; period 1.7 keeps the punch |
+| Gate bars on screen did not match the physics | The renderer eased from the first open only; the bake re-arms the gate every lap | The bake stores the bar's per-frame lift and the renderer replays it |
 
 ## The Zigzag Tower
 
