@@ -1,3 +1,5 @@
+import { Quaternion, Vector3 } from "three";
+
 // The vortex: a level funnel bowl set into the track. The upper track ends at
 // its rim; marbles enter off-centre (a deflector fin sends them to one side),
 // spiral down the cone and fall through the throat onto the lower track, which
@@ -80,4 +82,23 @@ export function vortexSoup(v) {
     for (const i of g.index) indices.push(base + i);
   }
   return { vertices: new Float32Array(vertices), indices: new Uint32Array(indices) };
+}
+
+/** The vortex agitator's orientation at time t: about the bowl's axis. */
+export function agitatorQuat(v, t) {
+  const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), v.agitator.phase + v.agitator.speed * t);
+  return [q.x, q.y, q.z, q.w];
+}
+/** Each paddle's pose in the agitator's frame: tilted to hug the cone, `clearance` above it. */
+export function agitatorArm(v, k) {
+  const a = v.agitator;
+  const slope = Math.atan(v.depth / (v.radius - v.hole));
+  const yAt = (r) => -v.depth * (v.radius - r) / (v.radius - v.hole);
+  const rMid = (a.rIn + a.rOut) / 2;
+  const len = (a.rOut - a.rIn) / Math.cos(slope);
+  const yaw = (k / a.arms) * Math.PI * 2;
+  // Local: x radial outward (tilted up the cone), y normal to the cone, z tangential.
+  const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), -yaw).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), slope));
+  const pos = [Math.cos(yaw) * rMid, yAt(rMid) + a.clearance / Math.cos(slope) + a.height / 2, Math.sin(yaw) * rMid];
+  return { pos, quat: [q.x, q.y, q.z, q.w], size: [len, a.height, a.thickness] };
 }

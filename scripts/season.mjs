@@ -13,7 +13,7 @@ import { Matrix4, PerspectiveCamera, Quaternion, Vector3 } from "three";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { loadOutline, marbleize, SCALE, SLOPE } from "./circuit.mjs";
 import { venueBlocks, venueClearance, venueLayout } from "../src/gp/venue.js";
-import { vortexSoup } from "../src/gp/vortex.js";
+import { agitatorArm, agitatorQuat, vortexSoup } from "../src/gp/vortex.js";
 import { BANK_PIVOT, buildTrackMesh, liftCleatPose, pointInFrame, pointOnTrack, surfaceHeight as surfaceHeightAt, TRACK, TRACK_DEPTH } from "../src/gp/trackMesh.js";
 
 // --- Season ------------------------------------------------------------------------
@@ -156,7 +156,12 @@ const FEATURES = {
 // The vortex bowl (src/gp/vortex.js): level, its rim at the floor of the
 // upper track where that ends (`entry` past the feature's u), its axis
 // `centre` past it; the lower track resumes `resume` past it, D lower.
-const VORTEX = { radius: 3.4, hole: 1.1, depth: 2.2, lip: 0.9, throat: 0.4, fall: 0.6, entry: 0.9, centre: 4.2, resume: 2.6, entryHalf: 1.9 };
+// `centre` is close enough to `entry` that the rim reaches the track's end at
+// its edges (no void in the corners for a wall-hugging marble to drop through).
+const VORTEX = { radius: 3.4, hole: 1.1, depth: 2.2, lip: 2.2, throat: 0.4, fall: 0.6, entry: 0.9, centre: 3.5, resume: 2.2, entryHalf: 1.9 }; // lip 2.2: the agitator flings marbles
+// The agitator: three paddles hugging the cone just above the throat, turning
+// against the swirl, so the queue for the hole is never orderly.
+const AGITATOR = { arms: 3, rIn: 1.2, rOut: 2.3, clearance: 0.28, height: 0.45, thickness: 0.12, speed: -1.8 };
 // Rollers: three cylinders across the floor, all driving forward but at
 // different speeds, so the field gets kicked apart. (A backward roller traps
 // marbles in the pocket between rollers.)
@@ -572,6 +577,7 @@ function buildObstacles(course, sync = {}) {
         lip: VORTEX.lip,
         throat: VORTEX.throat,
         entryHalf: VORTEX.entryHalf,
+        agitator: { ...AGITATOR, phase: r3((f.u * 0.61) % (Math.PI * 2)) },
       });
     } else if (f.type === "rollers") {
       const W2 = TRACK.width / 2;
@@ -780,6 +786,25 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
       trackBody,
     );
   }
+  const agitatorBodies = obstacles.vortices.map((v) => {
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...v.center).setRotation(rot(agitatorQuat(v, 0))));
+    for (let k = 0; k < v.agitator.arms; k++) {
+      const arm = agitatorArm(v, k);
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(arm.size[0] / 2, arm.size[1] / 2, arm.size[2] / 2)
+          .setTranslation(...arm.pos)
+          .setRotation(rot(arm.quat))
+          .setFriction(0.2)
+          .setRestitution(0.5)
+          .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
+          .setCollisionGroups(GROUP_TRACK),
+        body,
+      );
+    }
+    // The shaft down the throat.
+    world.createCollider(RAPIER.ColliderDesc.cylinder(v.depth / 2 + v.throat, 0.12).setTranslation(0, -v.depth / 2 - v.throat, 0).setCollisionGroups(GROUP_TRACK), body);
+    return body;
+  });
   const rollerBodies = obstacles.rollers.map((r) => {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...r.pos).setRotation(rot(rollerQuat(r, 0))));
     const axis = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2); // cylinder axis (local y) across the track (local z)
@@ -1080,6 +1105,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
       obstacles.turntables.forEach((tt, k) => turntableBodies[k].setNextKinematicRotation(rot(turntableQuat(tt, t))));
       obstacles.pushers.forEach((p, k) => pusherBodies[k].setNextKinematicTranslation(pusherPos(p, t)));
       obstacles.rollers.forEach((r, k) => rollerBodies[k].setNextKinematicRotation(rot(rollerQuat(r, t))));
+      obstacles.vortices.forEach((v, k) => agitatorBodies[k].setNextKinematicRotation(rot(agitatorQuat(v, t))));
       // Fans: a lateral force on every marble in their stretch.
       if (obstacles.fans.length) {
         const mass = bodies[0].mass();

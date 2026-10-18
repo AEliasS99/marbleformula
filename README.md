@@ -57,7 +57,7 @@ Each circuit has a fixed layout, the same for every seed. Obstacles are placed o
 | **The pusher** | a block that slides out from the wall across the track, timed to the leader |
 | **Big air** | a kicker with a 10° run-up, then a 2.0 fall: real flight, under clear guard panels |
 | **The lift** | a chain lift with cleats that carries the whole field up to a higher level |
-| **The vortex** | a clear funnel bowl set into the track (`src/gp/vortex.js`): a deflector fin sends the field in off-axis, it spirals down the cone and drops through the throat onto the lower track, which resumes under the hole. Reorders the whole pack. One per circuit |
+| **The vortex** | a clear funnel bowl set into the track (`src/gp/vortex.js`): a deflector fin sends the field in off-axis, it spirals down the cone and drops through the throat onto the lower track, which resumes under the hole. An agitator (three chrome paddles on a shaft through the throat, turning against the swirl) keeps the queue for the hole disorderly; the lip is 2.2 high because the paddles fling marbles. Reorders the whole pack. One per circuit |
 | **The rollers** | three knurled cylinders flush in the floor, all driving forward at 7, 4.5 and 10 u/s: marbles get kicked apart without contact |
 | **The fan** | a pulsing lateral gust over 5 units of track (a force in the bake), from a caged fan on a post beside the wall |
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { subframe } from "./subframe";
 import { TRACK } from "./trackMesh.js";
-import { vortexFrame, vortexGeometry } from "./vortex.js";
+import { agitatorArm, agitatorQuat, vortexFrame, vortexGeometry } from "./vortex.js";
 import type { Race, Quat, Vec3 } from "./race";
 
 // The machines that change the physics rather than just deflecting: the
@@ -10,7 +10,18 @@ import type { Race, Quat, Vec3 } from "./race";
 // bake (src/gp/vortex.js, scripts/season.mjs rollerQuat/fanGust), so what
 // moves on screen is what moved the marbles.
 
-type Vortex = { u: number; center: Vec3; fwd: Vec3; radius: number; hole: number; depth: number; lip: number; throat: number; entryHalf: number };
+type Vortex = {
+  u: number;
+  center: Vec3;
+  fwd: Vec3;
+  radius: number;
+  hole: number;
+  depth: number;
+  lip: number;
+  throat: number;
+  entryHalf: number;
+  agitator: { arms: number; rIn: number; rOut: number; clearance: number; height: number; thickness: number; speed: number; phase: number };
+};
 type Roller = { pos: Vec3; quat: Quat; radius: number; length: number; omega: number; phase: number };
 type Fan = { u0: number; u1: number; side: number; dir: Vec3; pos: Vec3; quat: Quat; accel: number; period: number; phase: number };
 
@@ -90,6 +101,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
   );
 
   const rollerRefs = useRef<(THREE.Group | null)[]>([]);
+  const agitatorRefs = useRef<(THREE.Group | null)[]>([]);
   const bladeRefs = useRef<(THREE.Group | null)[]>([]);
   const rollerQuat = (r: Roller, s: number) =>
     new THREE.Quaternion(...r.quat).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), r.phase + r.omega * s));
@@ -99,6 +111,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
       subframe.subscribe((vf) => {
         const s = race.simAt(vf).t / race.fps;
         rollers.forEach((r, i) => rollerRefs.current[i]?.quaternion.copy(rollerQuat(r, s)));
+        vortices.forEach((v, i) => agitatorRefs.current[i]?.quaternion.set(...(agitatorQuat(v, s) as Quat)));
         fans.forEach((fan, i) => {
           const g = bladeRefs.current[i];
           if (g) g.rotation.z = bladeAngle(fan, s);
@@ -131,6 +144,36 @@ export function Machines({ race, t }: { race: Race; t: number }) {
             </mesh>
             <mesh geometry={b.throat} castShadow>
               <meshStandardMaterial {...chrome} side={THREE.DoubleSide} />
+            </mesh>
+            {/* The agitator: three chrome paddles with yellow tips hugging the cone above the throat, on a shaft down through it to a motor underneath. */}
+            <group ref={(el) => void (agitatorRefs.current[i] = el)} position={v.center} quaternion={agitatorQuat(v, sec) as Quat}>
+              {Array.from({ length: v.agitator.arms }, (_, k) => {
+                const arm = agitatorArm(v, k) as { pos: Vec3; quat: Quat; size: Vec3 };
+                return (
+                  <group key={k} position={arm.pos} quaternion={arm.quat}>
+                    <mesh castShadow>
+                      <boxGeometry args={arm.size} />
+                      <meshStandardMaterial {...chrome} />
+                    </mesh>
+                    <mesh position={[arm.size[0] / 2 - 0.12, 0, 0]}>
+                      <boxGeometry args={[0.24, arm.size[1] + 0.02, arm.size[2] + 0.02]} />
+                      <meshStandardMaterial color="#ffcc00" roughness={0.3} />
+                    </mesh>
+                  </group>
+                );
+              })}
+              <mesh position={[0, -v.depth / 2 - v.throat + 0.3, 0]} castShadow>
+                <cylinderGeometry args={[0.12, 0.12, v.depth + 2 * v.throat + 0.6, 24]} />
+                <meshStandardMaterial {...chrome} />
+              </mesh>
+              <mesh position={[0, -v.depth + 0.25, 0]}>
+                <sphereGeometry args={[0.3, 32, 16]} />
+                <meshStandardMaterial {...chrome} />
+              </mesh>
+            </group>
+            <mesh position={[v.center[0], v.center[1] - v.depth - v.throat - 0.55, v.center[2]]} castShadow>
+              <cylinderGeometry args={[0.45, 0.5, 0.6, 24]} />
+              <meshStandardMaterial {...dark} />
             </mesh>
             {/* Lamps around the rim, and a support frame: four struts from the throat to the ground. */}
             {Array.from({ length: 12 }, (_, k) => {
