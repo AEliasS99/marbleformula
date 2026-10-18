@@ -107,6 +107,13 @@ The rainbow studio became an outdoor circuit: asphalt floor with aggregate grain
 - Three machines that change the physics rather than deflect: the vortex (clear funnel bowl with a deflector fin, a throat and the lower track resuming under it), the rollers (three forward-driving knurled cylinders at different speeds) and the fan (a pulsing lateral force over 5 units). Seeds 1–8: no DNF, ~1 DQ per race.
 - Fixes on the way: roller pocket trap, vortex lower-track fly-outs, bumper clogging with twenty marbles, guards blocking the director's rays.
 
+### Pacing, light and sound (v13)
+
+- Regroup gates (two per lap) and a battle-focused director: no more lone-marble shots; the race ends after P10 and the rest are classified.
+- Guards back to 1.4 (2.0 only where marbles fly), nearly invisible acrylic.
+- Low warm sun (~32°), less sky fill, contrast/saturation grade after ACES, AO 5; rubber streaks and oil on the asphalt, panel joints and grime on the walls.
+- Sound: agitator motor, roller buzz and fan rush heard from the camera; crowd swells on top-five overtakes and groans at a DQ; gate buzzer and clunk; a quiet 124 bpm bed under the race.
+
 ### D. Rendering speed
 
 - Current: 15 min per race, 1 tab (parallel tabs produced garbled frames).

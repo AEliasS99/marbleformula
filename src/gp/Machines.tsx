@@ -24,6 +24,7 @@ type Vortex = {
 };
 type Roller = { pos: Vec3; quat: Quat; radius: number; length: number; omega: number; phase: number };
 type Fan = { u0: number; u1: number; side: number; dir: Vec3; pos: Vec3; quat: Quat; accel: number; period: number; phase: number };
+type Regroup = { u: number; pos: Vec3; quat: Quat; size: Vec3; lift: number; time: number; firstFrame: number | null; openFrame: number | null };
 
 const chrome = { color: "#eceef3", metalness: 1, roughness: 0.07 } as const;
 const steel = { color: "#dfe2e8", metalness: 1, roughness: 0.25 } as const;
@@ -53,7 +54,7 @@ const toGeometry = (g: { position: number[]; index: number[]; uv: number[] }) =>
 };
 
 /** Hazard stripes (red/white) around the vortex lip, knurl for the rollers. */
-const hazardTex = () =>
+const hazardTex = (repeat: [number, number] = [24, 1]) =>
   canvasTexture(
     512,
     64,
@@ -69,8 +70,18 @@ const hazardTex = () =>
         g.fill();
       }
     },
-    [24, 1],
+    repeat,
   );
+const signTex = (text: string) =>
+  canvasTexture(1024, 128, (g) => {
+    g.fillStyle = "#111216";
+    g.fillRect(0, 0, 1024, 128);
+    g.fillStyle = "#ffcc00";
+    g.font = "900 84px 'Avenir Next', system-ui, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(text, 512, 68);
+  });
 const knurlTex = () =>
   canvasTexture(
     256,
@@ -85,12 +96,26 @@ const knurlTex = () =>
   );
 
 export function Machines({ race, t }: { race: Race; t: number }) {
-  const data = race.data as unknown as { vortices?: Vortex[]; rollers?: Roller[]; fans?: Fan[]; samples: { p: Vec3 }[] };
+  const data = race.data as unknown as { vortices?: Vortex[]; rollers?: Roller[]; fans?: Fan[]; regroups?: Regroup[]; samples: { p: Vec3; n: Vec3 }[] };
+  const regroups = data.regroups ?? [];
+  const regroupRefs = useRef<(THREE.Group | null)[]>([]);
+  const lampRefs = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
+  /** The bar's lift along the track normal at simulation frame t. */
+  const barLift = (g: Regroup, t: number) => {
+    if (g.openFrame === null) return 0;
+    const k = Math.max(0, Math.min(1, (t - g.openFrame) / (g.time * race.fps)));
+    return g.lift * k * k * (3 - 2 * k);
+  };
+  const barPos = (g: Regroup, t: number): Vec3 => {
+    const q = new THREE.Quaternion(...g.quat);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q).multiplyScalar(barLift(g, t));
+    return [g.pos[0] + up.x, g.pos[1] + up.y, g.pos[2] + up.z];
+  };
   const vortices = data.vortices ?? [];
   const rollers = data.rollers ?? [];
   const fans = data.fans ?? [];
   const groundY = useMemo(() => Math.min(...data.samples.map((s) => s.p[1])) - 1.4, [data]);
-  const tex = useMemo(() => ({ hazard: hazardTex(), knurl: knurlTex() }), []);
+  const tex = useMemo(() => ({ hazard: hazardTex(), bar: hazardTex([1, 1]), knurl: knurlTex(), sign: signTex("REGROUP") }), []);
   const bowls = useMemo(
     () =>
       vortices.map((v) => {
@@ -111,6 +136,15 @@ export function Machines({ race, t }: { race: Race; t: number }) {
       subframe.subscribe((vf) => {
         const s = race.simAt(vf).t / race.fps;
         rollers.forEach((r, i) => rollerRefs.current[i]?.quaternion.copy(rollerQuat(r, s)));
+        regroups.forEach((g, i) => {
+          regroupRefs.current[i]?.position.set(...barPos(g, race.simAt(vf).t));
+          const m = lampRefs.current[i];
+          if (m) {
+            const open = g.openFrame !== null && race.simAt(vf).t >= g.openFrame;
+            m.color.set(open ? "#4cff6a" : "#ff3344");
+            m.emissive.set(open ? "#19e04a" : "#ff1f2f");
+          }
+        });
         vortices.forEach((v, i) => agitatorRefs.current[i]?.quaternion.set(...(agitatorQuat(v, s) as Quat)));
         fans.forEach((fan, i) => {
           const g = bladeRefs.current[i];
@@ -204,6 +238,44 @@ export function Machines({ race, t }: { race: Race; t: number }) {
                 </mesh>
               );
             })}
+          </group>
+        );
+      })}
+
+      {regroups.map((g, i) => {
+        const open = g.openFrame !== null && t >= g.openFrame;
+        return (
+          <group key={`g${i}`}>
+            {/* The bar: hazard-striped, lifting straight up when the gate opens. */}
+            <group ref={(el) => void (regroupRefs.current[i] = el)} position={barPos(g, t)} quaternion={g.quat}>
+              <mesh castShadow receiveShadow>
+                <boxGeometry args={g.size} />
+                <meshStandardMaterial map={tex.bar} roughness={0.4} />
+              </mesh>
+              <mesh position={[0, g.size[1] / 2 + 0.02, 0]}>
+                <boxGeometry args={[g.size[0] + 0.06, 0.04, g.size[2] + 0.06]} />
+                <meshStandardMaterial {...chrome} />
+              </mesh>
+            </group>
+            {/* Posts on both walls with the bar's guides, a lamp and a sign above. */}
+            <group position={g.pos} quaternion={g.quat}>
+              {[-1, 1].map((e) => (
+                <group key={e} position={[0, 0, e * (W2 + 0.16)]}>
+                  <mesh position={[0, g.lift / 2 + 0.6, 0]} castShadow>
+                    <boxGeometry args={[0.26, g.lift + 2.0, 0.26]} />
+                    <meshStandardMaterial {...dark} />
+                  </mesh>
+                  <mesh position={[0, g.lift + 1.75, 0]}>
+                    <sphereGeometry args={[0.11, 20, 10]} />
+                    <meshStandardMaterial ref={(el) => void (lampRefs.current[i] = el)} color={open ? "#4cff6a" : "#ff3344"} emissive={open ? "#19e04a" : "#ff1f2f"} emissiveIntensity={3} toneMapped={false} />
+                  </mesh>
+                </group>
+              ))}
+              <mesh position={[0, g.lift + 1.45, 0]} castShadow>
+                <boxGeometry args={[0.1, 0.5, 2 * (W2 + 0.16)]} />
+                <meshStandardMaterial map={tex.sign} roughness={0.5} />
+              </mesh>
+            </group>
           </group>
         );
       })}

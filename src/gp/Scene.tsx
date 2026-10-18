@@ -122,7 +122,7 @@ export function Environment() {
     gl.toneMapping = THREE.NoToneMapping;
     const pmrem = new THREE.PMREMGenerator(gl);
     scene.environment = pmrem.fromScene(studioScene(), 0, 0.1, 200, { size: 512 }).texture;
-    scene.environmentIntensity = 0.7;
+    scene.environmentIntensity = 0.55;
     pmrem.dispose();
   }, [gl, scene]);
   useEffect(() => {
@@ -134,7 +134,7 @@ export function Environment() {
         if (cancelled) return;
         const pmrem = new THREE.PMREMGenerator(gl);
         scene.environment = pmrem.fromEquirectangular(tex).texture;
-        scene.environmentIntensity = 0.7;
+        scene.environmentIntensity = 0.55; // less fill from the sky: the sun does the modelling
         tex.mapping = THREE.EquirectangularReflectionMapping;
         scene.background = tex;
         scene.backgroundBlurriness = 0.015;
@@ -161,8 +161,8 @@ export function Environment() {
 export function Sun({ target }: { target: Vec3 }) {
   const sun = useMemo(() => {
     RectAreaLightUniformsLib.init();
-    // Afternoon sun: warm, hard-edged shadows that follow the action.
-    const l = new THREE.DirectionalLight("#fff1d6", 3.2);
+    // Late-afternoon sun, low and warm: long shadows from posts, guards and marbles.
+    const l = new THREE.DirectionalLight("#ffd9a6", 3.6);
     l.castShadow = true;
     l.shadow.mapSize.set(4096, 4096);
     l.shadow.bias = -0.00025;
@@ -173,7 +173,7 @@ export function Sun({ target }: { target: Vec3 }) {
     return l;
   }, []);
   const [x, y, z] = target;
-  sun.position.set(x + 18, y + 38, z + 10);
+  sun.position.set(x + 30, y + 21, z + 14); // ~32° above the horizon
   sun.target.position.set(x, y, z);
   sun.target.updateMatrixWorld();
   return (
@@ -311,7 +311,39 @@ export function Circuit({ race }: { race: Race }) {
         grad.addColorStop(1, "rgba(0,0,0,0)");
         g.fillStyle = grad;
         g.fillRect(0, fv0 * LT, LA, (fv1 - fv0) * LT);
-
+        // Rubber laid down along the two racing lines: soft dark streaks of random length, and a few oil spots.
+        const fh = (fv1 - fv0) * LT;
+        for (let i = 0; i < 90; i++) {
+          const lane = i % 2 ? 0.36 : 0.64;
+          const y = (fv0 + (fv1 - fv0) * lane) * LT + (hash(i * 5.1) - 0.5) * fh * 0.1;
+          const x = hash(i * 7.7) * LA;
+          const len = 40 + hash(i * 3.3) * 220;
+          g.fillStyle = `rgba(8,8,10,${0.05 + hash(i * 9.1) * 0.08})`;
+          g.fillRect(x, y - 3, len, 6 + hash(i) * 6);
+          if (x + len > LA) g.fillRect(0, y - 3, x + len - LA, 6 + hash(i) * 6); // wraps with the texture
+        }
+        for (let i = 0; i < 6; i++) {
+          const x = hash(i * 11.3) * LA;
+          const y = (fv0 + 0.1 + hash(i * 13.7) * (fv1 - fv0 - 0.2)) * LT;
+          const r = 8 + hash(i * 2.9) * 18;
+          const spot = g.createRadialGradient(x, y, 0, x, y, r);
+          spot.addColorStop(0, "rgba(10,10,14,0.35)");
+          spot.addColorStop(1, "rgba(10,10,14,0)");
+          g.fillStyle = spot;
+          g.fillRect(x - r, y - r, 2 * r, 2 * r);
+        }
+        // Walls: one panel joint per repeat, a thin rail line halfway up, grime where they meet the floor.
+        for (const [a, b] of [[0, fv0], [fv1, 1]]) {
+          g.fillStyle = "rgba(0,0,0,0.16)";
+          g.fillRect(LA * 0.5 - 2, a * LT, 4, (b - a) * LT);
+          g.fillStyle = "rgba(0,0,0,0.07)";
+          g.fillRect(0, ((a + b) / 2) * LT - 2, LA, 4);
+          const gr = g.createLinearGradient(0, a === 0 ? fv0 * LT : fv1 * LT, 0, a === 0 ? (fv0 - 0.05) * LT : (fv1 + 0.05) * LT);
+          gr.addColorStop(0, "rgba(40,36,30,0.22)");
+          gr.addColorStop(1, "rgba(40,36,30,0)");
+          g.fillStyle = gr;
+          g.fillRect(0, a === 0 ? (fv0 - 0.05) * LT : fv1 * LT, LA, 0.05 * LT);
+        }
       },
       true,
     );
@@ -833,10 +865,11 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
               <mesh castShadow={false} receiveShadow renderOrder={6}>
                 <boxGeometry args={o.size} />
                 {/* Plain clear acrylic: screen-space refraction shifted the stripes seen through it. */}
-                <meshPhysicalMaterial color="#f2f7ff" transparent opacity={0.16} roughness={0.04} clearcoat={1} clearcoatRoughness={0.03} envMapIntensity={1.4} side={THREE.DoubleSide} depthWrite={false} />
+                {/* Barely there: low opacity and little reflection, so it never reads as a grey wall. */}
+                <meshPhysicalMaterial color="#f4f8ff" transparent opacity={0.09} roughness={0.02} clearcoat={1} clearcoatRoughness={0.02} envMapIntensity={0.45} side={THREE.DoubleSide} depthWrite={false} />
               </mesh>
               <mesh position={[0, o.size![1] / 2, 0]} rotation-z={Math.PI / 2}>
-                <cylinderGeometry args={[0.035, 0.035, o.size![0] + 0.02, 12]} />
+                <cylinderGeometry args={[0.02, 0.02, o.size![0] + 0.02, 10]} />
                 <meshStandardMaterial {...chrome} />
               </mesh>
               {/* Chrome clips holding the panel to the wall top. */}

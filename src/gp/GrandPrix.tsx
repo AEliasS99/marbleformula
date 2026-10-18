@@ -24,7 +24,7 @@ export const GrandPrix = ({ id, layout }: { id: string; layout: Layout }) => {
       <ThreeCanvas width={width} height={height} dpr={2} shadows="variance" gl={{ antialias: true, alpha: false }}>
         <fog attach="fog" args={[STUDIO.fog, 220, 1400]} />
         <Environment />
-        <hemisphereLight args={["#bfd8f5", "#5a7a3c", 0.35]} />
+        <hemisphereLight args={["#bfd8f5", "#5a7a3c", 0.22]} />
         <Sun target={shot.target} />
         <CameraRig race={race} layout={layout} frame={frame} />
         <Circuit race={race} />

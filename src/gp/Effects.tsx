@@ -4,6 +4,8 @@ import * as THREE from "three";
 import {
   BloomEffect,
   BlendFunction,
+  BrightnessContrastEffect,
+  HueSaturationEffect,
   DepthOfFieldEffect,
   EffectComposer,
   EffectPass,
@@ -130,9 +132,9 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     composer.addPass(new RenderPass(scene, camera));
     const ao = new N8AOPostPass(scene, camera, 1920, 1080);
     // Tight and strong: contact shadows under the marbles and in every seam.
-    ao.configuration.aoRadius = 0.45;
+    ao.configuration.aoRadius = 0.5;
     ao.configuration.distanceFalloff = 1.0;
-    ao.configuration.intensity = 4;
+    ao.configuration.intensity = 5;
     ao.configuration.color = new THREE.Color("#1a1c24");
     ao.configuration.gammaCorrection = false; // the final pass converts to sRGB; doing it twice washes everything out
     ao.setQualityMode("High");
@@ -144,11 +146,14 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     // With a bright studio the white track sits near 1.0: only real glints, well above it, may bloom.
     const bloom = new BloomEffect({ mipmapBlur: true, intensity: 0.25, luminanceThreshold: 2.6, luminanceSmoothing: 0.3 });
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
+    // A light grade after tone mapping: a touch more contrast and colour, so the low sun bites.
+    const grade = new BrightnessContrastEffect({ brightness: 0.0, contrast: 0.1 });
+    const colour = new HueSaturationEffect({ saturation: 0.08 });
     const vignette = new VignetteEffect({ offset: 0.32, darkness: 0.42 });
     const noise = new NoiseEffect({ premultiply: true, blendFunction: BlendFunction.SOFT_LIGHT });
     noise.blendMode.opacity.value = 0.025;
     composer.addPass(new EffectPass(camera, dof));
-    composer.addPass(new EffectPass(camera, bloom, tone, vignette, noise));
+    composer.addPass(new EffectPass(camera, bloom, tone, grade, colour, vignette, noise));
     const accumulate = new AccumulatePass();
     composer.addPass(accumulate);
     return { composer, dof, ao, accumulate };

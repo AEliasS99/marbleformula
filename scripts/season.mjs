@@ -93,13 +93,25 @@ const DAMPING = 0.075; // rolling resistance + air: caps the speed of a marble
 // send a marble back up the slope to oscillate against the obstacle for seconds.
 const MARBLE_RESTITUTION = 0.75;
 const TRACK_RESTITUTION = 0.4;
-const OBSTACLE_RESTITUTION = { bumper: 0.65, spinner: 0.35, fin: 0.5, splitter: 0.3, divider: 0.3, hammer: 0.6, cleat: 0.1, guard: 0.3, pusher: 0.2, turntable: 0.1, roller: 0.2, vortex: 0.2 };
-const GUARD = { height: 2.0, segment: 1 }; // 2.0: at the bigger scale marbles leave jumps faster and higher
+const OBSTACLE_RESTITUTION = { bumper: 0.65, spinner: 0.35, fin: 0.5, splitter: 0.3, divider: 0.3, hammer: 0.3, cleat: 0.1, guard: 0.3, pusher: 0.2, turntable: 0.1, roller: 0.2, vortex: 0.2 };
+const GUARD = { height: 1.4, segment: 1 }; // default; zones that throw marbles higher say so
 // Clear guard panels over the stretches where marbles can fly: a jump's kicker,
 // flight and landing, and every machine that can throw one.
 // Drops too: at speed, a marble leaving a drop in a bend can land on the wall top.
-// The vortex's lower track: marbles leave the throat with their swirl speed and ricochet off the floor.
-const GUARD_ZONES = { jump: [-3, 12], drop: [-1, 7], hammer: [-1, 4], spinner: [-1, 3], turntable: [-2, 5], pusher: [-1, 4], rollers: [-1, 5], vortex: [2.6, 11] };
+// [from, to, height]: the vortex's lower track (marbles leave the throat at
+// swirl speed and ricochet), jumps and the pile behind a regroup gate (twenty
+// marbles climbing each other) need tall panels; the rest the default.
+const GUARD_ZONES = {
+  jump: [-3, 12, 2.0],
+  drop: [-1, 7],
+  hammer: [-1, 10, 2.0], // the hammer throws marbles far down the track
+  spinner: [-1, 3],
+  turntable: [-2, 5],
+  pusher: [-1, 4],
+  rollers: [-1, 5, 1.2],
+  vortex: [2.6, 11, 2.0],
+  regroup: [-8, 1, 2.0],
+};
 // A steeper launch out of the lanes, so the race starts with a punch.
 const START_STEEP = { until: 25, slope: Math.tan((8 * Math.PI) / 180) };
 const BRAKE_DAMPING = 1.8; // after the chequered flag
@@ -152,7 +164,12 @@ const FEATURES = {
   rollers: { before: 1, after: 5, label: "THE ROLLERS", maxCurv: 0.035 },
   fan: { before: 1, after: 6, label: "THE FAN", maxCurv: 0.035 },
   vortex: { before: 3, after: 10, label: "THE VORTEX", maxCurv: 0.025, once: true }, // placed once, with the machines
+  regroup: { before: 6, after: 2, label: "REGROUP GATE", maxCurv: 0.07, once: true }, // two per lap, placed with the machines; a bar works in a bend
 };
+// Regroup gates: a bar across the track that holds the leaders until `need`
+// of the field still racing has caught up (or `hold` seconds have passed
+// since the first arrival), then lifts. Keeps the race a race.
+const REGROUP = { count: 2, need: 0.6, hold: 7, lift: 1.7, time: 0.5, size: [0.12, 0.9, 0.0] };
 // The vortex bowl (src/gp/vortex.js): level, its rim at the floor of the
 // upper track where that ends (`entry` past the feature's u), its axis
 // `centre` past it; the lower track resumes `resume` past it, D lower.
@@ -167,7 +184,7 @@ const AGITATOR = { arms: 3, rIn: 1.2, rOut: 2.3, clearance: 0.28, height: 0.45, 
 // marbles in the pocket between rollers.)
 const ROLLER = { radius: 0.3, proud: 0.03, spacing: 1.4, surfaces: [7, 4.5, 10] }; // nearly flush: only the top touches, so a slow marble is never pushed back
 // The fan: a lateral gust across a stretch of track, pulsing.
-const FAN = { length: 5, accel: 9, period: 1.6 };
+const FAN = { length: 5, accel: 6, period: 1.6 }; // 6: at 9 the gust pins marbles against the wall and friction beats the slope
 // Kicker: a 10° run-up (so even a slow marble arrives with enough speed to clear
 // the lip: v²/2g must exceed `lip`), the ramp up to the lip, then the fall.
 const JUMP = { runup: 4, runupSlope: Math.tan((10 * Math.PI) / 180), lip: 0.45, ramp: 2.0, drop: 2.0 };
@@ -239,6 +256,16 @@ function planFeatures(us, curv, L, rand) {
       if (clear(x, FEATURES[type]) && !overlaps(x, FEATURES[type]) && (best === null || Math.abs(x - target) < Math.abs(best - target))) best = x;
     }
     if (best !== null) features.push({ type, u: r3(best), label: FEATURES[type].label, span: [FEATURES[type].before, FEATURES[type].after] });
+  }
+  // Regroup gates, spread over the lap, wherever there is room.
+  for (let j = 0; j < REGROUP.count; j++) {
+    const target = 12 + START.funnel + ((j + 0.75) / (REGROUP.count + 0.5)) * (L - 30 - START.funnel);
+    let best = null;
+    for (let x = target - 70; x <= target + 70; x += 1) {
+      if (x < 12 + START.funnel || x > L - 18) continue;
+      if (clear(x, FEATURES.regroup) && !overlaps(x, FEATURES.regroup) && (best === null || Math.abs(x - target) < Math.abs(best - target))) best = x;
+    }
+    if (best !== null) features.push({ type: "regroup", u: r3(best), label: FEATURES.regroup.label, span: [FEATURES.regroup.before, FEATURES.regroup.after] });
   }
   // The cycling obstacles start a little later than the machines may: the
   // twenty marbles leave the funnel as one block and need room to string out.
@@ -463,6 +490,7 @@ function buildObstacles(course, sync = {}) {
   const rollers = [];
   const fans = [];
   const vortices = [];
+  const regroups = [];
   const quatArr = (q) => [q.x, q.y, q.z, q.w].map(r3);
   const cylinder = (kind, u, lat, radius, height, restitution) => {
     const s = frameAt(u);
@@ -579,6 +607,18 @@ function buildObstacles(course, sync = {}) {
         entryHalf: VORTEX.entryHalf,
         agitator: { ...AGITATOR, phase: r3((f.u * 0.61) % (Math.PI * 2)) },
       });
+    } else if (f.type === "regroup") {
+      const W2 = TRACK.width / 2;
+      const s = frameAt(f.u);
+      regroups.push({
+        kind: "regroup",
+        u: r3(f.u),
+        pos: pointInFrame(s, 0, REGROUP.size[1] / 2 + 0.02).map(r3),
+        quat: quatArr(frameQuat(s)),
+        size: [REGROUP.size[0], REGROUP.size[1], 2 * W2 - 0.08],
+        lift: REGROUP.lift,
+        time: REGROUP.time,
+      });
     } else if (f.type === "rollers") {
       const W2 = TRACK.width / 2;
       ROLLER.surfaces.forEach((surface, k) => {
@@ -648,6 +688,7 @@ function buildObstacles(course, sync = {}) {
   for (const f of features) {
     const zone = GUARD_ZONES[f.type];
     if (!zone) continue;
+    const height = zone[2] ?? GUARD.height;
     for (let u = f.u + zone[0]; u < f.u + zone[1]; u += GUARD.segment) {
       const s = frameAt(u + GUARD.segment / 2);
       const W2 = s.w ?? TRACK.width / 2;
@@ -655,9 +696,9 @@ function buildObstacles(course, sync = {}) {
         statics.push({
           kind: "guard",
           shape: "box",
-          pos: pointInFrame(s, side * (W2 + TRACK.wall / 2), TRACK_DEPTH + GUARD.height / 2 - 0.05).map(r3),
+          pos: pointInFrame(s, side * (W2 + TRACK.wall / 2), TRACK_DEPTH + height / 2 - 0.05).map(r3),
           quat: quatArr(frameQuat(s)),
-          size: [GUARD.segment + 0.04, GUARD.height, 0.05],
+          size: [GUARD.segment + 0.04, height, 0.05],
           restitution: 0.3,
         });
       }
@@ -702,7 +743,7 @@ function buildObstacles(course, sync = {}) {
   const lifts = features
     .filter((f) => f.type === "lift")
     .map((f) => ({ u0: r3(f.u), len: LIFT.len, lead: LIFT.lead, rise: LIFT.rise, speed: LIFT.speed, spacing: LIFT.spacing, count: LIFT.count, half: TRACK.width / 2 - 0.16 }));
-  return { statics, spinners, swings, lifts, turntables, pushers, rollers, fans, vortices };
+  return { statics, spinners, swings, lifts, turntables, pushers, rollers, fans, vortices, regroups };
 }
 
 /** A roller's orientation at time t: the frame, spun about its across-track axis. */
@@ -730,7 +771,7 @@ export function turntableQuat(tt, t) {
 }
 // Pivot height puts the head's centre at marble height (0.35) in mid-swing;
 // at the extremes it rises to ~0.8, and it reaches lat ±1.55 of the 2.1 half-width.
-const HAMMER = { pivot: 0.35 + 3.0, length: 3.0, head: [1.0, 0.5, 0.5], amp: (40 * Math.PI) / 180, period: 2.0 };
+const HAMMER = { pivot: 0.35 + 3.0, length: 3.0, head: [1.0, 0.5, 0.5], amp: (34 * Math.PI) / 180, period: 2.0 };
 // A spinning plate set into the floor: marbles crossing it are dragged sideways.
 const TURNTABLE = { radius: 1.6, thickness: 0.08, speed: 3.0 };
 // A block that slides out from one wall across most of the track and back.
@@ -805,6 +846,15 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
     world.createCollider(RAPIER.ColliderDesc.cylinder(v.depth / 2 + v.throat, 0.12).setTranslation(0, -v.depth / 2 - v.throat, 0).setCollisionGroups(GROUP_TRACK), body);
     return body;
   });
+  const regroupBodies = obstacles.regroups.map((g) => {
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...g.pos).setRotation(rot(g.quat)));
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(g.size[0] / 2, g.size[1] / 2, g.size[2] / 2).setFriction(0.2).setRestitution(0.2).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK),
+      body,
+    );
+    return body;
+  });
+  const regroupState = obstacles.regroups.map(() => ({ first: null, open: null }));
   const rollerBodies = obstacles.rollers.map((r) => {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...r.pos).setRotation(rot(rollerQuat(r, 0))));
     const axis = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2); // cylinder axis (local y) across the track (local z)
@@ -1089,12 +1139,30 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
         }
       });
     }
-    if (allDone === null && finishFrame.every((x, i) => x !== null || dqFrame[i] !== null)) allDone = f;
+    // The race is over once the top ten (or everyone) are home or out; the rest are classified where they are.
+    if (allDone === null && finishFrame.filter((x, i) => x !== null || dqFrame[i] !== null).length >= Math.min(MARBLES.length, 10)) allDone = f;
     if (allDone !== null && f - allDone >= 2 * FPS) break;
+
+    // Regroup gates: count who has reached the bar; open on quorum or timeout.
+    obstacles.regroups.forEach((g, k) => {
+      const st = regroupState[k];
+      if (st.open !== null) return;
+      const racing = MARBLES.filter((_, i) => finishFrame[i] === null && dqFrame[i] === null).length;
+      const here = frames[f].filter((m, i) => finishFrame[i] === null && dqFrame[i] === null && m[7] >= g.u - 1.6).length;
+      if (here > 0 && st.first === null) st.first = f;
+      if (st.first !== null && (here >= Math.ceil(REGROUP.need * racing) || f - st.first >= REGROUP.hold * FPS)) st.open = f;
+    });
 
     for (let s = 0; s < SUBSTEPS; s++) {
       const t = (step + 1) * DT;
       gateBody.setNextKinematicRotation(gateRotation(t));
+      obstacles.regroups.forEach((g, k) => {
+        const st = regroupState[k];
+        const k1 = st.open === null ? 0 : Math.min(1, (t - st.open / FPS) / g.time);
+        const lift = g.lift * k1 * k1 * (3 - 2 * k1);
+        const n = samples[Math.round((g.u + GRID_LENGTH) / SAMPLE)].n;
+        regroupBodies[k].setNextKinematicTranslation({ x: g.pos[0] + n[0] * lift, y: g.pos[1] + n[1] * lift, z: g.pos[2] + n[2] * lift });
+      });
       for (const [k, sw] of obstacles.swings.entries()) swingBodies[k].setNextKinematicRotation(rot(swingQuat(sw, t)));
       for (const c of cleats) {
         const pose = liftCleatPose(c.lift, c.k, t, course.frameAt);
@@ -1158,11 +1226,15 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
   const order = rankAt(lastFrame);
   const winner = order[0];
   const winnerFrame = finishFrame[winner] ?? lastFrame;
-  const dnf = MARBLES.filter((_, i) => finishFrame[i] === null && dqFrame[i] === null).map((m) => m.name);
+  // Unfinished marbles are classified where they are when the top ten are home;
+  // a DNF is one that is actually stuck (no progress over the last three seconds).
+  const stuck = (i) => finishFrame[i] === null && dqFrame[i] === null && frames[lastFrame][i][7] - frames[Math.max(0, lastFrame - 3 * FPS)][i][7] < 2;
+  const dnf = MARBLES.filter((_, i) => stuck(i)).map((m) => m.name);
+  const classified = MARBLES.filter((_, i) => finishFrame[i] === null && dqFrame[i] === null && !stuck(i)).length;
   const dqNames = MARBLES.filter((_, i) => dqFrame[i] !== null).map((m) => m.abbr);
   if (process.env.GP_DNF)
     MARBLES.forEach((m, i) => {
-      if (finishFrame[i] !== null || dqFrame[i] !== null) return;
+      if (!stuck(i)) return;
       const q = frames[lastFrame][i];
       const z = course.features.find((f) => q[7] >= f.u - f.span[0] && q[7] <= f.u + f.span[1]);
       console.log(`  DNF ${m.abbr}: u=${q[7].toFixed(1)} y=${q[1].toFixed(2)} ${z ? `${z.type}@${z.u}` : "open track"}`);
@@ -1172,7 +1244,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
 
   const summary = `${round.id} seed ${seed}: L=${L.toFixed(0)} race ${secs(winnerFrame)}s, ${MARBLES[winner].name} by ${
     margin === null ? "-" : margin.toFixed(2)
-  }s${dnf.length ? `, DNF ${dnf.join(" ")}` : ""}${dqNames.length ? `, DQ ${dqNames.join(" ")}` : ""}`;
+  }s${dnf.length ? `, DNF ${dnf.join(" ")}` : ""}${dqNames.length ? `, DQ ${dqNames.join(" ")}` : ""}${classified ? `, ${classified} classified` : ""}`;
   if (process.env.GP_WATCH) {
     const i = MARBLES.findIndex((m) => m.abbr === process.env.GP_WATCH);
     for (let f = raceStart; f < Math.min(lastFrame, raceStart + 40 * FPS); f += FPS / 2) {
@@ -1362,6 +1434,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
     pushers: obstacles.pushers,
     rollers: obstacles.rollers,
     fans: obstacles.fans,
+    regroups: obstacles.regroups.map((g, k) => ({ ...g, firstFrame: regroupState[k].first, openFrame: regroupState[k].open })),
     vortices: obstacles.vortices,
     swings: obstacles.swings,
     lifts: obstacles.lifts,
@@ -1391,20 +1464,31 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   const rawU = [];
   const spread = [];
   const leader = [];
+  let sticky = null;
   for (let f = 0; f <= lastFrame; f++) {
     const racing = [...Array(N).keys()]
       .filter((i) => !finished(i, f - LINGER))
       .sort((a, b) => uOf(f, b) - uOf(f, a));
-    leader.push(racing[0] ?? 0);
     if (!racing.length) {
+      leader.push(0);
       rawFocus.push(v3(pointOnTrack(frameAt(L + 4), 0, 0.3)));
       rawU.push(L + 4);
       spread.push(2);
       continue;
     }
-    // The pack is the leader plus whoever is close behind: averaging marbles
-    // spread far apart would aim the camera at empty track between them.
-    const pack = racing.slice(0, 3).filter((i) => uOf(f, racing[0]) - uOf(f, i) < 6);
+    // The focus is the best battle, not necessarily the leader: the group
+    // (within 6 units) with the most marbles, with a bonus for being at the
+    // front, and a little loyalty to the group we were already following.
+    let best = null;
+    racing.forEach((head, rank) => {
+      const members = racing.filter((i) => uOf(f, head) - uOf(f, i) >= 0 && uOf(f, head) - uOf(f, i) < 6);
+      let score = members.length + (rank === 0 ? 1.2 : 0) - rank * 0.08;
+      if (sticky !== null && members.includes(sticky)) score += 1.0;
+      if (best === null || score > best.score) best = { head, members, score };
+    });
+    sticky = best.head;
+    leader.push(best.head);
+    const pack = best.members.slice(0, 3);
     const w = [0.55, 0.3, 0.15].slice(0, pack.length);
     const ws = w.reduce((a, b) => a + b, 0);
     const p = new Vector3();
@@ -1859,6 +1943,44 @@ function soundtrack(result, rand) {
       tone(t0 + k * 0.22, 392, 0.16, 0.1, 0);
     }
   }
+  // Machines, heard from the camera: the agitator's slow motor, the rollers'
+  // buzz, the fan's rush of air. Each is a steady source at its position,
+  // with the camera's distance gain and pan per frame.
+  const lastF = frames.length - 1;
+  const hum = (pos, make, amp) => {
+    let ph = 0;
+    let lp = 0;
+    for (let f = timeline.raceStart; f <= lastF; f++) {
+      const { gain, pan } = hear(f, pos);
+      const g = gain * amp;
+      if (g < 0.002) continue;
+      const s0 = Math.round((f / fps) * RATE);
+      const s1 = Math.round(((f + 1) / fps) * RATE);
+      for (let k = s0; k < s1; k++) {
+        const tt = k / RATE;
+        const out = make(tt, () => (lp += 0.08 * (rand() * 2 - 1 - lp)));
+        add(k, out * g, pan);
+        ph++;
+      }
+    }
+    void ph;
+  };
+  for (const v of data.vortices ?? [])
+    hum(v.center, (tt, noise) => 0.6 * Math.sin(2 * Math.PI * 48 * tt) + 0.3 * Math.sin(2 * Math.PI * 96 * tt + 0.4 * Math.sin(2 * Math.PI * 1.1 * tt)) + 0.5 * noise(), 0.22);
+  for (const r of data.rollers ?? []) hum(r.pos, (tt) => 0.5 * Math.sin(2 * Math.PI * 110 * tt) + 0.25 * Math.sin(2 * Math.PI * 221 * tt) + 0.15 * Math.sin(2 * Math.PI * 330 * tt), 0.08);
+  for (const fan of data.fans ?? []) hum(fan.pos, (tt, noise) => noise() * (0.5 + 0.5 * fanGust(fan, tt)) * 4, 0.3);
+  // The regroup gate: a buzzer while it holds (the last two seconds), a clunk as it lifts.
+  for (const g of data.regroups ?? []) {
+    if (g.openFrame === null) continue;
+    for (let k = 0; k < 3; k++) tone(g.openFrame / fps - 1.6 + k * 0.5, 880, 0.12, 0.12, 0);
+    tone(g.openFrame / fps, 140, 0.25, 0.3, 0, 0.09);
+  }
+  // The crowd reacts: a swell on every overtake for a top-five place, a groan on a disqualification.
+  for (const e of data.events) {
+    if (e.kind === "overtake" && e.pos <= 5) crowd(e.frame / fps + 0.1, 1.6, 0.45 + (5 - e.pos) * 0.08);
+    if (e.kind === "dq") crowd(e.frame / fps + 0.25, 2.4, 0.7);
+  }
+
   // Chequered flag: chime per finisher, a big cheer for the winner.
   data.order.forEach((i, k) => {
     const ff = data.marbles[i].finishFrame;
@@ -1913,6 +2035,41 @@ function soundtrack(result, rand) {
           const tt = k / RATE;
           const noise = k < 200 ? (rand() * 2 - 1) * (1 - k / 200) * 0.6 : 0;
           add(s0 + k, amp * Math.exp(-tt / decay) * (0.8 * Math.sin(2 * Math.PI * freq * tt) + noise), 0);
+        }
+      }
+    }
+  }
+  // A music bed under the whole race in video time: 124 bpm kick and hat, a
+  // minor-key bass line, quiet enough to sit under the sound of the marbles,
+  // fading out into the finish replay.
+  {
+    const bpm = 124;
+    const beat = 60 / bpm;
+    const t0 = timeline.raceStart / fps - 0.2;
+    const t1 = timeline.replay.at / fps + 1.5;
+    const bass = [55, 55, 65.41, 73.42, 55, 55, 87.31, 82.41]; // A A C D A A F E
+    const amp = 0.065;
+    const env = (t) => Math.min(1, Math.max(0, (t - t0) / 2)) * Math.min(1, Math.max(0, (t1 - t) / 2.5));
+    for (let n = 0; t0 + n * beat < t1; n++) {
+      const t = t0 + n * beat;
+      const e = env(t) * amp;
+      // Kick on every beat.
+      const k0 = Math.round(t * RATE);
+      for (let k = 0; k < 0.25 * RATE; k++) {
+        const tt = k / RATE;
+        add(k0 + k, e * 1.6 * Math.exp(-tt / 0.07) * Math.sin(2 * Math.PI * (60 + 80 * Math.exp(-tt / 0.02)) * tt), 0);
+      }
+      // Hat on the off-beat.
+      const h0 = Math.round((t + beat / 2) * RATE);
+      for (let k = 0; k < 0.05 * RATE; k++) add(h0 + k, e * 0.25 * Math.exp(-k / RATE / 0.012) * (rand() * 2 - 1), 0.2);
+      // Bass: eighth notes, a plucked tone.
+      for (let half = 0; half < 2; half++) {
+        const fq = bass[(n * 2 + half) % bass.length];
+        const b0 = Math.round((t + (half * beat) / 2) * RATE);
+        for (let k = 0; k < 0.22 * RATE; k++) {
+          const tt = k / RATE;
+          const sh = Math.sin(2 * Math.PI * fq * tt) + 0.4 * Math.sin(2 * Math.PI * fq * 2 * tt) + 0.15 * Math.sin(2 * Math.PI * fq * 3 * tt);
+          add(b0 + k, e * 0.5 * Math.exp(-tt / 0.12) * Math.min(1, k / 60) * sh, -0.1);
         }
       }
     }

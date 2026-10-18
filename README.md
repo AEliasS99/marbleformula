@@ -60,6 +60,7 @@ Each circuit has a fixed layout, the same for every seed. Obstacles are placed o
 | **The vortex** | a clear funnel bowl set into the track (`src/gp/vortex.js`): a deflector fin sends the field in off-axis, it spirals down the cone and drops through the throat onto the lower track, which resumes under the hole. An agitator (three chrome paddles on a shaft through the throat, turning against the swirl) keeps the queue for the hole disorderly; the lip is 2.2 high because the paddles fling marbles. Reorders the whole pack. One per circuit |
 | **The rollers** | three knurled cylinders flush in the floor, all driving forward at 7, 4.5 and 10 u/s: marbles get kicked apart without contact |
 | **The fan** | a pulsing lateral gust over 5 units of track (a force in the bake), from a caged fan on a post beside the wall |
+| **Regroup gate** | a hazard bar across the track that holds the leaders until 60 % of the field still racing has arrived (or 7 s have passed), then lifts; two per lap (`REGROUP`). Keeps twenty marbles a race instead of a procession, and lets the overlay count "12 / 20 at the gate" |
 
 There are two rules so that no marble ever gets stuck:
 
@@ -73,6 +74,8 @@ The vortex is the one place the track has a gap: samples inside the bowl carry `
 **Disqualification zones.** Every other machine has a small red pad at the foot of one wall (`DQ` in `scripts/season.mjs`), with a red panel and lamp on the wall above it. A marble that is pressed against the wall as it rolls over the pad is out: it vanishes, the tower shows it as OUT, a buzzer sounds, a toast and a slow-motion replay follow, and it scores nothing. The pads are a sensor in the bake loop, not a collider, and they are short (0.3 along the track) so only the unlucky few get caught: ~4 % of marbles per race, about one DQ every race or two. Tune with `DQ_LEN`, `DQ_REACH`, `DQ_OFF`, `DQ_EVERY` and the `--round … --seeds` sweep.
 
 **Marbles** are chrome with a national flag wrapped around the equator (`src/gp/flags.ts` draws the twenty flags procedurally); the overlay uses the same flags as swatches. The field is 20: ten start lanes, two rows (`GRID`). Monza runs at scale 0.08 (459 units, a ~60 s race); the cycling obstacles start 30 units after the funnel so the block of twenty can string out first. The asphalt carries white dashed lane lines (three lanes), a painted direction arrow every 10 units, and lane numbers on the grid.
+
+**Pacing.** The director follows the best battle, not the leader: each frame it scores every group of marbles within 6 units (size, a bonus for the front, loyalty to the group it was already on) and frames the winner. The race ends two seconds after the tenth marble is home (or out); the rest are classified where they are and shown with "—" in the results.
 
 ### The director
 
@@ -135,6 +138,8 @@ Debug switches for `--round` runs:
 | Marbles flew out of the vortex's lower track | They leave the throat at swirl speed and ricochet off the floor over a 1.0 wall | Guard panels over the resume stretch, 2.0 high everywhere, a shorter fall |
 | Twenty marbles jammed at the pinball bumpers | A 2-marble gap beside a bumper arches when the whole block arrives together | Smaller bumpers, and the cycling obstacles start later |
 | No locked camera at the rollers | Guard panels (now 2.0 high) blocked the director's sight-line rays | Guards and the bowl are in a "clear" collision group the rays skip |
+| Marbles over the wall behind a regroup gate, and after the hammer | Twenty marbles piled three high behind the bar; the hammer launched marbles six units up | Per-zone guard heights (2.0 at gates, jumps, the vortex exit, the hammer's run-out), a gentler hammer (34°, restitution 0.3) |
+| The fan parked marbles against the wall | At 9 u/s² the gust's wall friction beat the 6.5° slope | Gust 6 u/s² |
 
 ## The Zigzag Tower
 

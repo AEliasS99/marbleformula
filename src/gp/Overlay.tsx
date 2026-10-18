@@ -69,6 +69,7 @@ export function Overlay(p: OverlayProps) {
       {live && frame >= tl.raceStart && <Minimap {...p} s={s} />}
       {live && <ShotCaption {...p} s={s} f={f} />}
       {live && <Toasts race={race} f={f} s={s} layout={p.layout} />}
+      {live && <RegroupChip race={race} f={f} s={s} layout={p.layout} />}
       {live && <FinishBanner race={race} f={f} s={s} layout={p.layout} />}
       {section === "replay" && !inHighlight && <ReplayGraphics race={race} frame={frame} s={s} />}
       {inHighlight && <HighlightGraphics race={race} frame={frame} s={s} highlight={race.highlights[highlight!]} />}
@@ -387,6 +388,28 @@ function Toasts({ race, f, s, layout }: { race: Race; f: number; s: number; layo
   );
 }
 
+/** While a regroup gate holds the leaders: who has arrived, and the gate going green. */
+function RegroupChip({ race, f, s, layout }: { race: Race; f: number; s: number; layout: Layout }) {
+  const gates = ((race.data as unknown as { regroups?: { u: number; firstFrame: number | null; openFrame: number | null }[] }).regroups ?? []).filter(
+    (g) => g.firstFrame !== null && f >= g.firstFrame && g.openFrame !== null && f < g.openFrame + race.sec(1.2),
+  );
+  const g = gates[0];
+  if (!g) return null;
+  const racing = race.marbles.filter((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f));
+  const here = race.marbles.filter((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f) && race.progress(i, f) >= g.u - 1.6).length;
+  const open = f >= g.openFrame!;
+  const k = spring({ frame: f - g.firstFrame!, fps: race.fps, config: { damping: 16 } });
+  const out = interpolate(f, [g.openFrame! + race.sec(0.8), g.openFrame! + race.sec(1.2)], [1, 0], clamp);
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, bottom: (layout === "portrait" ? 640 : 130) * s, display: "flex", justifyContent: "center", opacity: k * out, transform: `translateY(${(1 - k) * 30 * s}px)` }}>
+      <Chip s={s} bg={card} size={34}>
+        <span style={{ background: open ? "#2fb35a" : "#e8414a", color: "white", padding: `${2 * s}px ${10 * s}px`, borderRadius: 8 * s, fontSize: 20 * s }}>{open ? "GATE OPEN" : "REGROUP"}</span>
+        {open ? "GO!" : `${here} / ${racing.length} at the gate`}
+      </Chip>
+    </div>
+  );
+}
+
 function FinishBanner({ race, f, s, layout }: { race: Race; f: number; s: number; layout: Layout }) {
   if (f < race.winnerFrame) return null;
   const k = spring({ frame: f - race.winnerFrame, fps: race.fps, config: { damping: 13 } });
@@ -476,7 +499,7 @@ function Results({ race, frame, s, layout }: { race: Race; frame: number; s: num
       {results.map((r, k) => {
         const m = race.marbles[r.marble];
         const inn = spring({ frame: frame - at - race.sec(0.2) - k * race.sec(0.1), fps: race.fps, config: { damping: 18 } });
-        const gap = (r as { dq?: boolean }).dq ? "DQ" : r.time === null ? "DNF" : k === 0 ? `${r.time.toFixed(2)}s` : `+${(r.time - results[0].time!).toFixed(2)}`;
+        const gap = (r as { dq?: boolean }).dq ? "DQ" : r.time === null ? "—" : k === 0 ? `${r.time.toFixed(2)}s` : `+${(r.time - results[0].time!).toFixed(2)}`;
         return <Row key={r.marble} s={s} inn={inn} pos={r.pos} color={m.color} flag={flagOf(m)} name={m.name} right={gap} extra={r.points ? `+${r.points}` : ""} compact={race.N > 12} />;
       })}
     </Card>
