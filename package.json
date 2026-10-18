@@ -1,0 +1,38 @@
+{
+  "name": "races",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "studio": "remotion studio",
+    "season": "node scripts/season.mjs",
+    "render:gp": "for r in r1-monaco r2-silverstone r3-spa r4-suzuka r5-monza; do remotion render GP-$r out/gp/$r.mp4; done",
+    "tower": "node scripts/tower.mjs",
+    "tower:sweep": "for s in $(seq 1 20); do node scripts/tower.mjs $s --quiet | grep -E \"seed|DNF|margin|  1\\\\.\" | tr \"\\n\" \" \"; echo; done",
+    "render:tower": "remotion render MarbleRace out/marble-race.mp4 && remotion render MarbleRaceVertical out/marble-race-vertical.mp4"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
+    "@pmndrs/assets": "^1.7.0",
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.2",
+    "@react-three/postprocessing": "^3.2.0",
+    "@remotion/cli": "^4.0.536",
+    "@remotion/three": "^4.0.536",
+    "n8ao": "^2.0.1",
+    "postprocessing": "^6.39.5",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "^4.0.536",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/three": "^0.186.0",
+    "typescript": "^7.0.2"
+  }
+}
