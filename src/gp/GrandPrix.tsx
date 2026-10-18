@@ -4,6 +4,7 @@ import { Overlay } from "./Overlay";
 import { getRace, type Layout } from "./race";
 import { Decals, Lifts, TimingGate, TrackDetails, Tunnels } from "./Details";
 import { Trackside } from "./Trackside";
+import { Machines } from "./Machines";
 import { Effects } from "./Effects";
 import { CameraRig, Circuit, Confetti, Environment, Gantries, Gate, Marbles, Obstacles, STUDIO, Sun } from "./Scene";
 
@@ -33,6 +34,7 @@ export const GrandPrix = ({ id, layout }: { id: string; layout: Layout }) => {
         <TimingGate race={race} />
         <Trackside race={race} />
         <Obstacles race={race} t={t} />
+        <Machines race={race} t={t} />
         <Lifts race={race} t={t} />
         <Gantries race={race} frame={Math.round(t)} />
         <Gate race={race} t={t} />

@@ -28,7 +28,7 @@ export function vortexFrame(v) {
 export function vortexGeometry(v, segments = 96) {
   const { toWorld } = vortexFrame(v);
   const part = () => ({ position: [], index: [], uv: [] });
-  const parts = { cone: part(), lip: part(), throat: part(), rim: part() };
+  const parts = { cone: part(), lip: part(), throat: part(), rim: part(), stripe: part() };
   // Entry opening: the arc of the ring behind the centre within the track's half-width.
   const inOpening = (a) => {
     const x = Math.cos(a) * v.radius;
@@ -63,13 +63,15 @@ export function vortexGeometry(v, segments = 96) {
   band(parts.lip, v.radius, v.lip, v.radius, 0, inOpening);
   band(parts.rim, v.radius + 0.16, v.lip, v.radius, v.lip, inOpening);
   band(parts.lip, v.radius + 0.16, 0, v.radius + 0.16, v.lip, inOpening); // outside of the lip wall
+  band(parts.stripe, v.radius + 0.17, v.lip - 0.26, v.radius + 0.17, v.lip - 0.02, inOpening); // hazard band outside, near the top
   band(parts.throat, v.hole, -v.depth, v.hole, -v.depth - v.throat);
   return parts;
 }
 
 /** One triangle soup of every part, for the collider. */
 export function vortexSoup(v) {
-  const parts = vortexGeometry(v, 64);
+  const { stripe, ...parts } = vortexGeometry(v, 64);
+  void stripe; // decoration only
   const vertices = [];
   const indices = [];
   for (const g of Object.values(parts)) {

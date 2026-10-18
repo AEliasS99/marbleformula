@@ -101,6 +101,12 @@ The rainbow studio became an outdoor circuit: asphalt floor with aggregate grain
 - Disqualification pads at every other machine (see README). Monza seed 3: Netherlands by 0.30 s, Brazil out at the hammer.
 - More obstacle detail: chrome top rails on guard panels, pinball score caps (100/250/500) on the bumpers, LED caps on the pegs, rubber tips on the spinner, bearings and a counterweight on the hammer.
 
+### Longer race, physics machines (v12)
+
+- Monza at scale 0.08: 321 → 459 units, race 44 → ~60 s, video ~1:50.
+- Three machines that change the physics rather than deflect: the vortex (clear funnel bowl with a deflector fin, a throat and the lower track resuming under it), the rollers (three forward-driving knurled cylinders at different speeds) and the fan (a pulsing lateral force over 5 units). Seeds 1–8: no DNF, ~1 DQ per race.
+- Fixes on the way: roller pocket trap, vortex lower-track fly-outs, bumper clogging with twenty marbles, guards blocking the director's rays.
+
 ### D. Rendering speed
 
 - Current: 15 min per race, 1 tab (parallel tabs produced garbled frames).

@@ -57,6 +57,9 @@ Each circuit has a fixed layout, the same for every seed. Obstacles are placed o
 | **The pusher** | a block that slides out from the wall across the track, timed to the leader |
 | **Big air** | a kicker with a 10° run-up, then a 2.0 fall: real flight, under clear guard panels |
 | **The lift** | a chain lift with cleats that carries the whole field up to a higher level |
+| **The vortex** | a clear funnel bowl set into the track (`src/gp/vortex.js`): a deflector fin sends the field in off-axis, it spirals down the cone and drops through the throat onto the lower track, which resumes under the hole. Reorders the whole pack. One per circuit |
+| **The rollers** | three knurled cylinders flush in the floor, all driving forward at 7, 4.5 and 10 u/s: marbles get kicked apart without contact |
+| **The fan** | a pulsing lateral gust over 5 units of track (a force in the bake), from a caged fan on a post beside the wall |
 
 There are two rules so that no marble ever gets stuck:
 
@@ -65,9 +68,11 @@ There are two rules so that no marble ever gets stuck:
 
 Physical obstacles go only on straight track. Wherever marbles can fly (jumps, drops, every machine) clear guard panels rise above the walls: at race speed a marble leaving a drop in a bend would otherwise land on the wall top.
 
+The vortex is the one place the track has a gap: samples inside the bowl carry `gap: true`, and `buildTrackMesh`, the renderer's bands and the trackside details skip them (the lower track gets an end plate where it resumes). Clear parts (the bowl, the guard panels) are in a collision group the director's sight-line rays ignore, so cameras can look through them as they do on screen.
+
 **Disqualification zones.** Every other machine has a small red pad at the foot of one wall (`DQ` in `scripts/season.mjs`), with a red panel and lamp on the wall above it. A marble that is pressed against the wall as it rolls over the pad is out: it vanishes, the tower shows it as OUT, a buzzer sounds, a toast and a slow-motion replay follow, and it scores nothing. The pads are a sensor in the bake loop, not a collider, and they are short (0.3 along the track) so only the unlucky few get caught: ~4 % of marbles per race, about one DQ every race or two. Tune with `DQ_LEN`, `DQ_REACH`, `DQ_OFF`, `DQ_EVERY` and the `--round … --seeds` sweep.
 
-**Marbles** are chrome with a national flag wrapped around the equator (`src/gp/flags.ts` draws the twenty flags procedurally); the overlay uses the same flags as swatches. The field is 20: ten start lanes, two rows (`GRID`). The asphalt carries white dashed lane lines (three lanes), a painted direction arrow every 10 units, and lane numbers on the grid.
+**Marbles** are chrome with a national flag wrapped around the equator (`src/gp/flags.ts` draws the twenty flags procedurally); the overlay uses the same flags as swatches. The field is 20: ten start lanes, two rows (`GRID`). Monza runs at scale 0.08 (459 units, a ~60 s race); the cycling obstacles start 30 units after the funnel so the block of twenty can string out first. The asphalt carries white dashed lane lines (three lanes), a painted direction arrow every 10 units, and lane numbers on the grid.
 
 ### The director
 
@@ -126,6 +131,10 @@ Debug switches for `--round` runs:
 | A feature camera framed solid white | It stood inside a grandstand roof: the director only knew the track collider | `src/gp/venue.js` places the buildings for both the renderer and the director, which rejects cameras inside or looking through them |
 | Floor paint (arrows, grid boxes, kerbs) never showed | `bandGeometry` wound its triangles clockwise, so they were back-face culled; and a band shorter than the sample spacing had one row | Counter-clockwise indices, and rows interpolated at the band's exact ends |
 | Grandstands and the pit stood across the track | Their yaw put local x across the track, and nothing checked the footprint | `yawAlong` puts x along the track; buildings go only where no other part of the circuit passes |
+| Marbles parked between the rollers | A backward-spinning roller, and proud rollers whose upstream face pushes a slow marble back | All rollers drive forward, nearly flush (0.03 proud) |
+| Marbles flew out of the vortex's lower track | They leave the throat at swirl speed and ricochet off the floor over a 1.0 wall | Guard panels over the resume stretch, 2.0 high everywhere, a shorter fall |
+| Twenty marbles jammed at the pinball bumpers | A 2-marble gap beside a bumper arches when the whole block arrives together | Smaller bumpers, and the cycling obstacles start later |
+| No locked camera at the rollers | Guard panels (now 2.0 high) blocked the director's sight-line rays | Guards and the bowl are in a "clear" collision group the rays skip |
 
 ## The Zigzag Tower
 

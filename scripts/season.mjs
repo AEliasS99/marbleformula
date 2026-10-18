@@ -57,12 +57,12 @@ const GRID = { lanes: 10, rows: 2, rowGap: 1.0 };
 // wall, i.e. pressed against it, on the floor) is out of the race. Narrow and
 // short, so it catches only the unlucky few that get bounced into the wall there.
 const DQ = {
-  len: +(process.env.DQ_LEN ?? 0.3),
+  len: +(process.env.DQ_LEN ?? 0.2),
   width: 0.42,
-  reach: +(process.env.DQ_REACH ?? 0.38),
-  offset: +(process.env.DQ_OFF ?? 3.0),
-  every: +(process.env.DQ_EVERY ?? 2), // a pad at every n-th machine
-  types: ["pegs", "bumpers", "spinner", "splitter", "hammer", "turntable", "pusher"],
+  reach: +(process.env.DQ_REACH ?? 0.37),
+  offset: +(process.env.DQ_OFF ?? 6.0),
+  every: +(process.env.DQ_EVERY ?? 3), // a pad at every n-th machine
+  types: ["bumpers", "spinner", "hammer", "turntable", "pusher"], // not the slalom or the splitter: those press everyone to the walls
 };
 
 // --- Timing & physics constants ------------------------------------------------------
@@ -94,11 +94,12 @@ const DAMPING = 0.075; // rolling resistance + air: caps the speed of a marble
 const MARBLE_RESTITUTION = 0.75;
 const TRACK_RESTITUTION = 0.4;
 const OBSTACLE_RESTITUTION = { bumper: 0.65, spinner: 0.35, fin: 0.5, splitter: 0.3, divider: 0.3, hammer: 0.6, cleat: 0.1, guard: 0.3, pusher: 0.2, turntable: 0.1, roller: 0.2, vortex: 0.2 };
-const GUARD = { height: 1.4, segment: 1 };
+const GUARD = { height: 2.0, segment: 1 }; // 2.0: at the bigger scale marbles leave jumps faster and higher
 // Clear guard panels over the stretches where marbles can fly: a jump's kicker,
 // flight and landing, and every machine that can throw one.
 // Drops too: at speed, a marble leaving a drop in a bend can land on the wall top.
-const GUARD_ZONES = { jump: [-3, 9], drop: [-1, 7], hammer: [-1, 4], spinner: [-1, 3], turntable: [-2, 5], pusher: [-1, 4], rollers: [-1, 5] };
+// The vortex's lower track: marbles leave the throat with their swirl speed and ricochet off the floor.
+const GUARD_ZONES = { jump: [-3, 12], drop: [-1, 7], hammer: [-1, 4], spinner: [-1, 3], turntable: [-2, 5], pusher: [-1, 4], rollers: [-1, 5], vortex: [2.6, 11] };
 // A steeper launch out of the lanes, so the race starts with a punch.
 const START_STEEP = { until: 25, slope: Math.tan((8 * Math.PI) / 180) };
 const BRAKE_DAMPING = 1.8; // after the chequered flag
@@ -110,7 +111,10 @@ const REPLAY_SPEED = 0.35;
 const HIGHLIGHTS = { count: 3, minGap: 9, before: 0.8, after: 1.0, speed: 0.4 };
 
 const GROUP_TRACK = (0x0001 << 16) | 0x0002;
-const GROUP_MARBLE = (0x0002 << 16) | 0x0003;
+const GROUP_MARBLE = (0x0002 << 16) | 0x0007;
+// Clear parts (the vortex bowl): marbles collide with them, the director's
+// sight-line rays pass through them, as they do through the acrylic in the render.
+const GROUP_CLEAR = (0x0004 << 16) | 0x0002;
 const QUERY_TRACK_ONLY = (0x0002 << 16) | 0x0001;
 
 function mulberry32(a) {
@@ -152,9 +156,11 @@ const FEATURES = {
 // The vortex bowl (src/gp/vortex.js): level, its rim at the floor of the
 // upper track where that ends (`entry` past the feature's u), its axis
 // `centre` past it; the lower track resumes `resume` past it, D lower.
-const VORTEX = { radius: 3.4, hole: 1.1, depth: 2.2, lip: 0.9, throat: 0.4, fall: 1.0, entry: 0.9, centre: 4.2, resume: 2.6, entryHalf: 1.9 };
-// Rollers: three spinning cylinders across the floor, forward, back, forward.
-const ROLLER = { radius: 0.3, proud: 0.14, spacing: 1.4, surface: 7 };
+const VORTEX = { radius: 3.4, hole: 1.1, depth: 2.2, lip: 0.9, throat: 0.4, fall: 0.6, entry: 0.9, centre: 4.2, resume: 2.6, entryHalf: 1.9 };
+// Rollers: three cylinders across the floor, all driving forward but at
+// different speeds, so the field gets kicked apart. (A backward roller traps
+// marbles in the pocket between rollers.)
+const ROLLER = { radius: 0.3, proud: 0.03, spacing: 1.4, surfaces: [7, 4.5, 10] }; // nearly flush: only the top touches, so a slow marble is never pushed back
 // The fan: a lateral gust across a stretch of track, pulsing.
 const FAN = { length: 5, accel: 9, period: 1.6 };
 // Kicker: a 10° run-up (so even a slow marble arrives with enough speed to clear
@@ -221,15 +227,17 @@ function planFeatures(us, curv, L, rand) {
   }
   // The machines are the show: one turntable and one pusher per circuit,
   // spread over the lap, before the cycling obstacles fill in the rest.
-  for (const [j, type] of ["vortex", "turntable", "pusher"].entries()) {
-    const target = 12 + START.funnel + ((j + 0.7) / 3.4) * (L - 30 - START.funnel);
+  for (const [j, type] of ["vortex", "turntable", "rollers", "pusher"].entries()) {
+    const target = 12 + START.funnel + ((j + 0.7) / 4.4) * (L - 30 - START.funnel);
     let best = null;
     for (let x = 12 + START.funnel; x <= L - 18; x += 1) {
       if (clear(x, FEATURES[type]) && !overlaps(x, FEATURES[type]) && (best === null || Math.abs(x - target) < Math.abs(best - target))) best = x;
     }
     if (best !== null) features.push({ type, u: r3(best), label: FEATURES[type].label, span: [FEATURES[type].before, FEATURES[type].after] });
   }
-  let u = 12 + START.funnel;
+  // The cycling obstacles start a little later than the machines may: the
+  // twenty marbles leave the funnel as one block and need room to string out.
+  let u = 30 + START.funnel;
   while (u < L - 18) {
     if (!queue.length) refill();
     // Try the next type in the queue, then the others, at this spot.
@@ -499,9 +507,10 @@ function buildObstacles(course, sync = {}) {
       // Small and near the middle, staggered: wide openings (> 2 marbles) on
       // both sides, and never touching a wall (no pocket to get pinned in).
       // Offset enough that a marble can't ping-pong between two of them.
-      cylinder("bumper", f.u, 0.45, 0.26, 0.75, 0.8);
-      cylinder("bumper", f.u + 2.3, -0.6, 0.32, 0.75, 0.8);
-      cylinder("bumper", f.u + 4.5, 0.5, 0.29, 0.75, 0.8);
+      // Small: with twenty marbles arriving together, a gap under ~2.3 marbles beside a bumper clogs.
+      cylinder("bumper", f.u, 0.3, 0.2, 0.75, 0.8);
+      cylinder("bumper", f.u + 2.3, -0.4, 0.24, 0.75, 0.8);
+      cylinder("bumper", f.u + 4.5, 0.35, 0.22, 0.75, 0.8);
     } else if (f.type === "splitter") {
       const s = frameAt(f.u + 3.5);
       const lat = 0.15; // two wide lanes; just off-centre so nothing meets the nose head-on
@@ -566,7 +575,7 @@ function buildObstacles(course, sync = {}) {
       });
     } else if (f.type === "rollers") {
       const W2 = TRACK.width / 2;
-      [1, -1, 1].forEach((dir, k) => {
+      ROLLER.surfaces.forEach((surface, k) => {
         const s = frameAt(f.u + 0.6 + k * ROLLER.spacing);
         rollers.push({
           kind: "roller",
@@ -574,7 +583,7 @@ function buildObstacles(course, sync = {}) {
           quat: quatArr(frameQuat(s)),
           radius: ROLLER.radius,
           length: 2 * W2 - 0.1,
-          omega: r3((dir * ROLLER.surface) / ROLLER.radius), // about the across-track axis; positive drives marbles forward
+          omega: r3(surface / ROLLER.radius), // about the across-track axis; positive drives marbles forward
           phase: r3((f.u * 0.37 + k) % (Math.PI * 2)),
         });
       });
@@ -767,7 +776,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
         .setFriction(0.25)
         .setRestitution(OBSTACLE_RESTITUTION.vortex)
         .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-        .setCollisionGroups(GROUP_TRACK),
+        .setCollisionGroups(GROUP_CLEAR),
       trackBody,
     );
   }
@@ -796,7 +805,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
       .setFriction(0.2)
       .setRestitution(OBSTACLE_RESTITUTION[o.kind] ?? 0.3)
       .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-      .setCollisionGroups(GROUP_TRACK);
+      .setCollisionGroups(o.kind === "guard" ? GROUP_CLEAR : GROUP_TRACK); // cameras see through the clear guard panels
     world.createCollider(desc, body);
   }
   const spinnerBodies = obstacles.spinners.map((sp) => {

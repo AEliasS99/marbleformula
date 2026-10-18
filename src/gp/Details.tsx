@@ -10,7 +10,7 @@ import type { Race, Vec3 } from "./race";
 // pillars hold the trough, bolted base plates on the floor, and acrylic tunnels
 // with LED rings. Render-only; built from the same samples as the physics.
 
-type Sample = { u: number; p: Vec3; t: Vec3; r: Vec3; n: Vec3; curv: number; w?: number };
+type Sample = { u: number; p: Vec3; t: Vec3; r: Vec3; n: Vec3; curv: number; w?: number; gap?: boolean };
 type Profile = { inner: [number, number, number][]; outer: [number, number][] };
 
 const JOINT_SPACING = 4;
@@ -50,17 +50,22 @@ function sweep(
   const ringAt = (w: number) => (typeof ringIn === "function" ? ringIn(w) : ringIn);
   const n = ringAt(HALF).length;
   let rows = 0;
+  // Gap samples (a vortex bowl): rows there get no quads, like the track mesh.
+  const gapAt = (u: number) => !!samples[Math.max(0, Math.min(samples.length - 1, Math.round((u - samples[0].u) / (samples[1].u - samples[0].u))))].gap;
+  const rowGap: boolean[] = [];
   for (let u = u0; u <= u1 + 1e-6; u += step) {
     const s = frameAt(samples, u);
     ringAt(s.w ?? HALF).forEach(([l, h], j) => {
       pos.push(...pointInFrame(s, l, h));
       uv.push(u, j / (n - 1));
     });
+    rowGap.push(gapAt(u));
     rows++;
   }
   const w = closed ? n : n - 1;
   for (let r = 0; r < rows - 1; r++)
     for (let j = 0; j < w; j++) {
+      if (rowGap[r] && rowGap[r + 1]) continue;
       const a = r * n + j;
       const b = r * n + ((j + 1) % n);
       idx.push(a, a + n, b, b, a + n, b + n);
@@ -152,7 +157,8 @@ export function TrackDetails({ race }: { race: Race }) {
 
     // Joints: a collar around the outside and a fine seam inside.
     const joints: number[] = [];
-    for (let u = uStart + 1; u < uEnd - 0.5; u += JOINT_SPACING) joints.push(u);
+    const gapNear = (u: number) => samples.some((q) => q.gap && Math.abs(q.u - u) < 1.5);
+    for (let u = uStart + 1; u < uEnd - 0.5; u += JOINT_SPACING) if (!gapNear(u)) joints.push(u);
     const profileAt = (w: number) => troughProfile(18, w) as unknown as Profile;
     const collarRing = (w: number) => {
       const o = profileAt(w).outer;
@@ -187,6 +193,7 @@ export function TrackDetails({ race }: { race: Race }) {
     const pillars: { top: THREE.Vector3; h: number; s: Sample }[] = [];
     for (let k = 0; k < samples.length; k += 8) {
       const s = samples[k];
+      if (gapNear(s.u)) continue;
       const bottom = v(pointInFrame(s, 0, -TRACK.wall - 0.14));
       const h = bottom.y - groundY;
       if (h < 0.5) continue;
@@ -404,6 +411,7 @@ export function Decals({ race }: { race: Race }) {
     };
     let k = 0;
     for (let u = 22; u < race.L - 6; u += 14, k++) {
+      if (samples.some((q) => (q as { gap?: boolean }).gap && Math.abs(q.u - u) < 4)) continue;
       for (const side of [-1, 1]) {
         const g = sweep(samples, sideBand(side), u, u + 3.6, 0.12);
         // Re-map u along the strip to 0..1 (flipped on the right so text reads from outside).

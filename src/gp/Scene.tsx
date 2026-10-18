@@ -18,7 +18,7 @@ import { boltGeometry } from "./Details";
 // half-pipe with rainbow lanes, chrome marbles. Geometry comes from the same
 // samples the physics used (src/gp/trackMesh.js).
 
-type Sample = { u: number; p: Vec3; t: Vec3; r: Vec3; n: Vec3; curv: number; w?: number };
+type Sample = { u: number; p: Vec3; t: Vec3; r: Vec3; n: Vec3; curv: number; w?: number; gap?: boolean };
 type Quat = [number, number, number, number];
 
 // A light grey-blue set (not pure white) so the white track reads against it.
@@ -262,6 +262,9 @@ function densify(samples: Sample[], k = 2): Sample[] {
         n: nn,
         curv: A.curv + (B.curv - A.curv) * t,
         w: (A.w ?? 2.1) + ((B.w ?? 2.1) - (A.w ?? 2.1)) * t,
+        // A gap (vortex bowl) ends at the real samples: the first interpolated
+        // row keeps its own flag, the rest are gap only if both neighbours are.
+        ...(j === 0 ? (A.gap ? { gap: true } : {}) : A.gap && B.gap ? { gap: true } : {}),
       });
     }
   }
@@ -379,14 +382,17 @@ export function Circuit({ race }: { race: Race }) {
     // end of the funnel to the finish, as one merged strip geometry.
     const dashes = (() => {
       const parts: THREE.BufferGeometry[] = [];
-      for (let u = 12; u < L - 3; u += 4)
+      const inGap = (a: number, b: number) => samples.some((s) => s.gap && s.u >= a - 0.5 && s.u <= b + 0.5);
+      for (let u = 12; u < L - 3; u += 4) {
+        if (inGap(u, u + 2.2)) continue;
         for (const lat of [-0.7, 0.7]) parts.push(bandGeometry(samples, u, Math.min(u + 2.2, L - 1), lat - 0.03, lat + 0.03, 0.03));
+      }
       return mergeGeometries(parts);
     })();
     const arrows: THREE.BufferGeometry[] = [];
     for (let u = 16; u < L - 6; u += 10) {
       const s = samples[Math.round((u - samples[0].u) / 0.5)];
-      if (Math.abs(s.curv) > 0.06) continue;
+      if (Math.abs(s.curv) > 0.06 || samples.some((q) => q.gap && Math.abs(q.u - u) < 1.5)) continue;
       arrows.push(bandGeometry(samples, u - 0.9, u + 0.9, -0.55, 0.55, 0.03));
     }
     const laneNumbers = Array.from({ length: grid.lanes }, (_, slot) => {
