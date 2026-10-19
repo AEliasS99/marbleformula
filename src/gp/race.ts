@@ -7,9 +7,24 @@ import { rounds, season } from "./races";
 export type Vec3 = [number, number, number];
 export type Quat = [number, number, number, number];
 export type Layout = "landscape" | "portrait";
-export type Section = "race" | "replay" | "results" | "standings";
+export type Section = "race" | "replay" | "results" | "standings" | "constructors";
 export type RoundData = (typeof rounds)[number];
 export type Shot = { pos: Vec3; target: Vec3; fov: number; kind: string; marble: number | null };
+/** One half of the picture (or the whole of it): its own clock (video frame → simulation frame) and camera. */
+export type View = { tAt: (videoFrame: number) => number; shotAt: (videoFrame: number) => Shot };
+export type Split = {
+  kind: "replay" | "lift" | "action";
+  start: number;
+  end: number;
+  highlight?: number;
+  cabin?: number;
+  cabins?: { cabin: number; riders: number[]; start: number; end: number }[];
+  label?: string | null;
+  feature?: string | null;
+  cams?: number[][];
+};
+export type IntroCard = { type: string; u: number; label: string; count: number; from: number; to: number };
+export type IntroPlan = { scenes: { id: string; frames: number; at: number }[]; total: number; highlight: number | null; coldFrom?: number; L: number; cards: IntroCard[] };
 export type Highlight = { f: number; marble: number; label: string; feature: string; from: number; to: number; speed: number; frames: number; at: number };
 
 export { rounds, season };
@@ -35,7 +50,7 @@ function build(data: RoundData) {
   const L = data.info.length;
 
   const segments = timeline.segments as { kind: string; at: number; from: number; to: number; speed?: number; frames?: number; highlight?: number }[];
-  const highlights = timeline.highlights as Highlight[];
+  const highlights = timeline.highlights as unknown as Highlight[];
   /** Maps a video frame to a section and a (possibly fractional) simulation frame; `highlight` during a mid-race replay. */
   const simAt = (videoFrame: number): { section: Section; t: number; highlight: number | null } => {
     const { replay, results, standings } = timeline;
@@ -47,6 +62,8 @@ function build(data: RoundData) {
     }
     if (videoFrame < results.at) return { section: "replay", t: replay.from + (videoFrame - replay.at) * replay.speed, highlight: null };
     if (videoFrame < standings.at) return { section: "results", t: lastFrame, highlight: null };
+    const cons = (timeline as unknown as { constructors?: { at: number } }).constructors;
+    if (cons && videoFrame >= cons.at) return { section: "constructors", t: lastFrame, highlight: null };
     return { section: "standings", t: lastFrame, highlight: null };
   };
 
@@ -243,10 +260,56 @@ function build(data: RoundData) {
   const margin =
     marbles[order[1]].finishFrame !== null ? (marbles[order[1]].finishFrame! - winnerFrame) / fps : null;
 
+  // --- Split screen --------------------------------------------------------------
+  const splits = ((data as unknown as { splits?: Split[] }).splits ?? []) as Split[];
+  /** The split showing at a video frame (live race only), if any. */
+  const splitAt = (videoFrame: number): Split | null => {
+    const { section, t } = simAt(videoFrame);
+    if (section !== "race") return null;
+    return splits.find((sp) => t >= sp.start && t < sp.end) ?? null;
+  };
+  const mainView: View = { tAt: (vf) => simAt(vf).t, shotAt: (vf) => shotAt(vf) };
+  /** The right half of a split: a replay runs its own slow clock in the past; the lift and the action are live. */
+  const splitView = (sp: Split): View => {
+    const live = (vf: number) => simAt(vf).t;
+    if (sp.kind === "replay" && sp.highlight !== undefined) {
+      const h = highlights[sp.highlight];
+      const hc = (data.highlightCams as number[][][])[sp.highlight];
+      const tAt = (vf: number) => Math.min(h.to, h.from + (live(vf) - sp.start) * h.speed);
+      return {
+        tAt,
+        shotAt: (vf) => {
+          const x = Math.max(0, Math.min(hc.length - 1.001, tAt(vf) - h.from));
+          const k = Math.floor(x);
+          return { ...blendCams(hc[k], hc[k + 1], x - k, true), kind: "highlight", marble: h.marble };
+        },
+      };
+    }
+    const cs = sp.cams ?? [];
+    return {
+      tAt: live,
+      shotAt: (vf) => {
+        const x = Math.max(0, Math.min(cs.length - 1.001, live(vf) - sp.start));
+        const k = Math.floor(x);
+        return { ...blendCams(cs[k], cs[k + 1] ?? cs[k], x - k, true), kind: sp.kind, marble: null };
+      },
+    };
+  };
+  /** P1 at a simulation frame (the left half of every split follows it). */
+  const leaderAt = (f: number) => ranking(Math.max(0, Math.min(lastFrame, Math.round(f))))[0];
+
+  const intro = ((data as unknown as { intro?: IntroPlan }).intro ?? null) as IntroPlan | null;
+
   return {
     data,
+    intro,
     fps,
     timeline,
+    splits,
+    splitAt,
+    mainView,
+    splitView,
+    leaderAt,
     marbles,
     N,
     L,

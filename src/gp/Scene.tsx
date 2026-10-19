@@ -3,6 +3,7 @@ import { useThree } from "@react-three/fiber";
 import { MeshReflectorMaterial } from "@react-three/drei";
 import { continueRender, delayRender } from "remotion";
 import * as THREE from "three";
+import { useView } from "./view";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
@@ -50,10 +51,13 @@ function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D)
 }
 
 export function CameraRig({ race, layout, frame }: { race: Race; layout: Layout; frame: number }) {
+  const view = useView(race);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const set = (vf: number) => {
-    const shot = race.shotAt(vf);
-    camera.fov = fovFor(shot.fov, layout);
+    const shot = view.shotAt(vf);
+    // Narrower frames (a portrait video, a half of a split screen) widen the lens so about as much of the scene fits.
+    const k = Math.min(1.9, Math.max(1, Math.sqrt(16 / 9 / Math.max(0.3, camera.aspect))));
+    camera.fov = layout === "landscape" || camera.aspect < 0.9 ? (2 * Math.atan(Math.tan((shot.fov * Math.PI) / 360) * k) * 180) / Math.PI : fovFor(shot.fov, "landscape");
     camera.near = 0.05;
     camera.far = 1500;
     camera.updateProjectionMatrix();
@@ -72,7 +76,7 @@ export function CameraRig({ race, layout, frame }: { race: Race; layout: Layout;
  * makes it read as chrome), and the diffuse light it gives is directional
  * instead of flat.
  */
-function studioScene() {
+export function studioScene() {
   const scene = new THREE.Scene();
   const room = new THREE.Mesh(
     new THREE.SphereGeometry(50, 64, 32),
@@ -760,6 +764,7 @@ function chevronTexture() {
  * splitter fins, single and four-arm spinners, and hammer pendulums on bridges.
  */
 export function Obstacles({ race, t }: { race: Race; t: number }) {
+  const view = useView(race);
   const statics = race.data.obstacles as unknown as {
     kind: string;
     shape: string;
@@ -814,11 +819,13 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
   const spinQuat = (sp: (typeof spinners)[number], s: number) =>
     new THREE.Quaternion(...sp.quat).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), sp.phase + sp.speed * s));
   const swingQuat = (sw: (typeof swings)[number], s: number) =>
-    new THREE.Quaternion(...sw.quat).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), sw.amp * Math.sin((2 * Math.PI * s) / sw.period + sw.phase)));
+    new THREE.Quaternion(...sw.quat).multiply(
+      new THREE.Quaternion().setFromAxisAngle((sw as { axis?: string }).axis === "z" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0), sw.amp * Math.sin((2 * Math.PI * s) / sw.period + sw.phase)),
+    );
   useEffect(
     () =>
       subframe.subscribe((vf) => {
-        const s = race.simAt(vf).t / race.fps;
+        const s = view.tAt(vf) / race.fps;
         spinners.forEach((sp, i) => spinRefs.current[i]?.quaternion.copy(spinQuat(sp, s)));
         swings.forEach((sw, i) => swingRefs.current[i]?.quaternion.copy(swingQuat(sw, s)));
         turntables.forEach((tt, i) => ttRefs.current[i]?.quaternion.copy(ttQuat(tt, s)));
@@ -1169,16 +1176,38 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
                 <cylinderGeometry args={[0.05, 0.05, sw.length, 20]} />
                 <meshStandardMaterial {...chrome} />
               </mesh>
-              <mesh position={[0, -sw.length, 0]} rotation-z={Math.PI / 2} castShadow>
-                <cylinderGeometry args={[sw.head[1] / 2, sw.head[1] / 2, sw.head[0], 48]} />
-                <meshStandardMaterial map={chev} roughness={0.35} />
-              </mesh>
-              {[-1, 1].map((e) => (
-                <mesh key={e} position={[(e * sw.head[0]) / 2, -sw.length, 0]} rotation-z={(e * Math.PI) / 2}>
-                  <sphereGeometry args={[sw.head[1] / 2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
-                  <meshStandardMaterial {...chrome} />
-                </mesh>
-              ))}
+              {/* The head: a striped drum across the track (the axe swings along it), chrome end caps, a steel spine on the arm. */}
+              {(sw as { axis?: string }).axis === "z" ? (
+                <>
+                  <mesh position={[0, -sw.length, 0]} rotation-x={Math.PI / 2} castShadow>
+                    <cylinderGeometry args={[sw.head[1] / 2, sw.head[1] / 2, sw.head[2], 48]} />
+                    <meshStandardMaterial map={chev} roughness={0.35} />
+                  </mesh>
+                  {[-1, 1].map((e) => (
+                    <mesh key={e} position={[0, -sw.length, (e * sw.head[2]) / 2]} rotation-x={(e * Math.PI) / 2}>
+                      <sphereGeometry args={[sw.head[1] / 2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+                      <meshStandardMaterial {...chrome} />
+                    </mesh>
+                  ))}
+                  <mesh position={[0, -sw.length + 0.32, 0]} castShadow>
+                    <boxGeometry args={[0.16, 0.18, sw.head[2] * 0.6]} />
+                    <meshStandardMaterial color="#1b1c20" roughness={0.5} metalness={0.4} />
+                  </mesh>
+                </>
+              ) : (
+                <>
+                  <mesh position={[0, -sw.length, 0]} rotation-z={Math.PI / 2} castShadow>
+                    <cylinderGeometry args={[sw.head[1] / 2, sw.head[1] / 2, sw.head[0], 48]} />
+                    <meshStandardMaterial map={chev} roughness={0.35} />
+                  </mesh>
+                  {[-1, 1].map((e) => (
+                    <mesh key={e} position={[(e * sw.head[0]) / 2, -sw.length, 0]} rotation-z={(e * Math.PI) / 2}>
+                      <sphereGeometry args={[sw.head[1] / 2, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+                      <meshStandardMaterial {...chrome} />
+                    </mesh>
+                  ))}
+                </>
+              )}
             </group>
           </group>
         );
@@ -1282,6 +1311,7 @@ function finishBanner() {
  * its top edge. At lights out it swings forward and up, like a starting gate.
  */
 export function Gate({ race, t }: { race: Race; t: number }) {
+  const view = useView(race);
   const gate = race.data.gate as unknown as { hinge: Vec3; quat: Quat; height: number; lightsOut: number; swing: number; time: number };
   const { geometry, faceTex } = useMemo(() => {
     const startHalf = (race.data.samples[0] as unknown as Sample).w ?? TRACK.width / 2;
@@ -1333,7 +1363,7 @@ export function Gate({ race, t }: { race: Race; t: number }) {
   const angle = angleAt(sec);
   const swing = swingAt(sec);
   const flapRef = useRef<THREE.Group>(null);
-  useEffect(() => subframe.subscribe((vf) => flapRef.current?.quaternion.copy(swingAt(race.simAt(vf).t / race.fps))), [race, gate]);
+  useEffect(() => subframe.subscribe((vf) => flapRef.current?.quaternion.copy(swingAt(view.tAt(vf) / race.fps))), [race, gate]);
   const W = ((race.data.samples[0] as unknown as Sample).w ?? TRACK.width / 2) + TRACK.wall;
   return (
     <>
@@ -1408,7 +1438,7 @@ export function Gate({ race, t }: { race: Race; t: number }) {
  * and a sunburst at each pole in its first colour. Paint is glossy and
  * non-metallic; everything else is mirror chrome.
  */
-function marbleTextures(name: string, code: string) {
+export function marbleTextures(name: string, code: string) {
   // Twenty marbles: 2048×1024 each keeps the texture memory in check (a marble is 0.7 units across).
   const W = 2048;
   const H = 1024;
@@ -1474,12 +1504,13 @@ function marbleTextures(name: string, code: string) {
 }
 
 export function Marbles({ race, t }: { race: Race; t: number }) {
+  const view = useView(race);
   const tex = useMemo(() => race.marbles.map((m) => marbleTextures(m.name, (m as { flag?: string }).flag ?? "")), [race]);
   const refs = useRef<(THREE.Mesh | null)[]>([]);
   useEffect(
     () =>
       subframe.subscribe((vf) => {
-        const tt = race.simAt(vf).t;
+        const tt = view.tAt(vf);
         race.marbles.forEach((_, i) => {
           const m = refs.current[i];
           if (!m) return;
@@ -1517,6 +1548,7 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
 
 /** Confetti over the finish line when the winner crosses; closed-form, so any frame is direct. */
 export function Confetti({ race, t }: { race: Race; t: number }) {
+  const view = useView(race);
   const { mesh, pieces, origin } = useMemo(() => {
     const samples = race.data.samples as unknown as Sample[];
     const uF = (race.data.info as { finish?: number }).finish ?? race.L;
@@ -1560,6 +1592,6 @@ export function Confetti({ race, t }: { race: Race; t: number }) {
     mesh.instanceMatrix.needsUpdate = true;
   };
   update(t);
-  useEffect(() => subframe.subscribe((vf) => update(race.simAt(vf).t)), [race, mesh]);
+  useEffect(() => subframe.subscribe((vf) => update(view.tAt(vf))), [race, mesh]);
   return <primitive object={mesh} />;
 }

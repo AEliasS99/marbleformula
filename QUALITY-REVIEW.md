@@ -120,6 +120,14 @@ The rainbow studio became an outdoor circuit: asphalt floor with aggregate grain
 - BEST LAP: lap times as descents, a purple toast on every improvement, the race's best on the results card; the tower shows the leader's lap.
 - Found on the way: a per-frame (not per-substep) cabin step kicked riders out; a pile arriving at speed climbed 1.6 walls (now 2.4, cabin 4.2 long); the cabin must stay docked on the last lap.
 
+### Intro, split screen and teams (v20)
+
+- Intro before every round (35–45 s): slow-motion cold open on the race's biggest moment, the MFC 2027 title over the circuit, the ten teams in a showroom (round 1) or the top five of both championships (later rounds), a drone lap with a card per obstacle (what it does, a danger rating), and a walk along the grid to the pole sitter. Its own soundtrack.
+- Split screen 50:50: always at the lift tower (with the countries in each cabin), for replays (R badge, slow motion, red for a DQ) and when the action is away from the leader. The left half always follows P1.
+- Ten teams of two and a constructors' championship card.
+- The hammer is a solid pendulum axe over half the track; no marble passes through it.
+- Found on the way: the lift camera for the cabin by the pit building looked at its roof; it now picks a spot with a clear view of the cabin at its lowest. Monaco needed a second regroup gate: the leader ran away by 10–20 s.
+
 ### D. Rendering speed
 
 - Current: 15 min per race, 1 tab (parallel tabs produced garbled frames).

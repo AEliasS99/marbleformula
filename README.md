@@ -18,9 +18,11 @@ An outdoor race circuit at **1080p 60 fps**:
 
 Each round goes like this:
 
-- **Intro:** a drone shot of the circuit, a title card (real lap length vs. marble lap, number of obstacles) and the outline drawing itself in.
+- **Intro** (`src/gp/Intro.tsx`, running order in `src/gp/intro-plan.js`, its own soundtrack `public/gp/<id>-intro.wav`): a cold open on the race's biggest moment in slow motion ("COMING UP"), the MARBLE FORMULA CHAMPIONSHIP 2027 title over the circuit, then in round 1 the ten teams in a showroom (two marbles on a lit podium, 1.5 s each) or in later rounds what's at stake (the top five of both championships), a drone lap that slows over every obstacle for its card (what it does, a danger rating), and a walk along the grid to the pole sitter with every marble's place, team and points. Its clock counts up to the race's frame 0, so the marbles wait on the grid while the machines already turn. 35–45 s.
 - **Start:** five red lights, then lights out and the gate lifts.
 - **Race:** 10 marbles down a twisting, banked trough full of obstacles. Cameras travel with the pack and wait at the obstacles.
+- **Split screen:** at the lift tower, after big hits and when the action is away from the leader, the picture splits 50:50 (side by side, stacked in portrait). The left half always follows P1 (LIVE · LEADER, with who it is); the right shows the lift tower with the countries in each cabin, a replay with an **R** badge in slow motion (red for a DQ), or the action elsewhere. Each half is its own canvas with its own clock and camera (`View` in `src/gp/race.ts`, `splits` in the bake).
+- **Teams:** ten teams of two (`src/gp/teams.js`), with team colours on the timing tower and a constructors' championship card after the drivers' standings.
 - **Graphics:** a timing tower with gaps to the leader, a minimap with the obstacles marked, position badges over the leaders, overtake alerts, and obstacle captions ("THE DROP", "SLALOM", "PINBALL", …).
 - **Finish:** chequered flag and confetti, then a slow-motion photo-finish replay.
 - **Cards:** the race results with points, then the championship standings (▲▼ for position changes, and the champion's trophy at the last round).
@@ -58,6 +60,7 @@ Each circuit has a fixed layout, the same for every seed. Obstacles are placed o
 | **The turntable** | a spinning plate set into the floor with six raised rubber ribs and a domed hub: it throws marbles across the track and into each other (flat, it hardly did anything) |
 | **The pusher** | a block that slides out from the wall across the track, timed to the leader |
 | **Big air** | a kicker with a 10° run-up, then a 2.0 fall: real flight, under clear guard panels |
+| **The hammer** | a pendulum axe on a bridge (`src/gp/obstacles/hammer.js`) that swings along the track over one half of it, ±50°: a solid head (kinematic body, restitution 0.5) that marbles either roll under while it's up, avoid on the other half, or get smashed by |
 | **The lift** | a chain lift with cleats that carries the whole field up to a higher level |
 | **The vortex** | a drain (`src/gp/vortex.js`): a smoked bowl with a hyperbolic profile y = -k(1/r - 1/R), the shape of a coin "wishing well", on which a marble orbits at sqrt(g·k/r). A steep run-up and a long gentle guide bring the field in fast along the right wall, which runs on as a chute to the rim's tangent point, so marbles enter along the rim and circle round the wall like water down a drain, the fast ones riding high and crashing into the slow ones below, before they drop through the throat onto the lower track. Polished: frictionless walls and almost no rolling resistance inside. No paddles: anything slower than the orbit brakes it. One per circuit |
 | **The rollers** | three knurled cylinders flush in the floor, all driving forward at 7, 4.5 and 10 u/s: marbles get kicked apart without contact |
@@ -125,6 +128,8 @@ The soundtrack is heard from the active camera: rolling, clicks (glass between m
 ```bash
 npm run season                                         # bake the whole season (~20 s)
 node scripts/season.mjs --round r3-spa --seeds 1-12    # try seeds for one round
+node scripts/season.mjs --round r1-monaco --seeds 1-6 --layout '[["regroup",45],…]'   # try another layout
+node scripts/season.mjs --round r5-monza --seeds 1-4 --set '{"dq":{"target":1.5}}'   # override any design field
 npm run studio                                         # preview: GrandPrix/<round> folders
 npx remotion render GP-r5-monza out/gp/r5-monza.mp4
 npx remotion render GP-r5-monza-vertical out/gp/r5-monza-vertical.mp4

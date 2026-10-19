@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { useView } from "./view";
 import { subframe } from "./subframe";
 import { TRACK } from "./trackMesh.js";
 import { agitatorArm, agitatorQuat, vortexFrame, vortexGeometry, vortexY } from "./vortex.js";
@@ -175,6 +176,7 @@ const knurlTex = () =>
   );
 
 export function Machines({ race, t }: { race: Race; t: number }) {
+  const view = useView(race);
   const data = race.data as unknown as { vortices?: Vortex[]; rollers?: Roller[]; fans?: Fan[]; regroups?: Regroup[]; samples: { p: Vec3; n: Vec3 }[] };
   const regroups = data.regroups ?? [];
   const elevators = (data as unknown as { elevators?: Elevator[] }).elevators ?? [];
@@ -231,10 +233,10 @@ export function Machines({ race, t }: { race: Race; t: number }) {
   useEffect(
     () =>
       subframe.subscribe((vf) => {
-        const s = race.simAt(vf).t / race.fps;
+        const s = view.tAt(vf) / race.fps;
         rollers.forEach((r, i) => rollerRefs.current[i]?.quaternion.copy(rollerQuat(r, s)));
         regroups.forEach((g, i) => {
-          regroupRefs.current[i]?.position.set(...barPos(g, race.simAt(vf).t));
+          regroupRefs.current[i]?.position.set(...barPos(g, view.tAt(vf)));
           void lampRefs; // the signal follows React's per-frame render (it changes once per lap)
         });
         vortices.forEach((v, i) => agitatorRefs.current[i]?.quaternion.set(...(agitatorQuat(v, s) as Quat)));
@@ -533,6 +535,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
 
 /** One lift cabin with its tower, doors, cables and the bar across its bay. */
 function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number; elevator: Elevator; groundY: number; tex: { bar: THREE.Texture; knurl: THREE.Texture; lift: THREE.Texture; hazard: THREE.Texture } }) {
+  const view = useView(race);
   const W2 = TRACK.width / 2;
   void W2;
   const cabinRef = useRef<THREE.Group | null>(null);
@@ -576,7 +579,7 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
       c.position.y = elevator.wall + remaining / 2;
     });
   };
-  useEffect(() => subframe.subscribe((vf) => applyElevator(race.simAt(vf).t)), [race, elevator]);
+  useEffect(() => subframe.subscribe((vf) => applyElevator(view.tAt(vf))), [race, elevator]);
   const p = evAt(t);
         const L = elevator.length;
         const W = elevator.width;

@@ -1,6 +1,7 @@
 import { AbsoluteFill, interpolate, spring } from "remotion";
-import { fovFor, project, type Highlight, type Layout, type Race, type Section, type Shot } from "./race";
+import { fovFor, project, type Highlight, type Layout, type Race, type Section, type Shot, type Split } from "./race";
 import { flagDataUrl } from "./flags";
+import { TEAMS, teamOf } from "./teams.js";
 
 // Broadcast graphics in a clean studio style: white cards, heavy black type,
 // yellow accents. Everything is driven by the frame number through Remotion's
@@ -23,6 +24,7 @@ export type OverlayProps = {
   layout: Layout;
   width: number;
   height: number;
+  split?: Split | null;
 };
 
 const Chip = ({ s, children, bg = yellow, color = ink, size = 26 }: { s: number; children: React.ReactNode; bg?: string; color?: string; size?: number }) => (
@@ -59,7 +61,7 @@ export function Overlay(p: OverlayProps) {
 
   return (
     <AbsoluteFill style={{ fontFamily: font, color: ink }}>
-      {live && frame < tl.lights[2] && <IntroCard {...p} s={s} />}
+      {live && !race.intro && frame < tl.lights[2] && <IntroCard {...p} s={s} />}
       {live && frame >= tl.lights[0] - race.sec(0.3) && frame < tl.raceStart + race.sec(1) && <StartLights race={race} frame={frame} s={s} />}
       {(section === "race" || (section === "replay" && !inHighlight)) && (
         <div style={{ opacity: towerIn * towerOut, transform: `translateX(${(1 - towerIn) * -80 * s}px)` }}>
@@ -67,7 +69,8 @@ export function Overlay(p: OverlayProps) {
         </div>
       )}
       {live && frame >= tl.raceStart && <Minimap {...p} s={s} />}
-      {live && <ShotCaption {...p} s={s} f={f} />}
+      {live && !p.split && <ShotCaption {...p} s={s} f={f} />}
+      {live && p.split && <SplitGraphics race={race} split={p.split} f={f} frame={frame} s={s} layout={p.layout} width={p.width} height={p.height} />}
       {live && <Toasts race={race} f={f} s={s} layout={p.layout} />}
       {live && <RegroupChip race={race} f={f} s={s} layout={p.layout} />}
       {live && <FinishBanner race={race} f={f} s={s} layout={p.layout} />}
@@ -75,6 +78,7 @@ export function Overlay(p: OverlayProps) {
       {inHighlight && <HighlightGraphics race={race} frame={frame} s={s} highlight={race.highlights[highlight!]} />}
       {section === "results" && <Results race={race} frame={frame} s={s} layout={p.layout} />}
       {section === "standings" && <Standings race={race} frame={frame} s={s} layout={p.layout} />}
+      {section === "constructors" && <Constructors race={race} frame={frame} s={s} layout={p.layout} />}
       {[...race.segments.filter((sg) => sg.kind === "replay").flatMap((sg) => [sg.at, sg.at + (sg.frames ?? 0)]), tl.replay.at, tl.results.at, tl.standings.at].map((at) => (
         <Flash key={at} race={race} frame={frame} at={at} />
       ))}
@@ -122,7 +126,7 @@ function IntroCard({ race, frame, s, layout }: OverlayProps & { s: number }) {
       <div style={{ display: "flex", gap: 12 * s, transform: `translateY(${(1 - inn) * -30 * s}px)`, opacity: inn }}>
         <Chip s={s}>ROUND {race.data.round} / {race.data.rounds}</Chip>
         <Chip s={s} bg={card}>
-          MARBLE GRAND PRIX
+          MARBLE FORMULA CHAMPIONSHIP 2027
         </Chip>
       </div>
       <div
@@ -240,6 +244,10 @@ function TimingTower({ race, f, s }: { race: Race; f: number; s: number }) {
               </span>
               <MarbleDot s={s} color={m.color} flag={flagOf(m)} size={big ? 20 : 24} />
               <span style={{ flex: 1 }}>{m.abbr}</span>
+              {(() => {
+                const tm = teamOf(m.abbr);
+                return tm ? <span style={{ width: 5 * s, height: ROW * 0.55, borderRadius: 2 * s, background: `linear-gradient(${tm.colors[0]} 50%, ${tm.colors[1]} 50%)` }} /> : null;
+              })()}
               {done && <Chequer s={s} />}
               <span style={{ fontSize: (fs - 4) * s, fontWeight: 700, color: out ? "#e8414a" : "#5b606e", fontVariantNumeric: "tabular-nums" }}>{gap}</span>
             </div>
@@ -354,6 +362,99 @@ function ShotCaption({ race, shot, t, f, s, width, height, layout }: OverlayProp
           {caption}
         </div>
       )}
+    </>
+  );
+}
+
+/**
+ * The split screen's labels: LIVE · P1 on the left half; on the right, a big R
+ * and REPLAY 0.4× with what happened (highlights and bloopers), the lift tower
+ * with the flags riding in each cabin, or the action the director cut to.
+ */
+function SplitGraphics({ race, split, f, frame, s, layout, width, height }: { race: Race; split: Split; f: number; frame: number; s: number; layout: Layout; width: number; height: number }) {
+  const side = layout === "landscape";
+  const panes = side
+    ? [{ x: 0, y: 0, w: width / 2, h: height }, { x: width / 2, y: 0, w: width / 2, h: height }]
+    : [{ x: 0, y: 0, w: width, h: height / 2 }, { x: 0, y: height / 2, w: width, h: height / 2 }];
+  const k = spring({ frame: f - split.start, fps: race.fps, config: { damping: 15 } });
+  const out = interpolate(f, [split.end - race.sec(0.3), split.end], [1, 0], clamp);
+  // P1 as the timing tower shows it (its settled order), so the chip and the tower always agree.
+  const slots = race.rowSlots[Math.max(0, Math.min(race.rowSlots.length - 1, f))];
+  const order = race.marbles.map((_, i) => i).sort((a, b) => slots[a] - slots[b]);
+  const p1 = order[0];
+  const m1 = race.marbles[p1];
+  const gap2 = order[1] !== undefined && !race.finishedBy(order[1], f) ? race.gapAt(order[1], f) : null;
+  // `inset`: room kept clear on the pane's left (the timing tower sits over the left half).
+  const top = (pane: { x: number; y: number; w: number; h: number }, children: React.ReactNode, offset = 34, inset = 0) => (
+    <div style={{ position: "absolute", left: pane.x + inset * s, top: pane.y + offset * s, width: pane.w - inset * s, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 * s, opacity: k * out, transform: `translateY(${(1 - k) * -18 * s}px)` }}>{children}</div>
+  );
+  const flagsRow = (riders: number[]) => (
+    <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6 * s, maxWidth: panes[1].w * 0.8, justifyContent: "center" }}>
+      {riders.map((i) => (
+        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4 * s, fontSize: 18 * s, fontWeight: 800 }}>
+          <MarbleDot s={s} color={race.marbles[i].color} flag={flagOf(race.marbles[i])} size={18} />
+          {race.marbles[i].abbr}
+        </span>
+      ))}
+    </span>
+  );
+  let right: React.ReactNode = null;
+  if (split.kind === "replay" && split.highlight !== undefined) {
+    const h = race.highlights[split.highlight];
+    const m = race.marbles[h.marble];
+    const blink = Math.floor(frame / race.sec(0.5)) % 2 === 0;
+    right = (
+      <>
+        {/* The big R in the corner, broadcast style. */}
+        <div style={{ position: "absolute", left: panes[1].x + panes[1].w - 120 * s, top: panes[1].y + 30 * s, width: 84 * s, height: 84 * s, borderRadius: 42 * s, background: "#e8414a", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 56 * s, fontWeight: 900, boxShadow: shadow, opacity: k * out }}>R</div>
+        {top(
+          panes[1],
+          <>
+            <Chip s={s} bg={card} size={26}>
+              <span style={{ width: 14 * s, height: 14 * s, borderRadius: 7 * s, background: "#e8414a", opacity: blink ? 1 : 0.3 }} />
+              REPLAY <span style={{ color: "#5b606e" }}>{h.speed}×</span>
+            </Chip>
+            <Chip s={s} bg={(h as { dq?: boolean }).dq ? "#e8414a" : yellow} color={(h as { dq?: boolean }).dq ? "white" : ink} size={26}>
+              <MarbleDot s={s} color={m.color} flag={flagOf(m)} size={26} />
+              {h.label}
+            </Chip>
+          </>,
+        )}
+      </>
+    );
+  } else if (split.kind === "lift") {
+    const riding = (split.cabins ?? []).filter((c) => f >= c.start && f < c.end);
+    right = top(
+      panes[1],
+      <>
+        <Chip s={s} size={28}>THE LIFT TOWER</Chip>
+        {riding.map((c) => (
+          <Chip key={c.cabin} s={s} bg={card} size={20}>
+            <span style={{ width: 30 * s, height: 30 * s, borderRadius: 15 * s, background: yellow, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900 }}>{c.cabin + 1}</span>
+            <span style={{ color: "#5b606e" }}>▲</span>
+            {flagsRow(c.riders)}
+          </Chip>
+        ))}
+      </>,
+    );
+  } else {
+    right = top(panes[1], <Chip s={s} size={28}>{split.label ?? "MEANWHILE"}</Chip>);
+  }
+  return (
+    <>
+      {top(
+        panes[0],
+        <Chip s={s} bg={card} size={24}>
+          <span style={{ background: "#e8414a", color: "white", padding: `${2 * s}px ${8 * s}px`, borderRadius: 6 * s, fontSize: 16 * s, letterSpacing: 2 * s }}>LIVE</span>
+          <span style={{ color: "#5b606e", fontSize: 18 * s }}>LEADER</span>
+          <MarbleDot s={s} color={m1.color} flag={flagOf(m1)} />
+          {m1.name.toUpperCase()}
+          {gap2 !== null && <span style={{ color: "#5b606e", fontSize: 18 * s, fontVariantNumeric: "tabular-nums" }}>+{gap2.toFixed(1)}s</span>}
+        </Chip>,
+        34,
+        side ? 360 : 0,
+      )}
+      {right}
     </>
   );
 }
@@ -503,13 +604,15 @@ function ReplayGraphics({ race, frame, s }: { race: Race; frame: number; s: numb
   );
 }
 
-function Card({ race, s, layout, children, title, frame, at, footer }: { race: Race; s: number; layout: Layout; children: React.ReactNode; title: string; frame: number; at: number; footer?: React.ReactNode }) {
+function Card({ race, s, layout, children, title, frame, at, footer, columns }: { race: Race; s: number; layout: Layout; children: React.ReactNode; title: string; frame: number; at: number; footer?: React.ReactNode; columns?: number }) {
+  const cols = columns ?? (race.N > 12 ? 2 : 1);
+  const n = Array.isArray(children) ? children.length : 1;
   const k = spring({ frame: frame - at, fps: race.fps, config: { damping: 18 } });
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", background: `rgba(243,244,247,${0.55 * k})` }}>
       <div style={{ width: (layout === "portrait" ? 960 : 1000) * s, background: card, borderRadius: 30 * s, overflow: "hidden", boxShadow: "0 40px 120px rgba(20,24,40,0.25)", opacity: k, transform: `translateY(${(1 - k) * 60 * s}px)` }}>
         <div style={{ padding: `${18 * s}px ${30 * s}px`, background: yellow, fontSize: 32 * s, fontWeight: 900, letterSpacing: 1 * s }}>{title}</div>
-        <div style={{ padding: `${14 * s}px ${30 * s}px ${footer ? 8 : 22}px`, display: "grid", gridAutoFlow: "column", gridTemplateColumns: race.N > 12 ? "1fr 1fr" : "1fr", gridTemplateRows: `repeat(${Math.ceil(race.N / (race.N > 12 ? 2 : 1))}, auto)`, columnGap: 30 * s }}>{children}</div>
+        <div style={{ padding: `${14 * s}px ${30 * s}px ${footer ? 8 : 22}px`, display: "grid", gridAutoFlow: "column", gridTemplateColumns: cols === 2 ? "1fr 1fr" : "1fr", gridTemplateRows: `repeat(${Math.ceil((columns ? n : race.N) / cols)}, auto)`, columnGap: 30 * s }}>{children}</div>
         {footer && <div style={{ padding: `0 ${30 * s}px ${20 * s}px`, display: "flex", justifyContent: "center" }}>{footer}</div>}
       </div>
     </AbsoluteFill>
@@ -573,6 +676,36 @@ function Standings({ race, frame, s, layout }: { race: Race; frame: number; s: n
           </Chip>
         </div>
       )}
+    </Card>
+  );
+}
+
+/** The constructors' championship: ten teams, both marbles' points. */
+function Constructors({ race, frame, s, layout }: { race: Race; frame: number; s: number; layout: Layout }) {
+  const at = (race.timeline as unknown as { constructors: { at: number } }).constructors.at;
+  const rows = (race.data as unknown as { constructors?: { team: string; pos: number; points: number; round: number; prevPos: number | null }[] }).constructors ?? [];
+  const final = race.data.round === race.data.rounds;
+  return (
+    <Card race={race} s={s} layout={layout} frame={frame} at={at} title={final ? "FINAL CONSTRUCTORS' STANDINGS" : `CONSTRUCTORS · AFTER ROUND ${race.data.round} OF ${race.data.rounds}`} columns={1}>
+      {rows.map((r, k) => {
+        const tm = TEAMS.find((x) => x.id === r.team)!;
+        const inn = spring({ frame: frame - at - race.sec(0.2) - k * race.sec(0.08), fps: race.fps, config: { damping: 18 } });
+        const moved = r.prevPos === null ? 0 : r.prevPos - r.pos;
+        return (
+          <div key={r.team} style={{ display: "flex", alignItems: "center", gap: 14 * s, height: 50 * s, borderBottom: "1px solid #eceef2", fontSize: 26 * s, fontWeight: 800, opacity: inn, transform: `translateX(${(1 - inn) * 40 * s}px)` }}>
+            <span style={{ width: 38 * s, height: 38 * s, borderRadius: 10 * s, display: "flex", alignItems: "center", justifyContent: "center", background: r.pos <= 3 ? ink : "#eef0f4", color: r.pos <= 3 ? "white" : ink, fontSize: 22 * s }}>{r.pos}</span>
+            <span style={{ width: 20 * s, textAlign: "center", fontSize: 18 * s, color: moved ? (moved > 0 ? "#2fb35a" : "#e8414a") : "transparent" }}>{moved ? (moved > 0 ? "▲" : "▼") : "•"}</span>
+            <span style={{ width: 10 * s, height: 34 * s, borderRadius: 3 * s, background: `linear-gradient(${tm.colors[0]} 50%, ${tm.colors[1]} 50%)` }} />
+            <span style={{ flex: 1 }}>{tm.name.toUpperCase()}</span>
+            {tm.drivers.map((abbr) => {
+              const m = race.marbles.find((x) => x.abbr === abbr)!;
+              return <MarbleDot key={abbr} s={s} color={m.color} flag={flagOf(m)} size={26} />;
+            })}
+            <span style={{ width: 70 * s, textAlign: "right", color: "#2fb35a", fontSize: 22 * s }}>{r.round ? `+${r.round}` : ""}</span>
+            <span style={{ width: 120 * s, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.points} PTS</span>
+          </div>
+        );
+      })}
     </Card>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { subframe } from "./subframe";
 import * as THREE from "three";
+import { useView } from "./view";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { liftCleatPose, pointInFrame, TRACK, TRACK_DEPTH, troughProfile } from "./trackMesh.js";
 import type { Race, Vec3 } from "./race";
@@ -400,7 +401,7 @@ export function Decals({ race }: { race: Race }) {
       t.anisotropy = 16;
       return t;
     };
-    const logo = label("MARBLE GP", "OFFICIAL TRACK SYSTEM");
+    const logo = label("MFC 2027", "MARBLE FORMULA CHAMPIONSHIP");
     const place = label(race.data.info.location.toUpperCase(), race.data.info.circuit.toUpperCase().slice(0, 28));
     const strips: { geo: THREE.BufferGeometry; tex: THREE.Texture }[] = [];
     const sideBand = (side: number) => {
@@ -523,6 +524,7 @@ function gearGeometry(r: number, teeth: number, depth: number) {
  * gears turning at both ends, and a motor housing at the top.
  */
 export function Lifts({ race, t }: { race: Race; t: number }) {
+  const view = useView(race);
   const lifts = (race.data.lifts ?? []) as unknown as Lift[];
   const samples = race.data.samples as unknown as Sample[];
   const built = useMemo(() => {
@@ -571,7 +573,7 @@ export function Lifts({ race, t }: { race: Race; t: number }) {
   useEffect(
     () =>
       subframe.subscribe((vf) => {
-        const s = race.simAt(vf).t / race.fps;
+        const s = view.tAt(vf) / race.fps;
         built.belt.offset.set(-((lifts[0]?.speed ?? 0) * s), 0);
         lifts.forEach((lift, li) => {
           for (let k = 0; k < lift.count; k++) {

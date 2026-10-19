@@ -1,15 +1,19 @@
 import { Quaternion, Vector3 } from "three";
 import { frameQuat, mod, pointInFrame, quatArr, r3, rot } from "./kit.js";
 
-// A pendulum hammer that sweeps only one half of the track: the pivot sits
-// `lat` off the centre and the head swings from the centre line to 1.1 from it,
-// so the far half is a safe lane and choosing it matters. The head's edge stops
-// 0.75 from the wall, more than a marble, so nothing is ever pinched against it.
-export const HAMMER = { pivot: 0.35 + 1.9, length: 1.9, head: [1.0, 0.5, 0.5], lat: 0.55, amp: (16.8 * Math.PI) / 180, period: 1.5 };
+// The pendulum axe: a heavy head on an arm swinging ALONG the track over one
+// half of it (`lat` off the centre). At the bottom of its swing the head is a
+// wall across that half (from the centre line to 0.35 from the wall: too
+// narrow to slip past, and moving parallel to the wall, so nothing is pinched),
+// hitting at ~6.5 u/s; at the ends of its swing it is high enough to roll
+// under. Go under it when it's up, take the other half, or get smashed.
+// (Swinging across the track, as it used to, it barely touched anyone.)
+export const HAMMER = { pivot: 0.35 + 1.9, length: 1.9, head: [0.5, 0.5, 1.6], lat: 0.95, amp: (50 * Math.PI) / 180, period: 1.6, axis: "z" };
 
 export function swingQuat(sw, t) {
   const a = sw.amp * Math.sin((2 * Math.PI * t) / sw.period + sw.phase);
-  const q = new Quaternion(...sw.quat).multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), a));
+  const axis = sw.axis === "z" ? new Vector3(0, 0, 1) : new Vector3(1, 0, 0);
+  const q = new Quaternion(...sw.quat).multiply(new Quaternion().setFromAxisAngle(axis, a));
   return [q.x, q.y, q.z, q.w];
 }
 
@@ -21,7 +25,7 @@ export default {
   dq: true,
   restitution: 0.5,
   collection: "swings",
-  card: { difficulty: 3, chaos: 4, seconds: 1.5, summary: "A pendulum sweeping one half of the track: pick the safe lane or get batted." },
+  card: { difficulty: 4, chaos: 4, seconds: 1.5, summary: "A pendulum axe over one half of the track: roll under it while it's up, take the other half, or get smashed." },
   build(f, { frameAt, out, sync }) {
     const s = frameAt(f.u + 1);
     const side = out.swings.length % 2 ? -1 : 1;
@@ -34,6 +38,7 @@ export default {
       head: HAMMER.head,
       amp: HAMMER.amp,
       period: HAMMER.period,
+      axis: HAMMER.axis,
       // The head passes the centre line, at full speed, as the leader arrives.
       phase: r3(sync[f.u] !== undefined ? mod(-(2 * Math.PI * sync[f.u]) / HAMMER.period, 2 * Math.PI) : (f.u * 0.61) % (Math.PI * 2)),
     });

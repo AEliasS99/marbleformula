@@ -35,7 +35,7 @@ function textBoard(text: string, bg: string, fg: string, w = 1024, h = 192) {
 }
 
 const BOARDS: [string, string, string][] = [
-  ["MARBLE GP", "#111216", "#ffffff"],
+  ["MFC 2027", "#111216", "#ffffff"],
   ["ROLL FASTER", "#d8232a", "#ffffff"],
   ["GLASS & CHROME", "#ffffff", "#111216"],
   ["ROUND 5 · MONZA", "#0055a4", "#ffffff"],
@@ -138,7 +138,8 @@ export function Trackside({ race }: { race: Race }) {
       const t = flatFwd(s);
       boards.push({ pos: new THREE.Vector3(s.p[0], groundY, s.p[2]).addScaledVector(r, side * (W2 + 6.2)), yaw: yawAlong([t.x, 0, t.z]) + (side > 0 ? Math.PI : 0), tex: k % BOARDS.length });
     }
-    const boardTex = BOARDS.map(([t, bg, fg]) => textBoard(t, bg, fg));
+    // The round's own board ("ROUND 5 · ITALY") on every circuit.
+    const boardTex = BOARDS.map(([t, bg, fg]) => textBoard(t.startsWith("ROUND") ? `ROUND ${race.data.round} · ${race.data.info.gp.toUpperCase()}` : t, bg, fg));
 
     // Tyre stacks at the bends, outside the road.
     const tyreGeo = new THREE.TorusGeometry(0.42, 0.17, 10, 24);

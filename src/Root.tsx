@@ -12,7 +12,7 @@ export const Root = () => (
           <Composition
             id={`GP-${r.id}`}
             component={GrandPrix}
-            durationInFrames={r.timeline.total}
+            durationInFrames={r.timeline.total + ((r as { intro?: { total: number } }).intro?.total ?? 0)}
             fps={r.fps}
             width={1920}
             height={1080}
@@ -21,7 +21,7 @@ export const Root = () => (
           <Composition
             id={`GP-${r.id}-vertical`}
             component={GrandPrix}
-            durationInFrames={r.timeline.total}
+            durationInFrames={r.timeline.total + ((r as { intro?: { total: number } }).intro?.total ?? 0)}
             fps={r.fps}
             width={1080}
             height={1920}

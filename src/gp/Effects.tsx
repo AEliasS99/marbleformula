@@ -19,6 +19,7 @@ import {
 import { N8AOPostPass } from "n8ao";
 import type { Layout, Race } from "./race";
 import { subframe } from "./subframe";
+import { useView } from "./view";
 
 // Camera-like finishing, the cues that make a render read as a photograph of a
 // small real object: ambient occlusion in every crease and contact, highlights
@@ -123,6 +124,7 @@ export function Effects({ race, layout, frame }: { race: Race; layout: Layout; f
 }
 
 function EffectChain({ race, frame }: { race: Race; frame: number }) {
+  const view = useView(race);
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
@@ -172,7 +174,7 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     for (let k = 0; k < samples; k++) {
       const vf = frame + shutter * ((k + 0.5) / samples - 0.5);
       subframe.apply(vf);
-      const shot = race.shotAt(vf);
+      const shot = view.shotAt(vf);
       chain.dof.target = new THREE.Vector3(...shot.target);
       chain.accumulate.flush = k === samples - 1;
       chain.composer.render();

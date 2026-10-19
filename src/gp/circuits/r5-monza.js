@@ -17,7 +17,8 @@ export default {
   country: "Italy",
   flag: ["#009246", "#ce2b37"],
   scale: 0.08,
-  seed: 3,
+  seed: 1,
+  dq: { target: 1.5 }, // calibrated pads, like the other circuits
   layout: [
     ["vortex", 30],
     ["drop", 69.623],

@@ -20,6 +20,8 @@ import { VORTEX } from "../src/gp/obstacles/vortex.js";
 import { REGROUP } from "../src/gp/obstacles/regroup.js";
 import { fanGust } from "../src/gp/obstacles/fan.js";
 import { CIRCUITS } from "../src/gp/circuits/index.js";
+import { TEAMS, teamOf } from "../src/gp/teams.js";
+import { introPlan, TEAM_FRAMES } from "../src/gp/intro-plan.js";
 import { BANK_PIVOT, buildTrackMesh, liftCleatPose, pointInFrame, pointOnTrack, surfaceHeight as surfaceHeightAt, TRACK, TRACK_DEPTH } from "../src/gp/trackMesh.js";
 
 // --- Season ------------------------------------------------------------------------
@@ -1323,14 +1325,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
   const segments = [];
   let liveFrom = 0;
   let at = 0;
-  highlights.forEach((h, k) => {
-    segments.push({ kind: "live", at, from: liveFrom, to: h.insert });
-    at += h.insert - liveFrom;
-    segments.push({ kind: "replay", at, from: h.from, to: h.to, speed: h.speed, frames: h.frames, highlight: k });
-    h.at = at;
-    at += h.frames;
-    liveFrom = h.insert;
-  });
+  // (Highlights no longer interrupt the race: they replay in a split screen beside it.)
   segments.push({ kind: "live", at, from: liveFrom, to: frames.length });
   at += frames.length - liveFrom;
   const replayFrom = Math.max(raceStart, winnerFrame - Math.round(1.5 * FPS));
@@ -1350,10 +1345,12 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     },
     resultsFrames: Math.round(4.5 * FPS),
     standingsFrames: Math.round(5 * FPS),
+    constructorsFrames: Math.round(4.5 * FPS),
   };
   timeline.results = { at: timeline.replay.at + timeline.replay.frames };
   timeline.standings = { at: timeline.results.at + timeline.resultsFrames };
-  timeline.total = timeline.standings.at + timeline.standingsFrames;
+  timeline.constructors = { at: timeline.standings.at + timeline.standingsFrames };
+  timeline.total = timeline.constructors.at + timeline.constructorsFrames;
 
   const info = {
     gp: round.gp,
@@ -1389,6 +1386,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     shots: director.shots,
     replayCam: director.replayCam,
     highlightCams: director.highlightCams,
+    splits: director.splits,
     heli: director.heli,
     events,
     features: course.features,
@@ -1497,6 +1495,8 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   // director asks src/gp/venue.js where they stand, so no camera sits inside
   // one or looks through one.
   const venue = venueLayout(samples, L);
+  // The buildings alone (the lift camera looks into its own tower, so it checks only these).
+  const venueGround = { ...venue, buildings: [...venue.buildings] };
   // The lift towers count as buildings too: no camera inside the lattice, none looking through it.
   for (const e of elevators) {
     const fwd = v3(e.fwd);
@@ -1541,6 +1541,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   };
 
   // Shot recipes: (frame) → { pos, target, fov }. Built from the smoothed focus.
+  const liftSpots = {};
   const recipes = {
     chase: (f) => {
       const fr = frameAt(focusU[f] - 3.4);
@@ -1572,7 +1573,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       const at = (e, fr) => e.cabinY[Math.max(0, Math.min(fr, e.cabinY.length - 1))] ?? 0;
       let elevator = elevators[sh.cabin ?? 0];
       let bestScore = -Infinity;
-      for (const e of elevators) {
+      for (const e of sh.fixed ? [] : elevators) {
         const y = at(e, f);
         const dy = at(e, f + 2) - at(e, f - 2);
         // Rising first, then one unloading at the top; never the empty cabin coming back down.
@@ -1592,8 +1593,27 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       const towerCentre = elevators.reduce((acc, e) => acc.add(v3(e.center)), new Vector3()).multiplyScalar(1 / elevators.length);
       const halfSpan = Math.max(...elevators.map((e) => Math.abs(e.lat) + e.width / 2));
       // Square to the tower's outer face, midway between its fore and aft columns, so no column blocks the cabin.
-      const pos = new Vector3(towerCentre.x, c.y, towerCentre.z).addScaledVector(right, side * (halfSpan + 8.5)).add(new Vector3(0, 3.0, 0));
-      return { pos, target: c.clone().add(new Vector3(0, 0.7, 0)), fov: 44 };
+      // Where along the tower to stand: square to it unless a building would block the view
+      // of a cabin at the bottom (a pit building beside the tower filled half the frame);
+      // chosen once per side so it never jumps during a shot.
+      const key = `${side}`;
+      if (!liftSpots[key]) {
+        const bottom = v3(home.center).add(new Vector3(0, 0.7, 0));
+        const spots = [];
+        for (const rise of [2.3, 4.5, 7, 9]) for (const out of [8.5, 7.0, 5.0, 3.6]) for (const along of [0, 4, -4, 8, -8]) spots.push({ rise, out, along });
+        const at = ({ rise, out, along }) => new Vector3(towerCentre.x, bottom.y + rise, towerCentre.z).addScaledVector(right, side * (halfSpan + out)).addScaledVector(fwd, along);
+        liftSpots[key] =
+          spots.find((sp) => {
+            const p = at(sp);
+            if (venueClearance(venueGround, [p.x, p.y, p.z]) < 0.8) return false;
+            // The cabin and the frame below it (down to 1.4 under its floor) must be in clear view.
+            return [0, -0.6, -1.4].every((dy) => !venueBlocks(venueGround, [p.x, p.y, p.z], [bottom.x, bottom.y + dy, bottom.z]));
+          }) ?? spots[0];
+      }
+      const spot = liftSpots[key];
+      const pos = new Vector3(towerCentre.x, c.y + 0.7 + spot.rise, towerCentre.z).addScaledVector(right, side * (halfSpan + spot.out)).addScaledVector(fwd, spot.along);
+      const target = c.clone().add(new Vector3(0, 0.7, 0));
+      return { pos, target, fov: 44 };
     },
     onboard: (f, sh) => {
       const i = sh.marble;
@@ -1838,6 +1858,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     sf = gauss(sf, sec(0.5), sh.start, sh.end);
   }
   const cams = sp.map((p, k) => [...arr(p), ...arr(st[k]), r3(sf[k]), kind[k], marble[k]]);
+  const origCams = cams.map((c) => c.slice());
 
   // Replay cameras for the highlights: a fixed camera beside the impact, low
   // and close, tracking the marble that was hit with a tight field of view.
@@ -1864,9 +1885,121 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       return [...arr(pos), ...arr(t), r3(fov)];
     });
   });
+  // --- Split screen ----------------------------------------------------------------
+  // At moments that would otherwise cost us the head of the race, the screen
+  // splits 50:50: the left half always follows P1, live; the right half shows
+  // (in order of priority) a slow-motion replay of a highlight or blooper, the
+  // lift tower carrying riders (always split), or the action the director was
+  // showing elsewhere while P1 was out of shot. Mid-race replays are no longer
+  // cut into the race: they play here, beside it.
+  const p1 = [];
+  for (let f = 0; f <= lastFrame; f++) {
+    let best = -1;
+    for (let i = 0; i < N; i++) if (!finished(i, f) && (best < 0 || uOf(f, i) > uOf(f, best))) best = i;
+    p1.push(best < 0 ? 0 : best);
+  }
+  // Which cabin is carrying marble i at frame f (null if none).
+  const cabinOf = (i, f) => {
+    for (const [k, e] of elevators.entries())
+      for (const c of e.cycles) if (c.riders.includes(i) && f >= c.closeAt - sec(0.6) && f < (c.closeTopAt ?? c.openAt + sec(2)) + sec(0.4)) return k;
+    return null;
+  };
+  const leaderCam = (f) => {
+    const i = p1[f];
+    // P1 riding the lift: the crane on its cabin (a chase camera would sit in the tower's frame).
+    const cab = cabinOf(i, f);
+    if (cab !== null) return recipes.elevator(f, { cabin: cab, fixed: true });
+    const p = posOf(f, i);
+    const fr = frameAt(uLoc(f, i));
+    const pos = v3(pointInFrame(frameAt(uLoc(f, i) - 3.6), 0, 1.5)).add(upW.clone().multiplyScalar(0.7));
+    return { pos, target: p.clone().addScaledVector(flatFwd(fr), 1.2), fov: 52 };
+  };
+  const raw = [];
+  // Replays of the highlights and bloopers, starting just after each one.
+  highlights.forEach((h, k) => raw.push({ kind: "replay", start: h.insert, end: h.insert + h.frames, highlight: k, prio: 3 }));
+  // Every lift ride, both cabins: one split while either is moving.
+  const rides = elevators
+    .flatMap((e, k) => e.cycles.filter((c) => c.riseAt !== undefined && c.openAt !== undefined).map((c) => ({ cabin: k, start: Math.max(0, c.closeAt - sec(0.6)), end: c.closeTopAt !== undefined ? c.closeTopAt + sec(0.4) : c.openAt + sec(2), riders: c.riders })))
+    .sort((a, b) => a.start - b.start);
+  for (const r of rides) {
+    const last = raw.length ? raw[raw.length - 1] : null;
+    if (last && last.kind === "lift" && r.start <= last.end) {
+      last.end = Math.max(last.end, r.end);
+      last.cabins.push({ cabin: r.cabin, riders: r.riders, start: r.start, end: r.end });
+    } else raw.push({ kind: "lift", start: r.start, end: r.end, cabin: r.cabin, cabins: [{ cabin: r.cabin, riders: r.riders, start: r.start, end: r.end }], prio: 2 });
+  }
+  // Action away from P1: the director cut to an obstacle while P1 is well clear of it (15+ units ahead).
+  for (const sh of shots) {
+    if (sh.kind !== "feature" || sh.start < raceStart + sec(3) || sh.end - sh.start < sec(1.5)) continue;
+    let away = 0;
+    let n = 0;
+    for (let f = sh.start; f < sh.end; f += 6) {
+      n++;
+      if (p1[f] !== leader[f] && uOf(f, p1[f]) - uOf(f, leader[f]) > 15) away++;
+    }
+    if (away >= n * 0.7) raw.push({ kind: "action", start: sh.start, end: sh.end, label: sh.label ?? null, feature: sh.feature ?? null, prio: 1 });
+  }
+  // Resolve overlaps by priority; nothing shorter than 1.5 s, nothing after the win.
+  const taken = new Array(lastFrame + 2).fill(null);
+  for (const sp of [...raw].sort((a, b) => b.prio - a.prio || a.start - b.start)) {
+    const a = Math.max(sp.start, raceStart + sec(2));
+    const b = Math.min(sp.end, winnerFrame - sec(1), lastFrame + 1);
+    if (b - a < sec(1.5)) continue;
+    let free = true;
+    for (let f = a; f < b; f++) if (taken[f]) free = false;
+    if (!free) {
+      if (sp.kind !== "replay") continue;
+      // A replay waits for the slot to clear, keeping its length.
+      const len = b - a;
+      let s0 = a;
+      while (s0 + len < winnerFrame - sec(1) && taken.slice(s0, s0 + len).some(Boolean)) s0 += sec(0.5);
+      if (s0 + len >= winnerFrame - sec(1)) continue;
+      sp.start = s0;
+      sp.end = s0 + len;
+    } else {
+      sp.start = a;
+      sp.end = b;
+    }
+    for (let f = sp.start; f < sp.end; f++) taken[f] = sp;
+  }
+  const splits = [...new Set(taken.filter(Boolean))].sort((a, b) => a.start - b.start);
+  // Cameras: P1 on the left (overriding the main stream), the right half's own.
+  for (const sp of splits) {
+    const lp = [];
+    const lt = [];
+    for (let f = sp.start; f < sp.end; f++) {
+      const c = leaderCam(f);
+      lp.push(c.pos);
+      lt.push(c.target);
+    }
+    const sp2 = gauss(lp, sec(0.3));
+    const st2 = gauss(lt, sec(0.2));
+    for (let f = sp.start; f < sp.end; f++) cams[f] = [...arr(sp2[f - sp.start]), ...arr(st2[f - sp.start]), 52, "leader", p1[f]];
+    if (sp.kind === "lift") {
+      const rp = [];
+      const rt = [];
+      const rf = [];
+      for (let f = sp.start; f < sp.end; f++) {
+        // The cabin P1 isn't in (the left half already shows P1's), or the one the split is about.
+        const leadCab = cabinOf(p1[f], f);
+        const c = recipes.elevator(f, { cabin: leadCab === null ? sp.cabin : 1 - leadCab, fixed: true });
+        rp.push(c.pos);
+        rt.push(c.target);
+        rf.push(c.fov);
+      }
+      const a = gauss(rp, sec(0.3));
+      const b = gauss(rt, sec(0.3));
+      sp.cams = a.map((p, k) => [...arr(p), ...arr(b[k]), r3(rf[k])]);
+    } else if (sp.kind === "action") {
+      sp.cams = [];
+      for (let f = sp.start; f < sp.end; f++) sp.cams.push(origCams[f].slice(0, 7));
+    }
+    delete sp.prio;
+  }
   return {
     cams,
     highlightCams,
+    splits,
     shots: shots.map(({ kind, start, end, marble, label, feature }) => ({ kind, start, end, marble: marble ?? null, label: label ?? null, feature: feature ?? null })),
     replayCam: arr(replayCam),
     heli,
@@ -2150,6 +2283,200 @@ function soundtrack(result, rand) {
   return wav;
 }
 
+// --- Intro soundtrack -------------------------------------------------------------------
+// Its own file (public/gp/<id>-intro.wav), played before the race's: a drone
+// and slowed hits under the cold open, an impact on the title, then a music
+// bed (the race's key and tempo) with a whoosh per team and per obstacle card,
+// thinning to a heartbeat over the grid.
+export function introTrack(plan, data, rand) {
+  const fps = data.fps;
+  const RATE = 44100;
+  const total = Math.ceil((plan.total / fps) * RATE) + RATE; // a second of tail
+  const Lc = new Float32Array(total);
+  const Rc = new Float32Array(total);
+  const add = (i, s, pan = 0) => {
+    if (i < 0 || i >= total) return;
+    Lc[i] += s * Math.cos(((pan + 1) * Math.PI) / 4);
+    Rc[i] += s * Math.sin(((pan + 1) * Math.PI) / 4);
+  };
+  const scene = Object.fromEntries(plan.scenes.map((sc) => [sc.id, sc]));
+  const secOf = (f) => f / fps;
+  const whoosh = (t, dur = 0.9, amp = 0.9, pan = 0) => {
+    const start = Math.round(t * RATE);
+    const n = Math.round(dur * RATE);
+    let lp = 0;
+    for (let k = 0; k < n; k++) {
+      const p = k / n;
+      lp += (0.02 + 0.25 * p) * (rand() * 2 - 1 - lp);
+      add(start + k, lp * Math.sin(Math.PI * p) * amp, pan * (2 * p - 1));
+    }
+  };
+  const bell = (t, freq, amp, pan = 0, length = 1.6) => {
+    const start = Math.round(t * RATE);
+    for (let k = 0; k < length * RATE; k++) {
+      const tt = k / RATE;
+      let s = 0;
+      for (const [mul, a] of [[1, 1], [2.76, 0.45], [5.4, 0.2], [8.9, 0.08]]) s += a * Math.exp((-tt * (1 + mul)) / length) * Math.sin(2 * Math.PI * freq * mul * tt);
+      add(start + k, amp * s * Math.min(1, k / 40), pan);
+    }
+  };
+  const boom = (t, amp) => {
+    const start = Math.round(t * RATE);
+    let lp = 0;
+    for (let k = 0; k < 2.5 * RATE; k++) {
+      const tt = k / RATE;
+      lp += 0.1 * (rand() * 2 - 1 - lp);
+      add(start + k, amp * (Math.exp(-tt / 0.6) * Math.sin(2 * Math.PI * (38 + 50 * Math.exp(-tt / 0.08)) * tt) + Math.exp(-tt / 0.15) * lp * 1.5));
+    }
+  };
+  const pad = (t0, t1, freqs, amp) => {
+    const a = Math.round(t0 * RATE);
+    const b = Math.round(t1 * RATE);
+    for (let k = a; k < b; k++) {
+      const tt = (k - a) / RATE;
+      const env = Math.min(1, tt / 1.2) * Math.min(1, (b - k) / RATE / 1.2);
+      let s = 0;
+      for (const f of freqs) s += Math.sin(2 * Math.PI * f * tt + 0.3 * Math.sin(2 * Math.PI * 0.2 * tt)) + 0.3 * Math.sin(2 * Math.PI * f * 2.003 * tt);
+      add(k, (amp * env * s) / freqs.length);
+    }
+  };
+
+  // Cold open: the moment in slow motion, a low drone and its hits slowed down.
+  if (scene.cold) {
+    const sc = scene.cold;
+    const dur = secOf(sc.frames);
+    whoosh(0, 0.7, 0.6);
+    pad(0, dur + 0.4, [55, 82.41, 110], 0.12);
+    const h = data.timeline.highlights[plan.highlight];
+    const hitAt = secOf((h.f - plan.coldFrom) / h.speed);
+    for (let k = 0; k < 3; k++) boom(hitAt + k * 0.18, 0.35 / (k + 1));
+    // A riser into the title.
+    const r0 = Math.round((dur - 1.4) * RATE);
+    let lp = 0;
+    for (let k = 0; k < 1.4 * RATE; k++) {
+      const p = k / (1.4 * RATE);
+      lp += (0.02 + 0.3 * p) * (rand() * 2 - 1 - lp);
+      add(r0 + k, lp * p * p * 0.9);
+    }
+  }
+  // Title: the impact and a bright chord.
+  const t0 = secOf(scene.title.at);
+  boom(t0, 0.9);
+  [440, 523.25, 659.25, 880].forEach((f, k) => bell(t0 + 0.05 + k * 0.09, f, 0.16, (k - 1.5) * 0.35, 2.6));
+  // The bed: 124 bpm kick and hat, the race's bass line, from the title to the lineup.
+  const bedFrom = t0 + 0.9;
+  const lineAt = secOf(scene.lineup.at);
+  const end = secOf(plan.total);
+  {
+    const beat = 60 / 124;
+    const bass = [55, 55, 65.41, 73.42, 55, 55, 87.31, 82.41];
+    for (let n = 0; bedFrom + n * beat < end; n++) {
+      const t = bedFrom + n * beat;
+      const inLine = t >= lineAt;
+      const e = Math.min(1, (t - bedFrom) / 1.5) * (inLine ? 0.55 : 1) * 0.11;
+      // Kick on every beat; over the grid only every other, a heartbeat.
+      if (!inLine || n % 2 === 0) {
+        const k0 = Math.round(t * RATE);
+        for (let k = 0; k < 0.25 * RATE; k++) {
+          const tt = k / RATE;
+          add(k0 + k, e * 1.6 * Math.exp(-tt / 0.07) * Math.sin(2 * Math.PI * (60 + 80 * Math.exp(-tt / 0.02)) * tt));
+        }
+      }
+      if (inLine) continue;
+      const h0 = Math.round((t + beat / 2) * RATE);
+      for (let k = 0; k < 0.05 * RATE; k++) add(h0 + k, e * 0.25 * Math.exp(-k / RATE / 0.012) * (rand() * 2 - 1), 0.2);
+      for (let half = 0; half < 2; half++) {
+        const fq = bass[(n * 2 + half) % bass.length];
+        const b0 = Math.round((t + (half * beat) / 2) * RATE);
+        for (let k = 0; k < 0.22 * RATE; k++) {
+          const tt = k / RATE;
+          const sh = Math.sin(2 * Math.PI * fq * tt) + 0.4 * Math.sin(2 * Math.PI * fq * 2 * tt) + 0.15 * Math.sin(2 * Math.PI * fq * 3 * tt);
+          add(b0 + k, e * 0.5 * Math.exp(-tt / 0.12) * Math.min(1, k / 60) * sh, -0.1);
+        }
+      }
+    }
+    pad(bedFrom, lineAt + 0.6, [110, 130.81, 164.81], 0.05);
+  }
+  // Teams: a whoosh and a chime per team; stakes: a chord.
+  if (scene.teams) {
+    const notes = [523.25, 587.33, 659.25, 783.99, 880];
+    for (let k = 0; k * TEAM_FRAMES < scene.teams.frames; k++) {
+      const t = secOf(scene.teams.at + k * TEAM_FRAMES);
+      whoosh(t - 0.25, 0.6, 0.5, k % 2 ? 0.6 : -0.6);
+      bell(t + 0.1, notes[k % notes.length], 0.1, 0, 1.4);
+    }
+  }
+  if (scene.stakes) [392, 493.88, 587.33].forEach((f, k) => bell(secOf(scene.stakes.at) + 0.2 + k * 0.08, f, 0.12, 0, 2));
+  // Flyover: a whoosh as the drone takes off, a soft one per obstacle card.
+  whoosh(secOf(scene.flyover.at) - 0.2, 1.2, 0.8);
+  for (const c of plan.cards) {
+    const t = secOf(scene.flyover.at + c.from);
+    whoosh(t - 0.15, 0.5, 0.35);
+    bell(t + 0.05, 1318.5, 0.05, 0, 0.8);
+  }
+  // Lineup: a rising tension drone that stops dead for the lights.
+  {
+    const a = Math.round(lineAt * RATE);
+    const b = Math.round(end * RATE);
+    for (let k = a; k < b; k++) {
+      const p = (k - a) / (b - a);
+      const tt = (k - a) / RATE;
+      const f = 55 * (1 + 0.5 * p);
+      add(k, 0.07 * Math.min(1, tt / 0.8) * (0.4 + p) * (Math.sin(2 * Math.PI * f * tt) + 0.5 * Math.sin(2 * Math.PI * f * 1.5 * tt)) * Math.min(1, (b - k) / (0.05 * RATE)));
+    }
+  }
+
+  let peak = 0;
+  for (let k = 0; k < total; k++) peak = Math.max(peak, Math.abs(Lc[k]), Math.abs(Rc[k]));
+  const gain = peak > 0.9 ? 0.9 / peak : 1;
+  const wav = Buffer.alloc(44 + total * 4);
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(36 + total * 4, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(2, 22);
+  wav.writeUInt32LE(RATE, 24);
+  wav.writeUInt32LE(RATE * 4, 28);
+  wav.writeUInt16LE(4, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(total * 4, 40);
+  for (let k = 0; k < total; k++) {
+    wav.writeInt16LE(Math.round(Math.max(-1, Math.min(1, Lc[k] * gain)) * 32767), 44 + k * 4);
+    wav.writeInt16LE(Math.round(Math.max(-1, Math.min(1, Rc[k] * gain)) * 32767), 46 + k * 4);
+  }
+  return wav;
+}
+
+/** The intro's plan for a baked round: the obstacle cards (each type once, in lap order) and the cold open's moment. */
+export function introFor(data, round) {
+  const cards = [];
+  for (const f of data.features) {
+    const c = cards.find((x) => x.type === f.type);
+    if (c) c.count++;
+    else cards.push({ type: f.type, u: r3(f.u), label: f.label, count: 1 });
+  }
+  const dq = data.obstacles.filter((o) => o.kind === "dq");
+  if (dq.length) {
+    const first = dq.reduce((a, o) => (o.u < a.u ? o : a));
+    cards.push({ type: "dq", u: r3(first.u), label: "DQ ZONES", count: dq.length });
+    cards.sort((a, b) => a.u - b.u);
+  }
+  const hs = data.timeline.highlights;
+  let highlight = null;
+  hs.forEach((h, k) => {
+    if (highlight === null || (h.strength ?? 0) > (hs[highlight].strength ?? 0)) highlight = k;
+  });
+  const plan = introPlan({ round, L: (data.info.trackEnd ?? data.info.length) + 4, highlight, cards, teams: TEAMS.length });
+  // The cold open starts so that the hit lands just past the middle.
+  if (highlight !== null) {
+    const h = hs[highlight];
+    plan.coldFrom = Math.max(h.from, Math.round(h.f - 0.55 * 180 * h.speed));
+  }
+  return plan;
+}
+
 // --- Main ----------------------------------------------------------------------------
 // Imported (by scripts/design.mjs): stop here. Run directly: bake the season.
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === resolvePath(process.argv[1]);
@@ -2165,8 +2492,11 @@ await RAPIER.init();
 
 if (opt("--round")) {
   // Seed sweep for one round.
-  const round = ROUNDS.find((r) => r.id === opt("--round"));
-  if (!round) throw new Error(`unknown round; one of ${ROUNDS.map((r) => r.id).join(", ")}`);
+  const base = ROUNDS.find((r) => r.id === opt("--round"));
+  if (!base) throw new Error(`unknown round; one of ${ROUNDS.map((r) => r.id).join(", ")}`);
+  // --layout '<json>': try another layout without touching the design file.
+  // --set '<json>': override any other field of the design file (e.g. {"dq":{"target":1.5}}).
+  const round = { ...base, ...(opt("--layout") ? { layout: JSON.parse(opt("--layout")) } : {}), ...(opt("--set") ? JSON.parse(opt("--set")) : {}) };
   const [a, b] = (opt("--seeds") ?? "1-8").split("-").map(Number);
   for (let s = a; s <= (b ?? a); s++) console.log((await runRound(round, s, { quiet: true })).summary);
   process.exit(0);
@@ -2181,7 +2511,11 @@ const totals = MARBLES.map(() => 0);
 const seasonRounds = [];
 const standings = [];
 let prevStanding = null;
+const teamTotals = {};
+let prevTeams = null;
 for (const [k, round] of ROUNDS.entries()) {
+  const standingsBefore = MARBLES.map((_, i) => ({ marble: i, points: totals[i] })).sort((a, b) => b.points - a.points).map((r, pos) => ({ ...r, pos: pos + 1 }));
+  const constructorsBefore = TEAMS.map((tm) => ({ team: tm.id, points: teamTotals[tm.id] ?? 0 })).sort((a, b) => b.points - a.points).map((r, pos) => ({ ...r, pos: pos + 1 }));
   const res = await runRound(round, round.seed, { quiet: false });
   console.log(res.summary);
   const { data } = res;
@@ -2198,13 +2532,29 @@ for (const [k, round] of ROUNDS.entries()) {
     .sort((a, b) => totals[b] - totals[a] || results.findIndex((r) => r.marble === a) - results.findIndex((r) => r.marble === b))
     .map((i, pos) => ({ marble: i, pos: pos + 1, points: totals[i], prevPos: prevStanding ? prevStanding.indexOf(i) + 1 : null }));
   prevStanding = table.map((t) => t.marble);
+  // Constructors: each team scores both its marbles' points.
+  for (const r of results) {
+    const team = teamOf(MARBLES[r.marble].abbr);
+    if (team) teamTotals[team.id] = (teamTotals[team.id] ?? 0) + r.points;
+  }
+  const teamTable = TEAMS.map((tm) => ({ team: tm.id, points: teamTotals[tm.id] ?? 0, round: results.filter((r) => tm.drivers.includes(MARBLES[r.marble].abbr)).reduce((a, r) => a + r.points, 0) }))
+    .sort((a, b) => b.points - a.points)
+    .map((row, pos) => ({ ...row, pos: pos + 1, prevPos: prevTeams ? prevTeams.indexOf(row.team) + 1 : null }));
+  prevTeams = teamTable.map((r) => r.team);
   data.results = results;
   data.standings = table;
+  data.constructors = teamTable;
+  data.teams = TEAMS;
+  // Before this round (for the intro's "what's at stake").
+  data.standingsBefore = standingsBefore;
+  data.constructorsBefore = constructorsBefore;
+  data.intro = introFor(data, k + 1);
   standings.push(table);
   seasonRounds.push({ id: round.id, round: k + 1, gp: round.gp, title: round.title, country: round.country, circuit: data.info.circuit, winner: data.order[0] });
 
   writeFileSync(new URL(`${round.id}.json`, outDir), JSON.stringify(data));
   writeFileSync(new URL(`${round.id}.wav`, audioDir), soundtrack(res, mulberry32(round.seed + 99)));
+  writeFileSync(new URL(`${round.id}-intro.wav`, audioDir), introTrack(data.intro, data, mulberry32(round.seed + 7)));
 }
 
 writeFileSync(new URL("season.json", outDir), JSON.stringify({ marbles: MARBLES, rounds: seasonRounds, standings }));
