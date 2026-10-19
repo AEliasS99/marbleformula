@@ -9,5 +9,5 @@ export function lookName(): LookName {
   const p = getInputProps() as { look?: string };
   return p.look === "day" ? "day" : p.look === "night" ? "night" : DEFAULT_LOOK;
 }
-export const DEFAULT_LOOK: LookName = "day";
+export const DEFAULT_LOOK: LookName = "night";
 export const isNight = () => lookName() === "night";

@@ -133,7 +133,7 @@ node scripts/season.mjs --round r5-monza --seeds 1-4 --set '{"dq":{"target":1.5}
 npm run studio                                         # preview: GrandPrix/<round> folders
 npx remotion render GP-r5-monza out/gp/r5-monza.mp4
 npx remotion render GP-r5-monza-vertical out/gp/r5-monza-vertical.mp4
-npm run render:gp                                      # all five rounds, 16:9
+npm run render:gp                                      # all five rounds, 16:9 (scripts/render-round.sh renders 4K, night look)
 npx remotion render GP-r1-monaco out.mp4 --props='{"dpr":1.5,"blur":2}'   # 2× faster: supersampling and motion-blur sub-frames (src/gp/quality.ts)
 ```
 

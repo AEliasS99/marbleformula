@@ -14,7 +14,7 @@ from PIL import Image
 video = sys.argv[1]
 with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", video, "-vf", "crop=300:60:1560:40,scale=60:12", f"{tmp}/c%05d.png"],
+        ["ffmpeg", "-v", "error", "-i", video, "-vf", "crop=iw*0.15625:ih*0.0556:iw*0.8125:ih*0.037,scale=60:12", f"{tmp}/c%05d.png"],
         check=True,
     )
     bad = []
