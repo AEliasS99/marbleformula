@@ -213,7 +213,8 @@ function TimingTower({ race, f, s }: { race: Race; f: number; s: number }) {
   return (
     <div style={{ position: "absolute", top: 40 * s, left: 40 * s, width: 290 * s, borderRadius: 18 * s, overflow: "hidden", background: card, boxShadow: shadow }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: `${10 * s}px ${16 * s}px`, background: yellow, fontSize: 24 * s, fontWeight: 900 }}>
-        <span>{race.data.info.gp.toUpperCase()}</span>
+        {/* Long names (GREAT BRITAIN) shrink so the lap and clock stay on one line. */}
+        <span style={{ whiteSpace: "nowrap", fontSize: (race.data.info.gp.length > 8 ? 17 : 24) * s }}>{race.data.info.gp.toUpperCase()}</span>
         <span style={{ fontVariantNumeric: "tabular-nums" }}>
           {race.LAPS > 1 && started ? <span style={{ fontSize: 17 * s, marginRight: 10 * s, color: "#3a3d46" }}>LAP {Math.min(race.LAPS, race.lapOf(race.ranking(f)[0], f) + 1)}/{race.LAPS}</span> : null}
           {started ? race.raceSeconds(f).toFixed(1) : "GRID"}
@@ -281,7 +282,7 @@ function Minimap({ race, t, s, layout, frame }: OverlayProps & { s: number }) {
       <path d={d} fill="none" stroke="#e3e5ea" strokeWidth={12 * s} strokeLinejoin="round" />
       <path d={d} fill="none" stroke={ink} strokeWidth={3.5 * s} strokeLinejoin="round" />
       {features.map((ft, k) => {
-        const smp = samples[Math.round((ft.u - samples[0].u) / 0.5)];
+        const smp = samples[Math.min(samples.length - 1, Math.max(0, Math.round((ft.u - samples[0].u) / 0.5)))];
         const [x, y] = map(smp.p[0], smp.p[2]);
         return <circle key={k} cx={x} cy={y} r={4 * s} fill={yellow} stroke={ink} strokeWidth={1.5 * s} />;
       })}

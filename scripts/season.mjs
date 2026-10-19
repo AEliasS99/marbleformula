@@ -349,7 +349,7 @@ export function buildCourse(round) {
   const n = loop.length;
   // Catmull-Rom through the loop points: a continuous tangent, so the barriers
   // have no kinks for marbles to catch on.
-  const xzAt = (u) => {
+  const xzLoop = (u) => {
     const s = ((((u / L) * n) % n) + n) % n;
     const i = Math.floor(s);
     const t = s - i;
@@ -361,6 +361,39 @@ export function buildCourse(round) {
       0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t * t * t);
     return [cr(p0[0], p1[0], p2[0], p3[0]), cr(p0[1], p1[1], p2[1], p3[1])];
   };
+  // Where the lap starts. The lift tower and its two bays need ~24 straight
+  // units before the start line and the grid's lanes and funnel ~12 after it,
+  // so a circuit may move its line (`start`: units along the outline, or
+  // "auto": the straightest such stretch of the lap, the nearest one to the
+  // real line on a tie). Without `start` it is the outline's own first point.
+  const startShift = (() => {
+    if (round.start === undefined) return 0;
+    if (typeof round.start === "number") return round.start;
+    const step = 0.5;
+    const pts = [];
+    for (let u = 0; u < L; u += step) pts.push(xzLoop(u));
+    const N2 = pts.length;
+    const head = pts.map((p, k) => {
+      const q = pts[(k + 1) % N2];
+      return Math.atan2(q[1] - p[1], q[0] - p[0]);
+    });
+    const turn = head.map((h, k) => {
+      let d = head[(k + 2) % N2] - head[(k - 2 + N2) % N2];
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      return Math.abs(d) / (4 * step); // curvature
+    });
+    let best = null;
+    for (let k = 0; k < N2; k++) {
+      let worst = 0;
+      for (let j = Math.round(-26 / step); j <= Math.round(14 / step); j++) worst = Math.max(worst, turn[(k + j + N2) % N2]);
+      const u = k * step;
+      const dist = Math.min(u, L - u);
+      if (best === null || worst < best.worst - 1e-4 || (Math.abs(worst - best.worst) <= 1e-4 && dist < best.dist)) best = { u, worst, dist };
+    }
+    return best.u;
+  })();
+  const xzAt = (u) => xzLoop(u + startShift);
 
   const us = [];
   const END = r3(L - GRID_LENGTH - ELEVATOR.cabin); // where the track ends and the cabin docks
@@ -522,7 +555,7 @@ export function buildCourse(round) {
     };
   });
   features.push({ type: "elevator", u: END, label: "THE LIFT TOWER", span: [6, 0.5] });
-  return { props, L, H, loop, samples, sampleAt, frameAt, features, END, uFinish: r3(END - 1.4), elevators, xzAt };
+  return { props, L, H, loop, samples, sampleAt, frameAt, features, END, uFinish: r3(END - 1.4), elevators, xzAt, startShift: r3(startShift) };
 }
 
 // --- Obstacles -----------------------------------------------------------------------
@@ -632,14 +665,25 @@ function buildObstacles(course, sync = {}) {
 /** Runs the race, then re-runs it with the machines timed to the pack it produced. */
 export async function runRound(round, seed, opts) {
   let sync = {};
+  let dqReach = DQ.reach;
   for (let pass = 0; pass < 2; pass++) {
-    const r = await runRoundOnce(round, seed, { ...opts, quiet: true, sync });
+    const r = await runRoundOnce(round, seed, { ...opts, quiet: true, sync, dqReach });
     sync = r.arrivals;
+    // A circuit can ask for a number of disqualifications per race (`dq: { target }`).
+    // There a marble is out if it crosses a pad's line within `dqReach` of the
+    // wall; the trial pass recorded how close to the wall every marble crossed,
+    // so the reach is set to catch about that many (the closest wall-huggers).
+    if (round.dq?.target !== undefined && pass === 1) {
+      const gaps = [...r.dqGaps].sort((a, b) => a - b);
+      const k = Math.max(1, Math.round(round.dq.target));
+      dqReach = gaps.length >= k ? (gaps[k - 1] + (gaps[k] ?? gaps[k - 1] + 0.02)) / 2 : DQ.reach;
+    }
   }
-  return runRoundOnce(round, seed, { ...opts, sync });
+  return runRoundOnce(round, seed, { ...opts, sync, dqReach });
 }
 
-async function runRoundOnce(round, seed, { quiet, sync = {} }) {
+async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach }) {
+  const dqCrossing = round.dq?.target !== undefined; // calibrated pads: a crossing test with a tuned reach
   const rand = mulberry32(seed * 1000 + round.id.length);
   const course = buildCourse(round);
   const { L, samples, sampleAt } = course;
@@ -891,6 +935,8 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
   };
   const dqZones = obstacles.statics.filter((o) => o.kind === "dq").map((o) => ({ ...o, s: course.frameAt(o.u) }));
   const dqEvents = [];
+  const dqGaps = [];
+  const prevU = MARBLES.map(() => null);
   const impacts = [];
   const prevVel = bodies.map(() => null);
   const lastImpact = bodies.map(() => -99);
@@ -920,12 +966,22 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
         if (lapStartFrame[i] === null && f > raceStart && u >= 0) lapStartFrame[i] = f;
         if (finishFrame[i] === null && f > raceStart) {
           for (const z of dqZones) {
-            if (Math.abs(u - z.u) > DQ.len / 2) continue; // u is lap-local here
             const rel = [p.x - z.s.p[0], p.y - z.s.p[1], p.z - z.s.p[2]];
             const lat = rel[0] * z.s.r[0] + rel[1] * z.s.r[1] + rel[2] * z.s.r[2];
             const up = rel[0] * z.s.n[0] + rel[1] * z.s.n[1] + rel[2] * z.s.n[2] - R;
             const w = z.s.w ?? TRACK.width / 2;
-            if (lat * z.side > w - DQ.reach && up < 0.6) {
+            if (dqCrossing) {
+              // Crossed the pad's line this frame (same lap): how close to the wall?
+              const crossed = prevU[i] !== null && prevU[i] < z.u && u >= z.u && u - prevU[i] < 2 && up < 0.6;
+              if (!crossed) continue;
+              const gap = w - lat * z.side;
+              dqGaps.push(gap);
+              if (gap >= dqReach) continue;
+            } else {
+              if (Math.abs(u - z.u) > DQ.len / 2) continue; // u is lap-local here
+              if (!(lat * z.side > w - DQ.reach && up < 0.6)) continue;
+            }
+            {
               dqFrame[i] = f;
               dqEvents.push({ frame: f, kind: "dq", a: i, b: i, pos: 0, feature: z.feature, zone: z });
               b.setEnabled(false);
@@ -933,6 +989,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
             }
           }
         }
+        prevU[i] = u;
         return [r3(p.x), r3(p.y), r3(p.z), r3(q.x), r3(q.y), r3(q.z), r3(q.w), r3(lap[i] * L + u)];
       }),
     );
@@ -1182,7 +1239,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
     const fr = frames.findIndex((fr) => fr.some((m) => m[7] >= target));
     if (fr >= 0) arrivals[f.u] = fr / FPS;
   }
-  if (quiet) return { summary, ok: dnf.length === 0, margin, arrivals };
+  if (quiet) return { summary, ok: dnf.length === 0, margin, arrivals, dqGaps };
 
   const sec = (x) => Math.round(x * FPS);
   // --- Highlights ---------------------------------------------------------------------

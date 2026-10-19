@@ -1,6 +1,4 @@
-// British Grand Prix: not designed yet. `layout: "auto"` lets the planner place obstacles
-// from the round's seed (the original season layout); replace it with a list
-// like the one in r5-monza.js to design the circuit by hand.
+// The British Grand Prix: designed with `npm run design -- r2-silverstone` (layout below).
 export default {
   id: "r2-silverstone",
   title: "British Grand Prix",
@@ -8,6 +6,21 @@ export default {
   gp: "Great Britain",
   country: "United Kingdom",
   flag: ["#012169", "#c8102e"],
-  seed: 3,
-  layout: "auto",
+  scale: 0.08,
+  seed: 2,
+  start: "auto", // the line moves to the straightest stretch: the lift tower and the grid need one
+  // Fast and flowing: an early drop and jump, a gate and the hammer before the
+  // long middle straight where the drain and the whirlwind sit back to back,
+  // the turntable, then the chain lift.
+  dq: { target: 1.5 }, // the pads are cut to catch about this many per race (the hammer and turntable throw marbles at the walls)
+  layout: [
+    ["drop", 60],
+    ["jump", 92],
+    ["regroup", 135],
+    ["hammer", 143],
+    ["vortex", 232],
+    ["spinner", 249],
+    ["turntable", 288],
+    ["lift", 340],
+  ],
 };

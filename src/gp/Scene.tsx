@@ -427,7 +427,7 @@ export function Circuit({ race }: { race: Race }) {
     })();
     const arrows: THREE.BufferGeometry[] = [];
     for (let u = 16; u < uEnd - 6; u += 10) {
-      const s = samples[Math.round((u - samples[0].u) / 0.5)];
+      const s = samples[Math.min(samples.length - 1, Math.max(0, Math.round((u - samples[0].u) / 0.5)))];
       if (Math.abs(s.curv) > 0.06 || samples.some((q) => q.gap && Math.abs(q.u - u) < 1.5)) continue;
       arrows.push(bandGeometry(samples, u - 0.9, u + 0.9, -0.55, 0.55, 0.03));
     }
@@ -1520,7 +1520,7 @@ export function Confetti({ race, t }: { race: Race; t: number }) {
   const { mesh, pieces, origin } = useMemo(() => {
     const samples = race.data.samples as unknown as Sample[];
     const uF = (race.data.info as { finish?: number }).finish ?? race.L;
-    const s = samples[Math.round((uF - samples[0].u) / 0.5)];
+    const s = samples[Math.min(samples.length - 1, Math.max(0, Math.round((uF - samples[0].u) / 0.5)))];
     const geo = new THREE.PlaneGeometry(0.14, 0.08);
     const mat = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.4, metalness: 0.4 });
     const mesh = new THREE.InstancedMesh(geo, mat, 300);

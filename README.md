@@ -94,7 +94,11 @@ npm run design -- r5-monza --sweep 1-4
 
 writes `out/design/<id>.html`: the map coloured by curvature (where machines fit) with every obstacle numbered and sized by chaos, the elevation profile, the obstacle list with each card (difficulty, chaos, seconds, what it does), totals (chaos per lap, seconds of action, longest quiet stretch), where each obstacle type would still fit, and with `--sweep` the result of each seed (winner, margin, stuck, disqualified, classified).
 
-Monza's design file reproduces its earlier automatic layout exactly (checked byte-for-byte against the previous bake), so it is the template to copy.
+Monza's design file reproduces its earlier automatic layout exactly (checked byte-for-byte against the previous bake), so it is the template to copy. All five circuits are designed by hand now.
+
+**Start line.** The lift tower and its bays need ~24 straight units before the start line and the grid ~12 after it. A circuit can move its line: `start: <u>` (units along the outline) or `start: "auto"` (the straightest such stretch, nearest the real line). Monaco, Silverstone, Spa and Suzuka use "auto"; their real lines sit by bends, where marbles fell out of the tower bays.
+
+**Disqualifications.** `dq: { target: 1.5 }` makes a circuit calibrate its pads: a marble is out if it crosses a pad's line within `reach` of the wall, and the trial pass sets the reach so about that many are caught (with the hammer and the turntable throwing marbles at the walls, a fixed pad caught 5–9 a race on Monaco). Without it (Monza) the fixed pad applies.
 
 ### The director
 

@@ -1,6 +1,4 @@
-// Japanese Grand Prix: not designed yet. `layout: "auto"` lets the planner place obstacles
-// from the round's seed (the original season layout); replace it with a list
-// like the one in r5-monza.js to design the circuit by hand.
+// The Japanese Grand Prix: designed with `npm run design -- r4-suzuka` (layout below).
 export default {
   id: "r4-suzuka",
   title: "Japanese Grand Prix",
@@ -8,6 +6,22 @@ export default {
   gp: "Japan",
   country: "Japan",
   flag: ["#ffffff", "#bc002d"],
-  seed: 2,
-  layout: "auto",
+  scale: 0.08,
+  seed: 4,
+  start: "auto", // the line moves to the straightest stretch: the lift tower and the grid need one
+  // The esses and the figure-of-eight crossing: a rumble strip through the
+  // esses, the hammer and turntable before the hairpin, then the back straight
+  // carries a gate, the whirlwind, the rollers and a jump, and a last drop.
+  dq: { target: 1.5 }, // the pads are cut to catch about this many per race (the hammer and turntable throw marbles at the walls)
+  layout: [
+    ["bumps", 130],
+    ["hammer", 181],
+    ["turntable", 236],
+    ["drop", 250],
+    ["regroup", 305],
+    ["spinner", 314],
+    ["rollers", 324],
+    ["jump", 341],
+    ["drop", 376],
+  ],
 };
