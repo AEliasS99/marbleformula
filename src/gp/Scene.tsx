@@ -12,6 +12,7 @@ import { drawFlag, FLAGS } from "./flags";
 import { buildTrackMesh, floorVRange, pointInFrame, pointOnTrack, TRACK, TRACK_DEPTH, troughProfile } from "./trackMesh.js";
 import { fovFor, type Layout, type Race, type Vec3 } from "./race";
 import { spinnerParts } from "./rotor.js";
+import { turntableParts } from "./obstacles/turntable.js";
 import { asphaltMaps, grassMaps, plasticMaps, wearChrome } from "./surfaces";
 import { boltGeometry } from "./Details";
 
@@ -782,7 +783,7 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
   const dqTex = useMemo(() => dqTexture(), []);
   const sec = t / race.fps;
   const W = TRACK.width / 2 + TRACK.wall;
-  const turntables = (race.data.turntables ?? []) as unknown as { pos: Vec3; quat: Quat; radius: number; thickness: number; speed: number; phase: number }[];
+  const turntables = (race.data.turntables ?? []) as unknown as { pos: Vec3; quat: Quat; radius: number; thickness: number; speed: number; phase: number; hub?: number; hubHeight?: number; ribs?: number }[];
   const pushers = (race.data.pushers ?? []) as unknown as { pos: Vec3; dir: Vec3; quat: Quat; size: Vec3; travel: number; period: number; phase: number }[];
   const spinRefs = useRef<(THREE.Group | null)[]>([]);
   const swingRefs = useRef<(THREE.Group | null)[]>([]);
@@ -1023,10 +1024,30 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
               <ringGeometry args={[tt.radius - 0.16, tt.radius - 0.02, 96]} />
               <meshStandardMaterial color="#ffcc00" roughness={0.35} />
             </mesh>
-            <mesh position={[0, tt.thickness / 2, 0]}>
-              <sphereGeometry args={[0.22, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
-              <meshStandardMaterial {...chrome} />
-            </mesh>
+            {/* Raised rubber ribs (they kick the marbles) with a yellow top edge, and the chrome hub dome. */}
+            {(turntableParts(tt) as unknown as { pos: Vec3; quat: Quat; size: Vec3 }[]).map((r, k) => (
+              <group key={k} position={r.pos} quaternion={r.quat}>
+                <mesh castShadow receiveShadow>
+                  <boxGeometry args={r.size} />
+                  <meshStandardMaterial color="#1b1c20" roughness={0.85} />
+                </mesh>
+                <mesh position={[0, r.size[1] / 2 + 0.004, 0]}>
+                  <boxGeometry args={[r.size[0], 0.008, r.size[2] * 0.5]} />
+                  <meshStandardMaterial color="#ffcc00" roughness={0.35} />
+                </mesh>
+              </group>
+            ))}
+            {tt.hub && tt.hubHeight ? (
+              <mesh position={[0, tt.thickness / 2 + tt.hubHeight - tt.hub, 0]} castShadow>
+                <sphereGeometry args={[tt.hub, 48, 24, 0, Math.PI * 2, 0, Math.acos(1 - tt.hubHeight / tt.hub)]} />
+                <meshStandardMaterial {...chrome} />
+              </mesh>
+            ) : (
+              <mesh position={[0, tt.thickness / 2, 0]}>
+                <sphereGeometry args={[0.22, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+                <meshStandardMaterial {...chrome} />
+              </mesh>
+            )}
             <BoltRing count={6} radius={0.3} y={tt.thickness / 2 + 0.002} phase={0.1} />
           </group>
           {/* Fixed surround ring, flush with the floor. */}
