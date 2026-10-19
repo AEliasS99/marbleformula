@@ -9,7 +9,8 @@
     "render:gp": "for r in r1-monaco r2-silverstone r3-spa r4-suzuka r5-monza; do remotion render GP-$r out/gp/$r.mp4; done",
     "tower": "node scripts/tower.mjs",
     "tower:sweep": "for s in $(seq 1 20); do node scripts/tower.mjs $s --quiet | grep -E \"seed|DNF|margin|  1\\\\.\" | tr \"\\n\" \" \"; echo; done",
-    "render:tower": "remotion render MarbleRace out/marble-race.mp4 && remotion render MarbleRaceVertical out/marble-race-vertical.mp4"
+    "render:tower": "remotion render MarbleRace out/marble-race.mp4 && remotion render MarbleRaceVertical out/marble-race-vertical.mp4",
+    "design": "node scripts/design.mjs"
   },
   "keywords": [],
   "author": "",

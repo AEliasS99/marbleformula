@@ -11,22 +11,20 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { Matrix4, PerspectiveCamera, Quaternion, Vector3 } from "three";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadOutline, marbleize, SCALE, SLOPE } from "./circuit.mjs";
 import { venueBlocks, venueClearance, venueLayout } from "../src/gp/venue.js";
 import { ALWAYS, BY_TYPE, OBSTACLES, PHYSICS_ORDER } from "../src/gp/obstacles/index.js";
 import { VORTEX } from "../src/gp/obstacles/vortex.js";
 import { REGROUP } from "../src/gp/obstacles/regroup.js";
 import { fanGust } from "../src/gp/obstacles/fan.js";
+import { CIRCUITS } from "../src/gp/circuits/index.js";
 import { BANK_PIVOT, buildTrackMesh, liftCleatPose, pointInFrame, pointOnTrack, surfaceHeight as surfaceHeightAt, TRACK, TRACK_DEPTH } from "../src/gp/trackMesh.js";
 
 // --- Season ------------------------------------------------------------------------
-const ROUNDS = [
-  { id: "r1-monaco", title: "Monaco Grand Prix", geo: "mc-1929", gp: "Monaco", country: "Monaco", flag: ["#ce1126", "#ffffff"], scale: 0.07, seed: 8 },
-  { id: "r2-silverstone", title: "British Grand Prix", geo: "gb-1948", gp: "Great Britain", country: "United Kingdom", flag: ["#012169", "#c8102e"], seed: 3 },
-  { id: "r3-spa", title: "Belgian Grand Prix", geo: "be-1925", gp: "Belgium", country: "Belgium", flag: ["#000000", "#fdda24"], seed: 3 },
-  { id: "r4-suzuka", title: "Japanese Grand Prix", geo: "jp-1962", gp: "Japan", country: "Japan", flag: ["#ffffff", "#bc002d"], seed: 2 },
-  { id: "r5-monza", title: "Italian Grand Prix", geo: "it-1922", gp: "Italy", country: "Italy", flag: ["#009246", "#ce2b37"], scale: 0.08, seed: 3 },
-];
+// The circuits and their designs live in src/gp/circuits/ (one file each).
+const ROUNDS = CIRCUITS;
 const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 
 // Each marble carries a national flag (drawn in src/gp/flags.ts); `color` is a
@@ -174,6 +172,75 @@ function hashString(str) {
 }
 
 /** Places obstacles along the straights, cycling through every type. */
+/** What a feature needs (its clear straight and how straight), for the planner, explicit layouts and the design tool. */
+export function featureRule(type) {
+  if (type === "lift") return { before: LIFT.before, after: LIFT.after, maxCurv: 0.03, label: "THE LIFT" };
+  const f = FEATURES[type];
+  if (!f) throw new Error(`unknown obstacle "${type}"; one of lift, ${Object.keys(FEATURES).join(", ")}`);
+  return f;
+}
+
+/** Placement checks on a course's centreline: is the stretch around u straight enough for `type`? */
+export function placementRules(curv) {
+  const straightAt = (u, maxCurv) => {
+    const k0 = Math.round((u + GRID_LENGTH) / SAMPLE);
+    for (let j = -10; j <= 10; j++) {
+      const c = curv[Math.max(0, Math.min(curv.length - 1, k0 + j))];
+      if (Math.abs(c) > maxCurv) return false;
+    }
+    return true;
+  };
+  const clear = (u, f) => {
+    for (let x = u - f.before; x <= u + f.after; x += 1) if (!straightAt(x, f.maxCurv)) return false;
+    return true;
+  };
+  return { straightAt, clear };
+}
+
+/**
+ * An explicit layout from a circuit's design file: [type, u] entries in lap
+ * order (u omitted: the first legal spot after the previous entry). Every
+ * placement is checked: straight enough, inside the lap, clear of its
+ * neighbours (4 units between spans). Errors name the entry and where it could go.
+ */
+function placeLayout(layout, curv, L, id) {
+  const { clear } = placementRules(curv);
+  const features = [];
+  const overlaps = (u, f) => features.some((g) => !(u + f.after + 4 < g.u - g.span[0] || u - f.before - 4 > g.u + g.span[1]));
+  const legal = (u, f) => u >= 12 + START.funnel && u <= L - 18 && clear(u, f) && !overlaps(u, f);
+  const errors = [];
+  let cursor = 12 + START.funnel;
+  for (const [k, entry] of layout.entries()) {
+    const [type, at] = Array.isArray(entry) ? entry : [entry.type, entry.u];
+    const f = featureRule(type);
+    let u = at;
+    if (u === undefined || u === null) {
+      u = null;
+      for (let x = Math.ceil(cursor); x <= L - 18; x += 1)
+        if (legal(x, f)) {
+          u = x;
+          break;
+        }
+      if (u === null) {
+        errors.push(`#${k + 1} ${type}: no room left after u=${cursor.toFixed(0)}`);
+        continue;
+      }
+    } else if (!legal(u, f)) {
+      const near = [];
+      for (let d = 1; d < 80 && near.length < 2; d += 1)
+        for (const x of [Math.round(u) - d, Math.round(u) + d]) if (near.length < 2 && legal(x, f)) near.push(x);
+      const why = u < 12 + START.funnel || u > L - 18 ? "outside the lap's usable part" : !clear(u, f) ? `the track is not straight enough from ${(u - f.before).toFixed(0)} to ${(u + f.after).toFixed(0)}` : "too close to another obstacle";
+      errors.push(`#${k + 1} ${type} at u=${u}: ${why}${near.length ? `; legal nearby: ${near.join(", ")}` : ""}`);
+      continue;
+    }
+    features.push({ type, u: r3(u), label: f.label, span: [f.before, f.after] });
+    cursor = u + f.after + 4;
+  }
+  if (errors.length) throw new Error(`${id}: layout has ${errors.length} problem(s):\n  ${errors.join("\n  ")}\n(run: npm run design -- ${id})`);
+  features.sort((a, b) => a.u - b.u);
+  return features;
+}
+
 function planFeatures(us, curv, L, rand) {
   const straightAt = (u, maxCurv) => {
     const k0 = Math.round((u + GRID_LENGTH) / SAMPLE);
@@ -265,7 +332,7 @@ function planFeatures(us, curv, L, rand) {
   return features;
 }
 
-function buildCourse(round) {
+export function buildCourse(round) {
   const { props, pts } = loadOutline(new URL(`../data/circuits/${round.geo}.geojson`, import.meta.url));
   const scale = round.scale ?? SCALE;
   const relaxed = marbleize(pts, scale);
@@ -316,7 +383,8 @@ function buildCourse(round) {
   });
 
   // The obstacle layout belongs to the circuit, not the race: same for every seed.
-  const features = planFeatures(us, curv, L, mulberry32(hashString(round.id)));
+  // The circuit's own layout if it has one (src/gp/circuits/), else the planner's.
+  const features = Array.isArray(round.layout) ? placeLayout(round.layout, curv, L, round.id) : planFeatures(us, curv, L, mulberry32(hashString(round.id)));
 
   // Elevation: a steady descent with sudden drops and rumble strips, then a
   // run-off that levels out and climbs so finished marbles stop. The grid sits
@@ -562,7 +630,7 @@ function buildObstacles(course, sync = {}) {
 
 // --- Race ----------------------------------------------------------------------------
 /** Runs the race, then re-runs it with the machines timed to the pack it produced. */
-async function runRound(round, seed, opts) {
+export async function runRound(round, seed, opts) {
   let sync = {};
   for (let pass = 0; pass < 2; pass++) {
     const r = await runRoundOnce(round, seed, { ...opts, quiet: true, sync });
@@ -2026,6 +2094,11 @@ function soundtrack(result, rand) {
 }
 
 // --- Main ----------------------------------------------------------------------------
+// Imported (by scripts/design.mjs): stop here. Run directly: bake the season.
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === resolvePath(process.argv[1]);
+if (!isMain) {
+  // nothing more
+} else {
 const args = process.argv.slice(2);
 const opt = (name) => {
   const i = args.indexOf(name);
@@ -2084,3 +2157,4 @@ writeFileSync(
     `export { default as season } from "./season.json";\nexport const rounds = [${ROUNDS.map((_, k) => `r${k}`).join(", ")}];\n`,
 );
 console.log("champion so far:", MARBLES[standings.at(-1)[0].marble].name, standings.at(-1)[0].points, "pts");
+}

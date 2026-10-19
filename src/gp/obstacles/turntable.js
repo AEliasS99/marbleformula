@@ -35,7 +35,7 @@ export default {
   dq: true,
   restitution: 0.1,
   collection: "turntables",
-  card: { difficulty: 3, chaos: 4, seconds: 1.5, summary: "A spinning disc in the floor that drags marbles sideways into each other." },
+  card: { difficulty: 3, chaos: 4, seconds: 1.5, summary: "A spinning disc with raised rubber ribs and a domed hub: throws marbles across the track and into each other." },
   build(f, { frameAt, out }) {
     const s = frameAt(f.u + 1);
     out.turntables.push({

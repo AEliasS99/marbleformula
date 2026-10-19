@@ -81,6 +81,21 @@ The vortex is the one place the track has a gap: samples inside the bowl carry `
 
 **Pacing.** The director follows the best battle, not the leader: each frame it scores every group of marbles within 6 units (size, a bonus for the front, loyalty to the group it was already on) and frames the winner. The race ends two seconds after the tenth marble is home (or out); the rest are classified where they are and shown with "—" in the results.
 
+### Designing a circuit
+
+Each circuit is a design file in `src/gp/circuits/` (`index.js` lists the season in race order): the real outline it comes from, its scale and seed, and its obstacle layout. A layout is a list of `[obstacle, u]`, u being the distance along the lap from the start line (the lap ends at the lift tower); leave u out to put an obstacle at the first legal spot after the previous one. `layout: "auto"` keeps the planner's layout from the seed (the four circuits not designed yet).
+
+Every placement is checked against the obstacle's rules (its clear straight, how straight, 4 units from its neighbours); a bad one stops the bake with the entry, the reason and the nearest legal positions.
+
+```bash
+npm run design -- r5-monza
+npm run design -- r5-monza --sweep 1-4
+```
+
+writes `out/design/<id>.html`: the map coloured by curvature (where machines fit) with every obstacle numbered and sized by chaos, the elevation profile, the obstacle list with each card (difficulty, chaos, seconds, what it does), totals (chaos per lap, seconds of action, longest quiet stretch), where each obstacle type would still fit, and with `--sweep` the result of each seed (winner, margin, stuck, disqualified, classified).
+
+Monza's design file reproduces its earlier automatic layout exactly (checked byte-for-byte against the previous bake), so it is the template to copy.
+
 ### The director
 
 The director in `scripts/season.mjs` picks one camera per frame:
