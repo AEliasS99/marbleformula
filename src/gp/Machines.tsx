@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { subframe } from "./subframe";
 import { TRACK } from "./trackMesh.js";
-import { agitatorArm, agitatorQuat, RAIL, vortexFrame, vortexGeometry, vortexRail } from "./vortex.js";
+import { agitatorArm, agitatorQuat, vortexFrame, vortexGeometry, vortexY } from "./vortex.js";
 import type { Race, Quat, Vec3 } from "./race";
 
 // The machines that change the physics rather than just deflecting: the
@@ -19,7 +19,11 @@ type Vortex = {
   depth: number;
   lip: number;
   throat: number;
-  entryHalf: number;
+  entryHalf?: number;
+  entryLo?: number;
+  entryHi?: number;
+  chute?: { x0: number; z: number };
+  k: number;
   agitator: { arms: number; rIn: number; rOut: number; clearance: number; height: number; thickness: number; speed: number; phase: number };
 };
 type Roller = { pos: Vec3; quat: Quat; radius: number; length: number; omega: number; phase: number };
@@ -145,14 +149,16 @@ export function Machines({ race, t }: { race: Race; t: number }) {
     () =>
       vortices.map((v) => {
         const parts = vortexGeometry(v, 160);
-        // The spiral rail: a chrome tube along the ridge (the collider is boxes along the same curve).
-        const railPts = (vortexRail(v).points as number[][]).map((p) => new THREE.Vector3(p[0], p[1] + RAIL.height * 0.65, p[2]));
-        const rail = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts), 600, RAIL.thick, 12, false);
         // Concentric rings on the cone, every 0.45 units down the slope: they read the funnel's shape.
         const fr = vortexFrame(v);
         const rings: { r: number; y: number }[] = [];
-        for (let r = v.radius - 0.2; r > v.hole + 0.15; r -= 0.45) rings.push({ r, y: (-v.depth * (v.radius - r)) / (v.radius - v.hole) + 0.012 });
-        return { cone: toGeometry(parts.cone), lip: toGeometry(parts.lip), rim: toGeometry(parts.rim), throat: toGeometry(parts.throat), stripe: toGeometry(parts.stripe), frame: fr, rail, rings };
+        // Rings at equal height steps (the drain steepens toward the throat, so they crowd in like contour lines).
+        for (let k = 1; k < 9; k++) {
+          const y = (-v.depth * k) / 9;
+          const r = 1 / (1 / v.radius - y / v.k);
+          rings.push({ r, y: (vortexY(v, r) as number) + 0.012 });
+        }
+        return { cone: toGeometry(parts.cone), lip: toGeometry(parts.lip), rim: toGeometry(parts.rim), throat: toGeometry(parts.throat), stripe: toGeometry(parts.stripe), apron: toGeometry(parts.apron), chute: toGeometry(parts.chute), frame: fr, rings };
       }),
     [vortices],
   );
@@ -205,15 +211,18 @@ export function Machines({ race, t }: { race: Race; t: number }) {
                 <meshStandardMaterial color={k % 3 === 0 ? "#d8232a" : "#ffffff"} roughness={0.4} />
               </mesh>
             ))}
-            {/* The spiral rail and its yellow cap. */}
-            <mesh geometry={b.rail} castShadow>
-              <meshStandardMaterial color="#ffcc00" roughness={0.3} metalness={0.2} />
-            </mesh>
             <mesh geometry={b.lip}>
               <meshPhysicalMaterial color="#eef3f8" transparent opacity={0.3} roughness={0.06} metalness={0} clearcoat={1} clearcoatRoughness={0.04} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
             <mesh geometry={b.stripe}>
               <meshStandardMaterial map={tex.hazard} roughness={0.45} side={THREE.DoubleSide} />
+            </mesh>
+            {/* The chute into the drain: the right-hand wall run on to the lip, and the apron floor. */}
+            <mesh geometry={b.apron} receiveShadow>
+              <meshStandardMaterial color="#34363b" roughness={0.8} side={THREE.DoubleSide} />
+            </mesh>
+            <mesh geometry={b.chute} castShadow>
+              <meshPhysicalMaterial color="#eef3f8" transparent opacity={0.3} roughness={0.06} clearcoat={1} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
             <mesh geometry={b.rim}>
               <meshStandardMaterial {...chrome} side={THREE.DoubleSide} />
@@ -221,23 +230,24 @@ export function Machines({ race, t }: { race: Race; t: number }) {
             <mesh geometry={b.throat} castShadow>
               <meshStandardMaterial {...chrome} side={THREE.DoubleSide} />
             </mesh>
-            {/* The agitator: three chrome paddles with yellow tips hugging the cone above the throat, on a shaft down through it to a motor underneath. */}
+            {/* The agitator: three sweeping paddles that follow the bowl's curve a hair above it (chrome, black rubber
+                edge where they meet the marbles, yellow tips), on a shaft down through the throat to a motor underneath. */}
+            {v.agitator.arms > 0 && (
             <group ref={(el) => void (agitatorRefs.current[i] = el)} position={v.center} quaternion={agitatorQuat(v, sec) as Quat}>
-              {Array.from({ length: v.agitator.arms }, (_, k) => {
-                const arm = agitatorArm(v, k) as { pos: Vec3; quat: Quat; size: Vec3 };
-                return (
-                  <group key={k} position={arm.pos} quaternion={arm.quat}>
+              {Array.from({ length: v.agitator.arms }, (_, k) =>
+                (agitatorArm(v, k) as { pos: Vec3; quat: Quat; size: Vec3 }[]).map((seg, j, all) => (
+                  <group key={`${k}-${j}`} position={seg.pos} quaternion={seg.quat}>
                     <mesh castShadow>
-                      <boxGeometry args={arm.size} />
-                      <meshStandardMaterial {...chrome} />
+                      <boxGeometry args={seg.size} />
+                      <meshStandardMaterial {...(j === all.length - 1 ? { color: "#ffcc00", roughness: 0.3 } : chrome)} />
                     </mesh>
-                    <mesh position={[arm.size[0] / 2 - 0.12, 0, 0]}>
-                      <boxGeometry args={[0.24, arm.size[1] + 0.02, arm.size[2] + 0.02]} />
-                      <meshStandardMaterial color="#ffcc00" roughness={0.3} />
+                    <mesh position={[0, -seg.size[1] / 2 + 0.04, 0]}>
+                      <boxGeometry args={[seg.size[0], 0.08, seg.size[2] + 0.03]} />
+                      <meshStandardMaterial color="#1b1c20" roughness={0.9} />
                     </mesh>
                   </group>
-                );
-              })}
+                )),
+              )}
               <mesh position={[0, -v.depth / 2 - v.throat + 0.3, 0]} castShadow>
                 <cylinderGeometry args={[0.12, 0.12, v.depth + 2 * v.throat + 0.6, 24]} />
                 <meshStandardMaterial {...chrome} />
@@ -247,16 +257,17 @@ export function Machines({ race, t }: { race: Race; t: number }) {
                 <meshStandardMaterial {...chrome} />
               </mesh>
             </group>
-            <mesh position={[v.center[0], v.center[1] - v.depth - v.throat - 0.55, v.center[2]]} castShadow>
+            )}
+            {v.agitator.arms > 0 && <mesh position={[v.center[0], v.center[1] - v.depth - v.throat - 0.55, v.center[2]]} castShadow>
               <cylinderGeometry args={[0.45, 0.5, 0.6, 24]} />
               <meshStandardMaterial {...dark} />
-            </mesh>
+            </mesh>}
             {/* Lamps around the rim, and a support frame: four struts from the throat to the ground. */}
             {Array.from({ length: 12 }, (_, k) => {
               const a = ((k + 0.5) / 12) * Math.PI * 2;
               const x = Math.cos(a) * (v.radius + 0.08);
               const z = Math.sin(a) * (v.radius + 0.08);
-              if (x < 0 && Math.abs(z) < v.entryHalf + 0.4) return null;
+              if (x < 0 && z > (v.entryLo ?? -(v.entryHalf ?? 0)) - 0.4 && z < (v.entryHi ?? v.entryHalf ?? 0) + 0.4) return null;
               const p = b.frame.toWorld(x, v.lip + 0.06, z) as Vec3;
               return (
                 <mesh key={k} position={p}>

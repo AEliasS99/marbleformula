@@ -50,14 +50,14 @@ Each circuit has a fixed layout, the same for every seed. Obstacles are placed o
 | **The drop** | the trough falls away by 1.1 and the marbles fly off the edge (yellow and black stripe on the lip). At least 3 per circuit where there's room |
 | **Slalom** | chrome pegs, one per row, alternating sides |
 | **Pinball** | bouncy bumpers with a yellow ring |
-| **The spinner** | a rotating chrome paddle (kinematic) |
+| **The whirlwind** | a three-blade rotor reaching to within 0.25 of the walls, each blade ending in a hook that forms a pocket on its leading side (`src/gp/rotor.js`): it scoops marbles up in batches, carries them round and flings them out. One per circuit |
 | **Split lanes** | an off-centre fin that splits the field into two lanes |
 | **Rumble strip** | bumps that make the marbles hop |
 | **The turntable** | a spinning plate set into the floor; marbles crossing it are dragged sideways |
 | **The pusher** | a block that slides out from the wall across the track, timed to the leader |
 | **Big air** | a kicker with a 10° run-up, then a 2.0 fall: real flight, under clear guard panels |
 | **The lift** | a chain lift with cleats that carries the whole field up to a higher level |
-| **The vortex** | a smoked funnel bowl with ring markings set into the track (`src/gp/vortex.js`): a deflector fin sends the field in off-axis, it spirals down the cone and drops through the throat onto the lower track, which resumes under the hole. A yellow spiral rail winds 0.9 of a turn down the cone so marbles ride round it instead of dropping straight in, and an agitator (three chrome paddles on a shaft through the throat, sweeping over the rail) keeps them moving; the lip is 2.2 high because the paddles fling marbles. Reorders the whole pack. One per circuit |
+| **The vortex** | a drain (`src/gp/vortex.js`): a smoked bowl with a hyperbolic profile y = -k(1/r - 1/R), the shape of a coin "wishing well", on which a marble orbits at sqrt(g·k/r). A steep run-up and a long gentle guide bring the field in fast along the right wall, which runs on as a chute to the rim's tangent point, so marbles enter along the rim and circle round the wall like water down a drain, the fast ones riding high and crashing into the slow ones below, before they drop through the throat onto the lower track. Polished: frictionless walls and almost no rolling resistance inside. No paddles: anything slower than the orbit brakes it. One per circuit |
 | **The rollers** | three knurled cylinders flush in the floor, all driving forward at 7, 4.5 and 10 u/s: marbles get kicked apart without contact |
 | **The fan** | a pulsing lateral gust over 5 units of track (a force in the bake), from a caged fan on a post beside the wall |
 | **Regroup gate** | a hazard bar across the track that holds the leaders until 60 % of the field still racing has arrived (or 7 s have passed), then lifts; two per lap (`REGROUP`). Keeps twenty marbles a race instead of a procession, and lets the overlay count "12 / 20 at the gate" |
@@ -145,6 +145,8 @@ Debug switches for `--round` runs:
 | Marbles popped through gate bars, cabin doors and guard panels | A pile pressing on a thin (0.05–0.12) box: penetration recovery pushes the deepest marble out the far side | Barrier colliders are 0.3–0.6 deep, extended away from the pile; the visible panel stays thin |
 | The hammer pushed marbles through the wall shell | Its reach left 0.4 to the wall: a marble got pinched between head and shell | Amplitude 24° leaves 0.88, more than a marble; period 1.7 keeps the punch |
 | A marble parked on the vortex's spiral rail for 40 s | 1.3 turns gave a 7 % grade; pressed against the rail by the 44° cone, its friction beat the grade | 0.9 of a turn (10 %), a frictionless rail, and agitator paddles long enough to sweep along it |
+| The vortex didn't swirl: marbles dropped straight in | They arrived at 2–3 u/s (a 40° fin braked them) heading at the centre; on the 44° cone nothing could orbit, and paddles slower than an orbit braked any that did | Hyperbolic drain, tangential chute, steep run-up and a gentle guide, polished walls, no paddles: median 0.7 turns, up to 2.6 |
+| A marble wedged in the drain's throat for 87 s | The paddles' shaft left a one-marble gap to the throat wall | No shaft without paddles |
 | Lift towers poked through each other's cabins | Each cabin had its own four-column tower; side by side, the inner columns stood in the other cabin | One shared tower frame: columns only at the outer corners, one head frame across both cabins |
 | Gate bars on screen did not match the physics | The renderer eased from the first open only; the bake re-arms the gate every lap | The bake stores the bar's per-frame lift and the renderer replays it |
 

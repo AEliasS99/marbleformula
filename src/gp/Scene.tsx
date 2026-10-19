@@ -11,6 +11,7 @@ import { subframe } from "./subframe";
 import { drawFlag, FLAGS } from "./flags";
 import { buildTrackMesh, floorVRange, pointInFrame, pointOnTrack, TRACK, TRACK_DEPTH, troughProfile } from "./trackMesh.js";
 import { fovFor, type Layout, type Race, type Vec3 } from "./race";
+import { spinnerParts } from "./rotor.js";
 import { asphaltMaps, grassMaps, plasticMaps, wearChrome } from "./surfaces";
 import { boltGeometry } from "./Details";
 
@@ -968,38 +969,38 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
 
       {spinners.map((sp, i) => {
         const q = spinQuat(sp, sec);
-        const bars = (sp.arms ?? 2) / 2;
+        // The whirlwind: chrome blades with black rubber edges, yellow hooked tips, a domed hub.
+        const parts = spinnerParts(sp) as { pos: Vec3; quat: Quat; size: Vec3; kind: string }[];
         return (
           <group key={`s${i}`} ref={(el) => void (spinRefs.current[i] = el)} position={sp.pos} quaternion={q}>
-            {Array.from({ length: bars }, (_, a) => (
-              <group key={a} rotation-y={(a * Math.PI) / 2}>
+            {parts.map((p, k) => (
+              <group key={k} position={p.pos} quaternion={p.quat}>
                 <mesh castShadow receiveShadow>
-                  <boxGeometry args={[sp.size[0], sp.size[1], sp.size[2] - 0.2]} />
-                  <meshStandardMaterial {...chrome} />
+                  <boxGeometry args={p.size} />
+                  {p.kind === "hook" ? <meshStandardMaterial color="#ffcc00" roughness={0.3} /> : <meshStandardMaterial {...chrome} />}
                 </mesh>
-                {[-1, 1].map((e) => (
-                  <group key={e} position={[0, 0, (e * (sp.size[2] - 0.2)) / 2]}>
-                    <mesh castShadow>
-                      <cylinderGeometry args={[sp.size[0] / 2 + 0.03, sp.size[0] / 2 + 0.03, sp.size[1], 32]} />
-                      <meshStandardMaterial color="#ffcc00" roughness={0.3} />
-                    </mesh>
-                    <mesh>
-                      <cylinderGeometry args={[sp.size[0] / 2 + 0.055, sp.size[0] / 2 + 0.055, sp.size[1] * 0.5, 32]} />
-                      <meshStandardMaterial color="#1b1c20" roughness={0.9} />
-                    </mesh>
-                  </group>
-                ))}
+                {/* Rubber strip along the bottom edge and a hazard band on top. */}
+                <mesh position={[0, -p.size[1] / 2 + 0.05, 0]}>
+                  <boxGeometry args={[p.size[0] + 0.01, 0.1, p.size[2] + 0.02]} />
+                  <meshStandardMaterial color="#1b1c20" roughness={0.9} />
+                </mesh>
+                {p.kind === "blade" && (
+                  <mesh position={[0, p.size[1] / 2 + 0.005, 0]}>
+                    <boxGeometry args={[p.size[0], 0.01, p.size[2] + 0.005]} />
+                    <meshStandardMaterial map={chev} roughness={0.4} />
+                  </mesh>
+                )}
               </group>
             ))}
             <mesh castShadow>
-              <cylinderGeometry args={[0.2, 0.2, sp.size[1] + 0.12, 40]} />
+              <cylinderGeometry args={[0.24, 0.26, sp.size[1] + 0.12, 40]} />
               <meshStandardMaterial color="#15161b" roughness={0.35} />
             </mesh>
             <mesh position={[0, sp.size[1] / 2 + 0.07, 0]}>
-              <sphereGeometry args={[0.12, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+              <sphereGeometry args={[0.16, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
               <meshStandardMaterial {...chrome} />
             </mesh>
-            <BoltRing count={4} radius={0.165} y={sp.size[1] / 2 + 0.06} phase={0.4} />
+            <BoltRing count={6} radius={0.2} y={sp.size[1] / 2 + 0.06} phase={0.4} />
           </group>
         );
       })}

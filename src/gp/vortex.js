@@ -1,15 +1,25 @@
 import { Matrix4, Quaternion, Vector3 } from "three";
 
-// The vortex: a level funnel bowl set into the track. The upper track ends at
-// its rim; marbles enter off-centre (a deflector fin sends them to one side),
-// spiral down the cone and fall through the throat onto the lower track, which
-// resumes under the hole. Shared by the physics (scripts/season.mjs) and the
+// The vortex: a drain. A level bowl with a hyperbolic profile (the shape of a
+// coin "spiral wishing well") set into the track. The upper track ends at its
+// rim; a deflector fin sends the field in along the rim, and on this profile a
+// marble orbits: the orbit speed needed at radius r is sqrt(g·k/r), so as
+// rolling resistance bleeds speed it spirals slowly inward, faster and faster,
+// round and round, until it drops through the throat onto the lower track,
+// which resumes under the hole. Fast arrivals ride the outer wall and crash
+// into the slower ones circling below. Shared by the physics (scripts/season.mjs) and the
 // renderer (src/gp/Scene.tsx), so the collider and what you see are the same
 // surface.
 //
 // A vortex record: { center: [x, y, z] (rim level, bowl axis), fwd: [x, 0, z]
-// (track direction, the entry is behind the centre), radius, hole, depth, lip,
-// throat, entryHalf (half-width of the opening in the lip wall) }.
+// (track direction, the entry is behind the centre), radius, hole, k (the
+// profile's constant), depth (rim to throat), lip, throat, entryHalf (half-width
+// of the opening in the lip wall), agitator }.
+
+/** Height of the bowl's surface below the rim at radius r: -k (1/r - 1/R). */
+export const vortexY = (v, r) => -v.k * (1 / Math.max(r, v.hole) - 1 / v.radius);
+/** Its slope dy/dr = k / r² (positive: the surface rises outward). */
+const vortexSlope = (v, r) => v.k / (r * r);
 
 /** Local frame: x along the track, y up, z to the right. */
 export function vortexFrame(v) {
@@ -30,12 +40,14 @@ export function vortexFrame(v) {
 export function vortexGeometry(v, segments = 96) {
   const { toWorld } = vortexFrame(v);
   const part = () => ({ position: [], index: [], uv: [] });
-  const parts = { cone: part(), lip: part(), throat: part(), rim: part(), stripe: part() };
+  const parts = { cone: part(), lip: part(), throat: part(), rim: part(), stripe: part(), apron: part(), chute: part() };
   // Entry opening: the arc of the ring behind the centre within the track's half-width.
   const inOpening = (a) => {
     const x = Math.cos(a) * v.radius;
     const z = Math.sin(a) * v.radius;
-    return x < 0 && Math.abs(z) < v.entryHalf;
+    const lo = v.entryLo ?? -v.entryHalf;
+    const hi = v.entryHi ?? v.entryHalf;
+    return x < 0 && z > lo && z < hi;
   };
   // Sweeps a profile edge (r0,y0)->(r1,y1) around the axis.
   const band = (g, r0, y0, r1, y1, skip = null, vv = [0, 1]) => {
@@ -53,81 +65,56 @@ export function vortexGeometry(v, segments = 96) {
       g.index.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
     }
   };
-  // The cone in a few rings, so the lathe reads as a smooth funnel.
-  const rings = 6;
+  // The funnel in many rings, closer together toward the throat where it steepens.
+  const rings = 28;
+  const rAt = (t) => v.radius * Math.pow(v.hole / v.radius, t); // geometric spacing
   for (let k = 0; k < rings; k++) {
     const t0 = k / rings;
     const t1 = (k + 1) / rings;
-    const r0 = v.radius + (v.hole - v.radius) * t0;
-    const r1 = v.radius + (v.hole - v.radius) * t1;
-    band(parts.cone, r0, -v.depth * t0, r1, -v.depth * t1, null, [t0, t1]);
+    const r0 = rAt(t0);
+    const r1 = rAt(t1);
+    band(parts.cone, r0, vortexY(v, r0), r1, vortexY(v, r1), null, [t0, t1]);
   }
   band(parts.lip, v.radius, v.lip, v.radius, 0, inOpening);
   band(parts.rim, v.radius + 0.16, v.lip, v.radius, v.lip, inOpening);
   band(parts.lip, v.radius + 0.16, 0, v.radius + 0.16, v.lip, inOpening); // outside of the lip wall
   band(parts.stripe, v.radius + 0.17, v.lip - 0.26, v.radius + 0.17, v.lip - 0.02, inOpening); // hazard band outside, near the top
   band(parts.throat, v.hole, -v.depth, v.hole, -v.depth - v.throat);
+  // The chute: the track's right wall carried on, straight, to the lip's tangent
+  // point, and a flat apron at rim level between the track end and the rim.
+  if (v.chute) {
+    const { x0, z: zw } = v.chute;
+    const quad = (g, a, b, c, d) => {
+      const base = g.position.length / 3;
+      for (const p of [a, b, c, d]) {
+        g.position.push(...toWorld(...p));
+        g.uv.push(0, 0);
+      }
+      g.index.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    };
+    const n = 16;
+    for (let k = 0; k < n; k++) {
+      const xa = x0 + ((0 - x0) * k) / n;
+      const xb = x0 + ((0 - x0) * (k + 1)) / n;
+      const za = Math.sqrt(Math.max(0, v.radius * v.radius - xa * xa)) - 0.02;
+      const zb = Math.sqrt(Math.max(0, v.radius * v.radius - xb * xb)) - 0.02;
+      // Floor (facing up): from the rim out to the wall.
+      quad(parts.apron, [xa, 0, za], [xa, 0, zw], [xb, 0, zw], [xb, 0, zb]);
+    }
+    // Wall inner face (facing the bowl, -z) and outer face.
+    quad(parts.chute, [x0, 0, zw], [x0, v.lip, zw], [0, v.lip, zw], [0, 0, zw]);
+    quad(parts.chute, [x0, 0, zw + 0.16], [0, 0, zw + 0.16], [0, v.lip, zw + 0.16], [x0, v.lip, zw + 0.16]);
+  }
   return parts;
 }
 
-/**
- * The spiral rail on the cone: a low ridge winding 1.3 turns from near the
- * rim down toward the throat, in the direction the marbles circle (angle
- * decreasing), so they ride round it instead of dropping straight in. It is
- * lower than the agitator's clearance, so the paddles pass over it.
- * Returns the rail's points (world) and its segment boxes for the collider.
- */
-// 0.9 of a turn: a 10 % grade along the rail, enough that a marble resting
-// against it on the 44° cone keeps rolling (at 1.3 turns, 7 %, one stalled).
-export const RAIL = { turns: 0.9, a0: (55 * Math.PI) / 180, rFrom: 0.35, rTo: 0.55, height: 0.17, thick: 0.07, seg: 0.28 };
-export function vortexRail(v) {
-  const { fwd, right, toWorld } = vortexFrame(v);
-  const F = new Vector3(...fwd);
-  const Rt = new Vector3(...right);
-  const r0 = v.radius - RAIL.rFrom;
-  const r1 = v.hole + RAIL.rTo;
-  const yAt = (r) => (-v.depth * (v.radius - r)) / (v.radius - v.hole);
-  const total = RAIL.turns * Math.PI * 2;
-  const pts = [];
-  const n = 400;
-  for (let k = 0; k <= n; k++) {
-    const t = k / n;
-    const a = RAIL.a0 - t * total;
-    const r = r0 + (r1 - r0) * t;
-    pts.push({ a, local: [Math.cos(a) * r, yAt(r), Math.sin(a) * r] });
-  }
-  const slope = Math.atan(v.depth / (v.radius - v.hole));
-  const up = new Vector3(0, 1, 0);
-  const segments = [];
-  let acc = 0;
-  let from = pts[0];
-  for (let k = 1; k < pts.length; k++) {
-    acc += Math.hypot(pts[k].local[0] - pts[k - 1].local[0], pts[k].local[1] - pts[k - 1].local[1], pts[k].local[2] - pts[k - 1].local[2]);
-    if (acc < RAIL.seg && k < pts.length - 1) continue;
-    const to = pts[k];
-    const A = new Vector3(...toWorld(...from.local));
-    const B = new Vector3(...toWorld(...to.local));
-    const am = (from.a + to.a) / 2;
-    const radialOut = F.clone().multiplyScalar(Math.cos(am)).addScaledVector(Rt, Math.sin(am)).normalize();
-    const nrm = up.clone().multiplyScalar(Math.cos(slope)).addScaledVector(radialOut, -Math.sin(slope)).normalize();
-    const tx = B.clone().sub(A);
-    const len = tx.length();
-    tx.normalize();
-    const tz = new Vector3().crossVectors(tx, nrm).normalize();
-    const ty = new Vector3().crossVectors(tz, tx).normalize();
-    const q = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(tx, ty, tz));
-    const pos = A.clone().add(B).multiplyScalar(0.5).addScaledVector(ty, RAIL.height / 2);
-    segments.push({ pos: [pos.x, pos.y, pos.z], quat: [q.x, q.y, q.z, q.w], size: [len + 0.02, RAIL.height, RAIL.thick] });
-    acc = 0;
-    from = to;
-  }
-  return { points: pts.map((p) => toWorld(...p.local)), segments };
-}
-
 /** One triangle soup of every part, for the collider. */
-export function vortexSoup(v) {
-  const { stripe, ...parts } = vortexGeometry(v, 64);
+export function vortexSoup(v, which = "all") {
+  const { stripe, ...all } = vortexGeometry(v, 64);
   void stripe; // decoration only
+  // "floor": what marbles roll on; "walls": what they ride along (lip, rim, chute).
+  const pick = { all: Object.keys(all), floor: ["cone", "throat", "apron"], walls: ["lip", "rim", "chute"] }[which];
+  const parts = Object.fromEntries(pick.map((k) => [k, all[k]]));
   const vertices = [];
   const indices = [];
   for (const g of Object.values(parts)) {
@@ -143,16 +130,31 @@ export function agitatorQuat(v, t) {
   const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), v.agitator.phase + v.agitator.speed * t);
   return [q.x, q.y, q.z, q.w];
 }
-/** Each paddle's pose in the agitator's frame: tilted to hug the cone, `clearance` above it. */
+/**
+ * Each paddle, as segments that follow the bowl's curve a hair above it (so
+ * they catch every marble in their path instead of passing over), in the
+ * agitator's frame: { pos, quat, size } per segment, the last one the tip.
+ */
 export function agitatorArm(v, k) {
   const a = v.agitator;
-  const slope = Math.atan(v.depth / (v.radius - v.hole));
-  const yAt = (r) => -v.depth * (v.radius - r) / (v.radius - v.hole);
-  const rMid = (a.rIn + a.rOut) / 2;
-  const len = (a.rOut - a.rIn) / Math.cos(slope);
   const yaw = (k / a.arms) * Math.PI * 2;
-  // Local: x radial outward (tilted up the cone), y normal to the cone, z tangential.
-  const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), -yaw).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), slope));
-  const pos = [Math.cos(yaw) * rMid, yAt(rMid) + a.clearance / Math.cos(slope) + a.height / 2, Math.sin(yaw) * rMid];
-  return { pos, quat: [q.x, q.y, q.z, q.w], size: [len, a.height, a.thickness] };
+  const qYaw = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), -yaw);
+  const n = 8;
+  const segs = [];
+  for (let j = 0; j < n; j++) {
+    const r0 = a.rIn + ((a.rOut - a.rIn) * j) / n;
+    const r1 = a.rIn + ((a.rOut - a.rIn) * (j + 1)) / n;
+    const rm = (r0 + r1) / 2;
+    const dir = new Vector3(r1 - r0, vortexY(v, r1) - vortexY(v, r0), 0);
+    const len = dir.length();
+    dir.normalize();
+    // Surface normal at the middle (in the radial–vertical plane, tilted inward).
+    const nrm = new Vector3(-vortexSlope(v, rm), 1, 0).normalize();
+    const tz = new Vector3().crossVectors(dir, nrm).normalize();
+    const ty = new Vector3().crossVectors(tz, dir).normalize();
+    const q = qYaw.clone().multiply(new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(dir, ty, tz)));
+    const mid = new Vector3(rm, vortexY(v, rm), 0).addScaledVector(nrm, a.clearance + a.height / 2).applyQuaternion(qYaw);
+    segs.push({ pos: [mid.x, mid.y, mid.z], quat: [q.x, q.y, q.z, q.w], size: [len + 0.03, a.height, a.thickness] });
+  }
+  return segs;
 }
