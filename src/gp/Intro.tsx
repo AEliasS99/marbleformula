@@ -31,7 +31,7 @@ const BLURBS: Record<string, { line: string; danger: number }> = {
   vortex: { line: "A spiral drain. Round and round, faster and faster, then down the hole.", danger: 4 },
   drop: { line: "The floor falls away and the pack flies off the edge.", danger: 2 },
   jump: { line: "A kicker and a long fall: real flight.", danger: 3 },
-  hammer: { line: "A pendulum axe over half the track. Time it, dodge it, or get smashed.", danger: 5 },
+  hammer: { line: "A hammer spinning full circles over half the track: one launches you forward, the next knocks you back.", danger: 5 },
   regroup: { line: "The gate holds the leaders until the pack catches up. Then it lifts.", danger: 2 },
   spinner: { line: "A rotor with hooks that grabs marbles and flings them out.", danger: 4 },
   turntable: { line: "A spinning disc with ribs that throws marbles off their line.", danger: 3 },

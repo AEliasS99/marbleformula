@@ -833,7 +833,10 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
     new THREE.Quaternion(...sp.quat).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), sp.phase + sp.speed * s));
   const swingQuat = (sw: (typeof swings)[number], s: number) =>
     new THREE.Quaternion(...sw.quat).multiply(
-      new THREE.Quaternion().setFromAxisAngle((sw as { axis?: string }).axis === "z" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0), sw.amp * Math.sin((2 * Math.PI * s) / sw.period + sw.phase)),
+      new THREE.Quaternion().setFromAxisAngle(
+        (sw as { axis?: string }).axis === "z" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0),
+        (sw as { spin?: number }).spin !== undefined ? sw.phase + (sw as { spin?: number }).spin! * s : sw.amp * Math.sin((2 * Math.PI * s) / sw.period + sw.phase),
+      ),
     );
   useEffect(
     () =>
@@ -883,28 +886,9 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
             </group>
           );
         }
-        if (o.kind === "guard")
-          return (
-            <group key={i} position={o.pos} quaternion={o.quat}>
-              <mesh castShadow={false} receiveShadow renderOrder={6}>
-                <boxGeometry args={o.size} />
-                {/* Plain clear acrylic: screen-space refraction shifted the stripes seen through it. */}
-                {/* Barely there: low opacity and little reflection, so it never reads as a grey wall. */}
-                <meshPhysicalMaterial color="#f4f8ff" transparent opacity={0.09} roughness={0.02} clearcoat={1} clearcoatRoughness={0.02} envMapIntensity={0.45} side={THREE.DoubleSide} depthWrite={false} />
-              </mesh>
-              <mesh position={[0, o.size![1] / 2, 0]} rotation-z={Math.PI / 2}>
-                <cylinderGeometry args={[0.02, 0.02, o.size![0] + 0.02, 10]} />
-                <meshStandardMaterial {...chrome} />
-              </mesh>
-              {/* Chrome clips holding the panel to the wall top. */}
-              {[-0.3, 0.3].map((k) => (
-                <mesh key={k} position={[k * o.size![0], -o.size![1] / 2 + 0.08, 0]} castShadow>
-                  <boxGeometry args={[0.12, 0.18, 0.11]} />
-                  <meshStandardMaterial {...chrome} />
-                </mesh>
-              ))}
-            </group>
-          );
+        // Guard panels are physics only (invisible barriers over the walls where marbles fly):
+        // the clear acrylic got in the cameras' way.
+        if (o.kind === "guard") return null;
         if (o.shape === "box")
           return (
             <group key={i} position={o.pos} quaternion={o.quat}>
@@ -1127,12 +1111,13 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
         const swing = swingQuat(sw, sec);
         return (
           <group key={`h${i}`}>
-            {/* Bridge over the trough holding the pivot (the pivot sits off-centre: the hammer sweeps one half). */}
+            {/* The axle across the trough between two posts (the hub sits off-centre: the hammer sweeps one half).
+                Nothing above it: the arm turns full circles. */}
             <group position={sw.pos} quaternion={sw.quat}>
               <group position={[0, 0, -((sw as { lat?: number }).lat ?? 0)]}>
-              <mesh position={[0, 0.22, 0]} castShadow>
-                <boxGeometry args={[0.24, 0.2, 2 * W + 0.8]} />
-                <meshPhysicalMaterial {...gloss} />
+              <mesh rotation-x={Math.PI / 2} castShadow>
+                <cylinderGeometry args={[0.07, 0.07, 2 * W + 0.7, 24]} />
+                <meshStandardMaterial {...chrome} />
               </mesh>
               {[-1, 1].map((e) => (
                 <mesh key={e} position={[0, -0.9, e * (W + 0.35)]} castShadow>
@@ -1163,12 +1148,8 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
                 </mesh>
               ))}
               </group>
-              {/* Pivot bearing under the bridge. */}
-              <mesh position={[0, 0.11, 0]}>
-                <boxGeometry args={[0.18, 0.22, 0.18]} />
-                <meshStandardMaterial {...chrome} />
-              </mesh>
-              <mesh rotation-z={Math.PI / 2}>
+              {/* The hub on the axle. */}
+              <mesh rotation-x={Math.PI / 2}>
                 <cylinderGeometry args={[0.09, 0.09, 0.4, 24]} />
                 <meshStandardMaterial color="#15161b" roughness={0.4} />
               </mesh>

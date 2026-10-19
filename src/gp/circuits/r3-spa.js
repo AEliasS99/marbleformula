@@ -7,7 +7,7 @@ export default {
   country: "Belgium",
   flag: ["#000000", "#fdda24"],
   scale: 0.068,
-  seed: 2,
+  seed: 1,
   start: "auto", // the line moves to the straightest stretch: the lift tower and the grid need one
   // Big elevation changes: a drop at Eau Rouge, the turntable, a jump on the
   // Kemmel straight with a gate and another drop after it, the whirlwind and

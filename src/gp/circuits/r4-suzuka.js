@@ -7,7 +7,7 @@ export default {
   country: "Japan",
   flag: ["#ffffff", "#bc002d"],
   scale: 0.08,
-  seed: 1,
+  seed: 5,
   start: "auto", // the line moves to the straightest stretch: the lift tower and the grid need one
   // The esses and the figure-of-eight crossing: a rumble strip through the
   // esses, the hammer and turntable before the hairpin, then the back straight

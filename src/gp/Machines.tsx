@@ -539,8 +539,8 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
   const W2 = TRACK.width / 2;
   void W2;
   const cabinRef = useRef<THREE.Group | null>(null);
-  const backDoorRef = useRef<THREE.Mesh | null>(null);
-  const frontDoorRef = useRef<THREE.Mesh | null>(null);
+  const backDoorRef = useRef<THREE.Group | null>(null);
+  const frontDoorRef = useRef<THREE.Group | null>(null);
   const evBarRef = useRef<THREE.Group | null>(null);
   const cableRefs = useRef<(THREE.Mesh | null)[]>([]);
   /** Cabin frame: local x forward (down the floor's slope), y the floor normal, z right. */
@@ -566,8 +566,10 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
   const applyElevator = (t: number) => {
     const p = evAt(t);
     cabinRef.current?.position.set(elevator.center[0], elevator.center[1] + p.h, elevator.center[2]);
-    backDoorRef.current?.position.set(-elevator.length / 2 + 0.06, elevator.wall / 2 - elevator.wall * p.back, 0);
-    frontDoorRef.current?.position.set(elevator.length / 2 - 0.06, elevator.wall / 2 - elevator.wall * p.front, 0);
+    for (const [ref, x, open] of [[backDoorRef, -elevator.length / 2 + 0.06, p.back], [frontDoorRef, elevator.length / 2 - 0.06, p.front]] as const) {
+      ref.current?.position.set(x, (elevator.wall * (1 - open)) / 2, 0);
+      ref.current?.scale.set(1, Math.max(0.001, 1 - open), 1);
+    }
     const bl = elevator.bar.lift * evBarOpen(t);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion(...elevator.bar.quat)).multiplyScalar(bl);
     evBarRef.current?.position.set(elevator.bar.pos[0] + up.x, elevator.bar.pos[1] + up.y, elevator.bar.pos[2] + up.z);
@@ -595,32 +597,55 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
                 <boxGeometry args={[L + 0.2, 0.12, W]} />
                 <meshStandardMaterial map={tex.knurl} metalness={0.7} roughness={0.4} />
               </mesh>
+              {/* Open steel sides (no glass: it hid the riders and tinted the doors pink): a kick plate,
+                  two rails and the top rail, posts at the ends and the middle. The walls are colliders only. */}
               {[-1, 1].map((e) => (
-                <group key={e} position={[0, H / 2, e * (W / 2 - 0.05)]}>
-                  <mesh>
-                    <boxGeometry args={[L + 0.2, H, 0.05]} />
-                    <meshPhysicalMaterial color="#f4f8ff" transparent opacity={0.12} roughness={0.03} clearcoat={1} side={THREE.DoubleSide} depthWrite={false} />
+                <group key={e} position={[0, 0, e * (W / 2 - 0.05)]}>
+                  <mesh position={[0, 0.16, 0]} castShadow>
+                    <boxGeometry args={[L + 0.2, 0.32, 0.05]} />
+                    <meshStandardMaterial {...steel} />
                   </mesh>
-                  <mesh position={[0, H / 2, 0]}>
-                    <boxGeometry args={[L + 0.3, 0.08, 0.12]} />
-                    <meshStandardMaterial {...chrome} />
-                  </mesh>
-                  {[-L / 2, L / 2].map((x) => (
-                    <mesh key={x} position={[x, 0, 0]}>
+                  {[H * 0.42, H * 0.72, H].map((y) => (
+                    <mesh key={y} position={[0, y, 0]} castShadow>
+                      <boxGeometry args={[L + 0.3, 0.07, 0.09]} />
+                      <meshStandardMaterial {...chrome} />
+                    </mesh>
+                  ))}
+                  {[-L / 2, 0, L / 2].map((x) => (
+                    <mesh key={x} position={[x, H / 2, 0]} castShadow>
                       <boxGeometry args={[0.1, H, 0.12]} />
                       <meshStandardMaterial {...chrome} />
                     </mesh>
                   ))}
                 </group>
               ))}
-              <mesh ref={backDoorRef} position={[-L / 2 + 0.06, H / 2 - H * p.back, 0]}>
-                <boxGeometry args={[0.08, H, W - 0.1]} />
-                <meshStandardMaterial map={barStripes(W - 0.1, H)} roughness={0.45} />
-              </mesh>
-              <mesh ref={frontDoorRef} position={[L / 2 - 0.06, H / 2 - H * p.front, 0]}>
-                <boxGeometry args={[0.08, H, W - 0.1]} />
-                <meshStandardMaterial map={barStripes(W - 0.1, H)} roughness={0.45} />
-              </mesh>
+              {/* The doors: yellow barred gates that sink into a slot in the floor (scaled to what is above it,
+                  so they never poke out under the cabin). */}
+              {[
+                { ref: backDoorRef, x: -L / 2 + 0.06, open: p.back },
+                { ref: frontDoorRef, x: L / 2 - 0.06, open: p.front },
+              ].map((d, k) => (
+                <group key={k} ref={d.ref as unknown as React.Ref<THREE.Group>} position={[d.x, (H * (1 - d.open)) / 2, 0]} scale={[1, Math.max(0.001, 1 - d.open), 1]}>
+                  {Array.from({ length: Math.max(3, Math.round((W - 0.1) / 0.32)) }, (_, j) => {
+                    const n = Math.max(3, Math.round((W - 0.1) / 0.32));
+                    const z = -(W - 0.3) / 2 + ((W - 0.3) * j) / (n - 1);
+                    return (
+                      <mesh key={j} position={[0, 0, z]}>
+                        <boxGeometry args={[0.06, H, 0.06]} />
+                        <meshStandardMaterial color="#ffcc00" roughness={0.4} metalness={0.2} />
+                      </mesh>
+                    );
+                  })}
+                  <mesh position={[0, H / 2 - 0.05, 0]}>
+                    <boxGeometry args={[0.1, 0.1, W - 0.1]} />
+                    <meshStandardMaterial map={tex.hazard} roughness={0.45} />
+                  </mesh>
+                  <mesh position={[0, 0, 0]}>
+                    <boxGeometry args={[0.08, 0.08, W - 0.1]} />
+                    <meshStandardMaterial color="#1b1c20" roughness={0.5} />
+                  </mesh>
+                </group>
+              ))}
               {/* Roof ring with a lit LED strip, a cross-beam the cables hang from, hazard edges on the floor, and the cabin's number. */}
               {[-1, 1].map((e) => (
                 <mesh key={`led${e}`} position={[0, H - 0.02, e * (W / 2 - 0.12)]}>

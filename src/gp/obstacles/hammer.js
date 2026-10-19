@@ -1,17 +1,19 @@
 import { Quaternion, Vector3 } from "three";
 import { frameQuat, mod, pointInFrame, quatArr, r3, rot } from "./kit.js";
 
-// The pendulum axe: a heavy head on an arm swinging ALONG the track over one
-// half of it (`lat` off the centre). At the bottom of its swing the head is a
-// wall across that half (from the centre line to 0.35 from the wall: too
-// narrow to slip past, and moving parallel to the wall, so nothing is pinched),
-// hitting at ~6.5 u/s; at the ends of its swing it is high enough to roll
-// under. Go under it when it's up, take the other half, or get smashed.
-// (Swinging across the track, as it used to, it barely touched anyone.)
-export const HAMMER = { pivot: 0.35 + 1.9, length: 1.9, head: [0.5, 0.5, 1.6], lat: 0.95, amp: (50 * Math.PI) / 180, period: 1.6, axis: "z" };
+// The hammer: a heavy head on an arm that spins full circles ALONG the track
+// over one half of it (`lat` off the centre), on an axle between two posts.
+// At the bottom of each turn the head is a wall across that half (from the
+// centre line to 0.35 from the wall: too narrow to slip past) moving at
+// ~8.5 u/s. Hammers alternate direction: one comes down behind you and
+// launches you down the track, the next comes down in front of you and knocks
+// you back. Take the other half, or time it. (A ±50° pendulum, as it used to
+// be, mostly just nudged the pack.)
+export const HAMMER = { pivot: 0.35 + 1.9, length: 1.9, head: [0.5, 0.5, 1.6], lat: 0.95, period: 1.4, axis: "z" };
 
+/** The arm's orientation at time t: spinning (`spin`, rad/s, + launches forward) or, in old bakes, swinging. */
 export function swingQuat(sw, t) {
-  const a = sw.amp * Math.sin((2 * Math.PI * t) / sw.period + sw.phase);
+  const a = sw.spin !== undefined ? sw.phase + sw.spin * t : sw.amp * Math.sin((2 * Math.PI * t) / sw.period + sw.phase);
   const axis = sw.axis === "z" ? new Vector3(0, 0, 1) : new Vector3(1, 0, 0);
   const q = new Quaternion(...sw.quat).multiply(new Quaternion().setFromAxisAngle(axis, a));
   return [q.x, q.y, q.z, q.w];
@@ -21,14 +23,15 @@ export default {
   type: "hammer",
   label: "THE HAMMER",
   place: { before: 1, after: 3, maxCurv: 0.035 },
-  guard: [-1, 10, 2.0], // the hammer throws marbles far down the track
+  guard: [-4, 10, 2.0], // the hammer throws marbles far down the track, or back up it
   dq: true,
   restitution: 0.5,
   collection: "swings",
-  card: { difficulty: 4, chaos: 4, seconds: 1.5, summary: "A pendulum axe over one half of the track: roll under it while it's up, take the other half, or get smashed." },
+  card: { difficulty: 4, chaos: 5, seconds: 1.5, summary: "A hammer spinning full circles over one half of the track: one launches you forward, the next knocks you back. Take the other half or time it." },
   build(f, { frameAt, out, sync }) {
     const s = frameAt(f.u + 1);
     const side = out.swings.length % 2 ? -1 : 1;
+    const spin = (side * 2 * Math.PI) / HAMMER.period; // alternate: launch, then brake
     out.swings.push({
       kind: "hammer",
       lat: r3(side * HAMMER.lat),
@@ -36,11 +39,11 @@ export default {
       quat: quatArr(frameQuat(s)),
       length: HAMMER.length,
       head: HAMMER.head,
-      amp: HAMMER.amp,
+      spin: r3(spin),
       period: HAMMER.period,
       axis: HAMMER.axis,
-      // The head passes the centre line, at full speed, as the leader arrives.
-      phase: r3(sync[f.u] !== undefined ? mod(-(2 * Math.PI * sync[f.u]) / HAMMER.period, 2 * Math.PI) : (f.u * 0.61) % (Math.PI * 2)),
+      // The head sweeps the bottom of its turn as the leader arrives.
+      phase: r3(sync[f.u] !== undefined ? mod(-spin * sync[f.u], 2 * Math.PI) : (f.u * 0.61) % (Math.PI * 2)),
     });
   },
   physics(world, list, { RAPIER, groups }) {

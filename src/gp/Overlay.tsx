@@ -1,5 +1,5 @@
 import { AbsoluteFill, interpolate, spring } from "remotion";
-import { fovFor, project, type Highlight, type Layout, type Race, type Section, type Shot, type Split } from "./race";
+import { fovFor, project, type Highlight, type Layout, type Race, type Section, type Shot, type Split, type Vec3 } from "./race";
 import { flagDataUrl } from "./flags";
 import { TEAMS, teamOf } from "./teams.js";
 
@@ -420,6 +420,7 @@ function SplitGraphics({ race, split, f, frame, s, layout, width, height }: { ra
             </Chip>
           </>,
         )}
+        {(h as { dq?: boolean }).dq && <DqExplainer race={race} split={split} h={h} pane={panes[1]} frame={frame} s={s} opacity={k * out} />}
       </>
     );
   } else if (split.kind === "lift") {
@@ -488,7 +489,7 @@ function Toasts({ race, f, s, layout }: { race: Race; f: number; s: number; layo
           <span style={{ background: "#e8414a", color: "white", padding: `${2 * s}px ${8 * s}px`, borderRadius: 6 * s, fontSize: 18 * s }}>DISQUALIFIED</span>
           <MarbleDot s={s} color={a.color} flag={flagOf(a)} />
           {a.name.toUpperCase()}
-          <span style={{ color: "#5b606e" }}>hit the red zone at the {String((ev as { feature?: string }).feature ?? "").toUpperCase()}</span>
+          <span style={{ color: "#5b606e" }}>touched a red DQ pad at {featureName(race, (ev as { feature?: string }).feature)} · out of the race</span>
         </Chip>
       </div>
     );
@@ -729,3 +730,46 @@ function Flash({ race, frame, at }: { race: Race; frame: number; at: number }) {
   if (o <= 0) return null;
   return <AbsoluteFill style={{ background: "white", opacity: o }} />;
 }
+
+/** "THE HAMMER" for a feature type, as the track's captions call it. */
+function featureName(race: Race, type?: string) {
+  const f = (race.data.features as { type: string; label: string }[]).find((g) => g.type === type);
+  return f ? f.label : "a machine";
+}
+
+/**
+ * Why a marble is out, on its replay: a pulsing red ring on the pad it rolled
+ * over (projected into the replay's half), and the rule in one line.
+ */
+function DqExplainer({ race, split, h, pane, frame, s, opacity }: { race: Race; split: Split; h: Highlight; pane: { x: number; y: number; w: number; h: number }; frame: number; s: number; opacity: number }) {
+  const view = race.splitView(split);
+  const shot = view.shotAt(frame);
+  const t = view.tAt(frame);
+  const pads = (race.data.obstacles as unknown as { kind: string; pos: Vec3 }[]).filter((o) => o.kind === "dq");
+  const at = race.marblePose(h.marble, Math.min(t, h.f)).pos;
+  const pad = pads.reduce<{ kind: string; pos: Vec3 } | null>((b, o) => (b === null || dist(o.pos, at) < dist(b.pos, at) ? o : b), null);
+  const aspect = pane.w / pane.h;
+  const kf = Math.min(1.9, Math.max(1, Math.sqrt(16 / 9 / Math.max(0.3, aspect))));
+  const fov = (2 * Math.atan(Math.tan((shot.fov * Math.PI) / 360) * kf) * 180) / Math.PI;
+  const pt = pad ? project(shot, fov, pad.pos, pane.w, pane.h) : null;
+  const pulse = 0.5 + 0.5 * Math.sin((frame / race.fps) * Math.PI * 3);
+  const touched = t >= h.f;
+  return (
+    <>
+      {pt && pt.visible && pt.x > pane.w * 0.06 && pt.x < pane.w * 0.94 && pt.y > pane.h * 0.3 && pt.y < pane.h * 0.94 && (
+        <div style={{ position: "absolute", left: pane.x + pt.x, top: pane.y + pt.y, transform: "translate(-50%, -50%)", opacity }}>
+          <div style={{ width: (70 + 24 * pulse) * s, height: (70 + 24 * pulse) * s, borderRadius: "50%", border: `${5 * s}px solid #e8414a`, boxShadow: `0 0 ${18 * s}px rgba(232,65,74,0.8)` }} />
+          <div style={{ position: "absolute", left: "50%", top: -40 * s, transform: "translateX(-50%)", whiteSpace: "nowrap", background: "#e8414a", color: "white", fontWeight: 900, fontSize: 20 * s, padding: `${3 * s}px ${10 * s}px`, borderRadius: 6 * s }}>DQ PAD</div>
+        </div>
+      )}
+      <div style={{ position: "absolute", left: pane.x + pane.w / 2, top: pane.y + 160 * s, transform: "translateX(-50%)", opacity, width: pane.w * 0.7 }}>
+        <div style={{ background: "rgba(255,255,255,0.96)", borderRadius: 14 * s, borderLeft: `${8 * s}px solid #e8414a`, padding: `${12 * s}px ${18 * s}px`, boxShadow: "0 8px 30px rgba(20,24,40,0.18)", fontSize: 24 * s, fontWeight: 800, color: "#111216", textAlign: "center" }}>
+          {touched ? "Touched the red pad by the wall: OUT of the race" : "Watch the red pad by the wall…"}
+          <div style={{ fontSize: 17 * s, fontWeight: 600, opacity: 0.65, marginTop: 4 * s }}>Every machine has one. Roll over it pressed against the wall and you are disqualified.</div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+const dist = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);

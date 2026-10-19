@@ -1,6 +1,6 @@
 import { ThreeCanvas } from "@remotion/three";
 import type { Layout, Race, View } from "./race";
-import { Decals, Lifts, TimingGate, TrackDetails, Tunnels } from "./Details";
+import { Decals, Lifts, TimingGate, TrackDetails } from "./Details";
 import { Trackside } from "./Trackside";
 import { Machines } from "./Machines";
 import { Effects } from "./Effects";
@@ -26,7 +26,6 @@ export function Stage({ race, view, layout, frame, width, height }: { race: Race
           <Circuit race={race} />
           <TrackDetails race={race} />
           <Decals race={race} />
-          <Tunnels race={race} />
           <TimingGate race={race} />
           <Trackside race={race} />
           <Obstacles race={race} t={t} />

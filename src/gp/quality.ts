@@ -6,5 +6,6 @@ import { getInputProps } from "remotion";
 // e.g. npx remotion render GP-r1-monaco out.mp4 --props='{"dpr":1.5,"blur":2}'
 export function quality() {
   const p = getInputProps() as { dpr?: number; blur?: number };
-  return { dpr: p.dpr ?? 2, blur: p.blur ?? 3 };
+  // 1.5× and 2 sub-frames: twice as fast as 2×/3 and the same in stills (QUALITY-REVIEW.md, D).
+  return { dpr: p.dpr ?? 1.5, blur: p.blur ?? 2 };
 }
