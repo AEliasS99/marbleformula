@@ -9,6 +9,7 @@ import { flyPacing, TEAM_FRAMES } from "./intro-plan.js";
 import { marbleTextures, studioScene } from "./Scene";
 import { flagDataUrl } from "./flags";
 import { TEAMS, teamOf } from "./teams.js";
+import { quality } from "./quality";
 
 // The intro before every round (its running order: src/gp/intro-plan.js):
 // a cold open on the race's best moment in slow motion, the championship's
@@ -196,7 +197,7 @@ function ShowroomScene({ race, k, x, portrait }: { race: Race; k: number; x: num
   }, [gl, scene]);
   const team = TEAMS[k];
   const idx = team.drivers.map((abbr) => race.marbles.findIndex((m) => (m as { abbr?: string }).abbr === abbr));
-  const tex = useMemo(() => idx.map((i) => (i >= 0 ? marbleTextures(race.marbles[i].name, (race.marbles[i] as { flag?: string }).flag ?? "") : null)), [k]);
+  const tex = useMemo(() => idx.map((i) => (i >= 0 ? marbleTextures(race.marbles[i].name, (race.marbles[i] as { flag?: string }).flag ?? "", (race.marbles[i] as { color?: string }).color) : null)), [k]);
   const R = race.data.marbleRadius;
   const p = x / TEAM_FRAMES;
   // A slow arc round the podium, pushing in; the marbles sit right of the
@@ -243,7 +244,7 @@ function ShowroomScene({ race, k, x, portrait }: { race: Race; k: number; x: num
         i < 0 || !tex[j] ? null : (
           <mesh key={`${k}-${j}`} position={[j === 0 ? -0.48 : 0.48, 0.2 + R, 0]} rotation={[0.25, spin + j * Math.PI, 0.1]} castShadow>
             <sphereGeometry args={[R, 96, 64]} />
-            <meshPhysicalMaterial map={tex[j]!.map} metalnessMap={tex[j]!.mr} roughnessMap={tex[j]!.mr} metalness={1} roughness={1} clearcoat={1} clearcoatRoughness={0.03} envMapIntensity={1.6} />
+            <meshPhysicalMaterial map={tex[j]!.map} metalnessMap={tex[j]!.mr} roughnessMap={tex[j]!.mr} metalness={1} roughness={1} clearcoat={0.55} clearcoatRoughness={0.28} envMapIntensity={1.3} />
           </mesh>
         ),
       )}
@@ -254,7 +255,7 @@ function ShowroomScene({ race, k, x, portrait }: { race: Race; k: number; x: num
 function Showroom({ race, frame, width, height }: { race: Race; frame: number; width: number; height: number }) {
   const k = Math.min(TEAMS.length - 1, Math.floor(frame / TEAM_FRAMES));
   return (
-    <ThreeCanvas width={width} height={height} dpr={2} shadows gl={{ antialias: true, alpha: false }}>
+    <ThreeCanvas width={width} height={height} dpr={quality().dpr} shadows gl={{ antialias: true, alpha: false }}>
       <ShowroomScene race={race} k={k} x={frame - k * TEAM_FRAMES} portrait={height > width} />
     </ThreeCanvas>
   );

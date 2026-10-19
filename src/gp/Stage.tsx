@@ -6,6 +6,7 @@ import { Machines } from "./Machines";
 import { Effects } from "./Effects";
 import { CameraRig, Circuit, Confetti, Environment, Gantries, Gate, Marbles, Obstacles, STUDIO, Sun } from "./Scene";
 import { ViewContext } from "./view";
+import { quality } from "./quality";
 
 // The circuit and everything on it, seen through one View (a clock and a camera).
 
@@ -14,8 +15,8 @@ export function Stage({ race, view, layout, frame, width, height }: { race: Race
   const shot = view.shotAt(frame);
   return (
     <ViewContext.Provider value={view}>
-      {/* dpr 2: rendered at twice the resolution and downsampled — supersampled edges, no jaggies. */}
-      <ThreeCanvas width={width} height={height} dpr={2} shadows="variance" gl={{ antialias: true, alpha: false }}>
+      {/* dpr 2 (default): rendered at twice the resolution and downsampled — supersampled edges, no jaggies. */}
+      <ThreeCanvas width={width} height={height} dpr={quality().dpr} shadows="variance" gl={{ antialias: true, alpha: false }}>
         <ViewContext.Provider value={view}>
           <fog attach="fog" args={[STUDIO.fog, 220, 1400]} />
           <Environment />

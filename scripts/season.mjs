@@ -334,9 +334,24 @@ function planFeatures(us, curv, L, rand) {
   return features;
 }
 
+/**
+ * A hand-drawn circuit (from the designer, `npm run designer`): `outline` is the
+ * centreline as [x, z] points in track units, already at scale. Centred like a
+ * real one; its "real" length is what the lap would be at the season's usual 0.08.
+ */
+function drawnOutline(round) {
+  const raw = round.outline;
+  const cx = raw.reduce((a, p) => a + p[0], 0) / raw.length;
+  const cz = raw.reduce((a, p) => a + p[1], 0) / raw.length;
+  let per = 0;
+  raw.forEach((p, i) => (per += Math.hypot(raw[(i + 1) % raw.length][0] - p[0], raw[(i + 1) % raw.length][1] - p[1])));
+  const props = { Name: round.circuit ?? round.title, Location: round.location ?? round.country ?? "", length: round.realLength ?? Math.round(per / 0.08) };
+  return { props, pts: raw.map(([x, z]) => [x - cx, z - cz]) };
+}
+
 export function buildCourse(round) {
-  const { props, pts } = loadOutline(new URL(`../data/circuits/${round.geo}.geojson`, import.meta.url));
-  const scale = round.scale ?? SCALE;
+  const { props, pts } = round.outline ? drawnOutline(round) : loadOutline(new URL(`../data/circuits/${round.geo}.geojson`, import.meta.url));
+  const scale = round.outline ? 1 : (round.scale ?? SCALE);
   const relaxed = marbleize(pts, scale);
   // A few gentle smoothing passes take out the last polyline wobble.
   let loop = relaxed.pts;
@@ -1365,7 +1380,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     trackEnd: course.END,
     finish: course.uFinish,
     drop: r3(course.H),
-    scale: round.scale ?? SCALE,
+    scale: round.outline ? 1 : (round.scale ?? SCALE),
   };
 
   const data = {
@@ -2492,8 +2507,9 @@ await RAPIER.init();
 
 if (opt("--round")) {
   // Seed sweep for one round.
-  const base = ROUNDS.find((r) => r.id === opt("--round"));
-  if (!base) throw new Error(`unknown round; one of ${ROUNDS.map((r) => r.id).join(", ")}`);
+  // A season round, or any design file in src/gp/circuits/ (e.g. one saved by the designer).
+  const base = ROUNDS.find((r) => r.id === opt("--round")) ?? (await import(`../src/gp/circuits/${opt("--round")}.js`).then((m) => m.default).catch(() => null));
+  if (!base) throw new Error(`unknown round; one of ${ROUNDS.map((r) => r.id).join(", ")} or a file in src/gp/circuits/`);
   // --layout '<json>': try another layout without touching the design file.
   // --set '<json>': override any other field of the design file (e.g. {"dq":{"target":1.5}}).
   const round = { ...base, ...(opt("--layout") ? { layout: JSON.parse(opt("--layout")) } : {}), ...(opt("--set") ? JSON.parse(opt("--set")) : {}) };

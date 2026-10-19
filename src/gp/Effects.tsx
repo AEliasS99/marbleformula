@@ -5,7 +5,6 @@ import {
   BloomEffect,
   BlendFunction,
   BrightnessContrastEffect,
-  HueSaturationEffect,
   DepthOfFieldEffect,
   EffectComposer,
   EffectPass,
@@ -20,6 +19,7 @@ import { N8AOPostPass } from "n8ao";
 import type { Layout, Race } from "./race";
 import { subframe } from "./subframe";
 import { useView } from "./view";
+import { quality } from "./quality";
 
 // Camera-like finishing, the cues that make a render read as a photograph of a
 // small real object: ambient occlusion in every crease and contact, highlights
@@ -32,7 +32,7 @@ import { useView } from "./view";
 // rendered nothing): we size it to the drawing buffer and render it ourselves.
 
 /** Sub-frames per video frame, and the shutter as a fraction of the frame interval. */
-export const MOTION_BLUR = { samples: 3, shutter: 0.35 };
+export const MOTION_BLUR = { samples: 3, shutter: 0.35 }; // samples: the default; see src/gp/quality.ts
 
 /**
  * Final pass: adds each sub-frame into a float accumulation buffer with weight
@@ -149,13 +149,14 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     const bloom = new BloomEffect({ mipmapBlur: true, intensity: 0.25, luminanceThreshold: 2.6, luminanceSmoothing: 0.3 });
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
     // A light grade after tone mapping: a touch more contrast and colour, so the low sun bites.
-    const grade = new BrightnessContrastEffect({ brightness: 0.0, contrast: 0.1 });
-    const colour = new HueSaturationEffect({ saturation: 0.08 });
+    const grade = new BrightnessContrastEffect({ brightness: 0.0, contrast: 0.14 });
     const vignette = new VignetteEffect({ offset: 0.32, darkness: 0.42 });
     const noise = new NoiseEffect({ premultiply: true, blendFunction: BlendFunction.SOFT_LIGHT });
     noise.blendMode.opacity.value = 0.025;
     composer.addPass(new EffectPass(camera, dof));
-    composer.addPass(new EffectPass(camera, bloom, tone, grade, colour, vignette, noise));
+    // No saturation boost: on the painted marbles' pure reds and yellows it pushed channels
+    // out of range and they rendered as white blotches.
+    composer.addPass(new EffectPass(camera, bloom, tone, grade, vignette, noise));
     const accumulate = new AccumulatePass();
     composer.addPass(accumulate);
     return { composer, dof, ao, accumulate };
@@ -169,7 +170,8 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     chain.composer.setSize(size.x / pr, size.y / pr, false);
     chain.accumulate.setSize(size.x, size.y);
     chain.accumulate.clear(gl);
-    const { samples, shutter } = MOTION_BLUR;
+    const { shutter } = MOTION_BLUR;
+    const samples = quality().blur;
     chain.accumulate.weight = 1 / samples;
     for (let k = 0; k < samples; k++) {
       const vf = frame + shutter * ((k + 0.5) / samples - 0.5);

@@ -14,7 +14,7 @@ import { BY_TYPE, OBSTACLES } from "../src/gp/obstacles/index.js";
 const args = process.argv.slice(2);
 const id = args.find((a) => !a.startsWith("--")) ?? "r5-monza";
 const sweepArg = args.includes("--sweep") ? args[args.indexOf("--sweep") + 1] : null;
-const circuit = CIRCUITS.find((c) => c.id === id);
+const circuit = CIRCUITS.find((c) => c.id === id) ?? (await import(`../src/gp/circuits/${id}.js`).then((m) => m.default).catch(() => null));
 if (!circuit) throw new Error(`unknown circuit "${id}"; one of ${CIRCUITS.map((c) => c.id).join(", ")}`);
 
 const CARDS = {

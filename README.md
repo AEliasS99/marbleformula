@@ -134,6 +134,7 @@ npm run studio                                         # preview: GrandPrix/<rou
 npx remotion render GP-r5-monza out/gp/r5-monza.mp4
 npx remotion render GP-r5-monza-vertical out/gp/r5-monza-vertical.mp4
 npm run render:gp                                      # all five rounds, 16:9
+npx remotion render GP-r1-monaco out.mp4 --props='{"dpr":1.5,"blur":2}'   # 2× faster: supersampling and motion-blur sub-frames (src/gp/quality.ts)
 ```
 
 To change the calendar, the marbles or the seeds, edit `ROUNDS` and `MARBLES` at the top of `scripts/season.mjs`, and `FEATURES` for the obstacles. Any circuit in the f1-circuits repo works: drop its GeoJSON into `data/circuits/`.

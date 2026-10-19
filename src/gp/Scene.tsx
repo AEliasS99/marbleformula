@@ -14,7 +14,7 @@ import { buildTrackMesh, floorVRange, pointInFrame, pointOnTrack, TRACK, TRACK_D
 import { fovFor, type Layout, type Race, type Vec3 } from "./race";
 import { spinnerParts } from "./rotor.js";
 import { turntableParts } from "./obstacles/turntable.js";
-import { asphaltMaps, grassMaps, plasticMaps, wearChrome } from "./surfaces";
+import { asphaltMaps, grassMaps, plasticMaps } from "./surfaces";
 import { boltGeometry } from "./Details";
 
 // The 3D world, in a clean studio look: a seamless white set, a glossy white
@@ -138,14 +138,25 @@ export function Environment() {
       .loadAsync(skyExr)
       .then((tex) => {
         if (cancelled) return;
+        // The sky's sun peaks at ~22 700. The directional light already is the sun; left in,
+        // the rough (painted) surfaces spread that peak into big blown-out white blobs.
+        // (Half floats, as loaded: a float texture can't be filtered on every GPU.)
+        const px = tex.image.data as Uint16Array;
+        const { fromHalfFloat: from, toHalfFloat: to } = THREE.DataUtils;
+        const CAP = 12;
+        for (let i = 0; i < px.length; i += 4) {
+          const m = Math.max(from(px[i]), from(px[i + 1]), from(px[i + 2]));
+          if (m > CAP) for (let c = 0; c < 3; c++) px[i + c] = to((from(px[i + c]) * CAP) / m);
+        }
+        tex.needsUpdate = true;
         const pmrem = new THREE.PMREMGenerator(gl);
         scene.environment = pmrem.fromEquirectangular(tex).texture;
-        scene.environmentIntensity = 0.55; // less fill from the sky: the sun does the modelling
+        scene.environmentIntensity = 0.65; // the sky fills, the sun (capped out of the sky, a light of its own) models
         tex.mapping = THREE.EquirectangularReflectionMapping;
         scene.background = tex;
         scene.backgroundBlurriness = 0.015;
         scene.backgroundIntensity = 0.9;
-        gl.toneMappingExposure = 0.9;
+        gl.toneMappingExposure = 0.85;
         pmrem.dispose();
         advance(performance.now());
       })
@@ -168,7 +179,7 @@ export function Sun({ target }: { target: Vec3 }) {
   const sun = useMemo(() => {
     RectAreaLightUniformsLib.init();
     // Late-afternoon sun, low and warm: long shadows from posts, guards and marbles.
-    const l = new THREE.DirectionalLight("#ffd9a6", 3.6);
+    const l = new THREE.DirectionalLight("#ffd9a6", 3.2);
     l.castShadow = true;
     l.shadow.mapSize.set(4096, 4096);
     l.shadow.bias = -0.00025;
@@ -296,7 +307,8 @@ export function Circuit({ race }: { race: Race }) {
       LA,
       LT,
       (g) => {
-        g.fillStyle = "#f6f7f9";
+        // The walls' inner faces: a warm light grey, not paper white (in the sun that clipped to flat white).
+        g.fillStyle = "#d9d6d0";
         g.fillRect(0, 0, LA, LT);
         g.fillStyle = "#34363b";
         g.fillRect(0, fv0 * LT, LA, (fv1 - fv0) * LT);
@@ -578,21 +590,21 @@ export function Circuit({ race }: { race: Race }) {
         </mesh>
       ))}
       <mesh geometry={geos.rim} castShadow receiveShadow>
-        <meshStandardMaterial color="#ffffff" roughness={0.3} />
+        <meshStandardMaterial color="#dcdad4" roughness={0.45} />
       </mesh>
+      {/* The walls: a warm off-white moulded plastic with visible texture, not paper white (which read as flat CG). */}
       <mesh geometry={geos.shell} castShadow receiveShadow>
         <meshPhysicalMaterial
-          color="#f4f5f8"
+          color="#c9c6bf"
           roughness={1}
           roughnessMap={built.plastic.roughness}
           normalMap={built.plastic.normal}
-          normalScale={new THREE.Vector2(0.04, 0.04)}
-          clearcoat={0.4}
-          envMapIntensity={0.8}
+          normalScale={new THREE.Vector2(0.14, 0.14)}
+          envMapIntensity={0.35}
         />
       </mesh>
       <mesh geometry={geos.caps} castShadow>
-        <meshStandardMaterial color="#ffffff" roughness={0.4} />
+        <meshStandardMaterial color="#eceae6" roughness={0.45} />
       </mesh>
       {built.gridMarks.map((g, i) => (
         <mesh key={i} geometry={g}>
@@ -615,7 +627,8 @@ export function Circuit({ race }: { race: Race }) {
       <mesh rotation-x={-Math.PI / 2} position={[built.center[0], built.groundY, built.center[1]]} receiveShadow>
         <planeGeometry args={[3000, 3000]} />
         {/* A polished studio floor: a blurred planar reflection of the track grounds it in the room. */}
-        <meshStandardMaterial map={built.floor.color} roughnessMap={built.floor.roughness} roughness={1} normalMap={built.floor.normal} normalScale={new THREE.Vector2(0.5, 0.5)} />
+        {/* Brightened: the grass used to get most of its light from the sky's own sun, now capped out of it. */}
+        <meshStandardMaterial map={built.floor.color} color={new THREE.Color(2.2, 2.2, 2.0)} roughnessMap={built.floor.roughness} roughness={1} normalMap={built.floor.normal} normalScale={new THREE.Vector2(0.5, 0.5)} />
       </mesh>
     </>
   );
@@ -1432,80 +1445,112 @@ export function Gate({ race, t }: { race: Race; t: number }) {
  * burst). Paint is glossy and non-metallic; everything else is mirror chrome.
  */
 /**
- * Chrome marble wearing its country's flag: the flag wraps the equator as a
- * painted band (repeated twice around, so it reads from any side), with the
- * country code in a roundel at the seams, pinstripes in the flag's colours,
- * and a sunburst at each pole in its first colour. Paint is glossy and
- * non-metallic; everything else is mirror chrome.
+ * A marble painted in its country's colour (the main colour of its flag, from
+ * the season's marble list) with the flag wrapped round the equator as a wide
+ * band (twice round, so it reads from any side), the country code in a roundel
+ * at the seams, and thin chrome pinstripes as the only bare metal. The paint is
+ * a metallic-flake finish under a clear coat: it reflects the sky softly
+ * instead of mirroring every cloud, so the colour and the flag read first.
  */
-export function marbleTextures(name: string, code: string) {
-  // Twenty marbles: 2048×1024 each keeps the texture memory in check (a marble is 0.7 units across).
-  const W = 2048;
-  const H = 1024;
+export function marbleTextures(name: string, code: string, color?: string) {
+  // 1024×512: a marble is 0.7 units across and never fills more than ~half the frame height.
+  const W = 1024;
+  const H = 512;
   const flag = (FLAGS as Record<string, { colors: readonly string[] }>)[code];
-  const c1 = flag?.colors[0] ?? "#888";
-  const c2 = flag?.colors[1] ?? "#444";
+  const base = color ?? flag?.colors[0] ?? "#888";
+  const accent = flag?.colors.find((c) => c.toLowerCase() !== base.toLowerCase()) ?? "#ffffff";
+  // Metal/rough map: G = roughness, B = metalness (scaled by the material's 1 / 1).
+  const PAINT = "rgb(0,115,26)"; // satin flake paint: roughness 0.45, metalness 0.1
+  const FLAG = "rgb(0,80,0)"; // printed band: roughness 0.31, no metal
+  const CHROME = "rgb(0,20,255)"; // pinstripes: mirror chrome
+  const bandY = H * 0.3;
+  const bandH = H * 0.4;
   const paint = (g: CanvasRenderingContext2D, metalMap: boolean) => {
-    // Colour map: white under chrome (keeps the metal neutral), colour on paint.
-    // Metal/rough map: G = roughness, B = metalness.
-    const chrome = metalMap ? "rgb(0,8,255)" : "#ffffff";
-    const paintTone = "rgb(0,80,30)";
-    g.fillStyle = chrome;
+    g.fillStyle = metalMap ? PAINT : base;
     g.fillRect(0, 0, W, H);
-    const bandY = H * 0.36;
-    const bandH = H * 0.28;
+    if (!metalMap) {
+      // A soft darkening toward the poles: the paint looks deep, not flat.
+      const shade = g.createLinearGradient(0, 0, 0, H);
+      shade.addColorStop(0, "rgba(0,0,0,0.28)");
+      shade.addColorStop(0.3, "rgba(0,0,0,0)");
+      shade.addColorStop(0.7, "rgba(0,0,0,0)");
+      shade.addColorStop(1, "rgba(0,0,0,0.28)");
+      g.fillStyle = shade;
+      g.fillRect(0, 0, W, H);
+    }
+    // The flag band, twice round, each with a thin dark frame.
     if (metalMap) {
-      g.fillStyle = paintTone;
+      g.fillStyle = FLAG;
       g.fillRect(0, bandY, W, bandH);
-    } else {
-      // Two flags around the equator, each with a thin dark frame.
+    } else
       for (let k = 0; k < 2; k++) {
         drawFlag(g, code, (W / 2) * k, bandY, W / 2, bandH);
-        g.fillStyle = "rgba(0,0,0,0.3)";
+        g.fillStyle = "rgba(0,0,0,0.35)";
         g.fillRect((W / 2) * k, bandY, 6, bandH);
         g.fillRect((W / 2) * k, bandY, W / 2, 5);
         g.fillRect((W / 2) * k, bandY + bandH - 5, W / 2, 5);
       }
-      // Country code roundels at the seams.
+    // Country code roundels at the seams.
+    if (!metalMap)
       for (let k = 0; k < 2; k++) {
         const cx = (W / 2) * k + W / 4;
         g.fillStyle = "#111216";
         g.beginPath();
-        g.arc(cx, H / 2, H * 0.085, 0, Math.PI * 2);
+        g.arc(cx, H / 2, H * 0.09, 0, Math.PI * 2);
         g.fill();
         g.strokeStyle = "#ffffff";
-        g.lineWidth = H * 0.008;
+        g.lineWidth = H * 0.009;
         g.stroke();
         g.fillStyle = "#ffffff";
-        g.font = `900 ${H * 0.062}px 'Avenir Next', system-ui, sans-serif`;
+        g.font = `900 ${H * 0.066}px 'Avenir Next', system-ui, sans-serif`;
         g.textAlign = "center";
         g.textBaseline = "middle";
         g.fillText(code, cx, H / 2 + 2);
       }
-    }
-    g.fillStyle = metalMap ? paintTone : c1;
-    g.fillRect(0, H * 0.27, W, H * 0.035);
-    g.fillStyle = metalMap ? paintTone : c2;
-    g.fillRect(0, H * 0.695, W, H * 0.035);
-    g.fillStyle = metalMap ? paintTone : c1;
-    for (let k = 0; k < 36; k++) {
-      const x = (W / 36) * k;
-      g.fillRect(x, 0, W / 108, H * 0.12);
-      g.fillRect(x, H * 0.88, W / 108, H * 0.12);
-    }
+    // Chrome pinstripes edging the band, and an accent stripe in the flag's second colour.
+    g.fillStyle = metalMap ? CHROME : "#ffffff";
+    g.fillRect(0, bandY - H * 0.022, W, H * 0.012);
+    g.fillRect(0, bandY + bandH + H * 0.01, W, H * 0.012);
+    g.fillStyle = metalMap ? PAINT : accent;
+    g.fillRect(0, H * 0.2, W, H * 0.025);
+    g.fillRect(0, H * 0.775, W, H * 0.025);
   };
-  const map = canvasTexture(W, H, (g) => paint(g, false));
-  const mr = canvasTexture(W, H, (g) => {
-    paint(g, true);
-    wearChrome(g, W, H, name.length * 7 + name.charCodeAt(0));
-  });
+  const map = bakedTexture(W, H, (g) => paint(g, false));
+  const mr = bakedTexture(W, H, (g) => paint(g, true));
   mr.colorSpace = THREE.NoColorSpace;
+  void name;
   return { map, mr };
+}
+
+/**
+ * Paints a canvas and copies it into a plain data texture, then frees the canvas.
+ * Forty live 2048×1024 canvases (two per marble) made Chrome drop canvas
+ * backings under memory pressure: parts of the marbles rendered blank white.
+ */
+function bakedTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void) {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d", { willReadFrequently: true })!;
+  draw(g);
+  const src = g.getImageData(0, 0, w, h).data;
+  // Rows flipped: a data texture's first row is the bottom (v = 0).
+  const data = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) data.set(src.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+  c.width = c.height = 0;
+  const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 16;
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
 }
 
 export function Marbles({ race, t }: { race: Race; t: number }) {
   const view = useView(race);
-  const tex = useMemo(() => race.marbles.map((m) => marbleTextures(m.name, (m as { flag?: string }).flag ?? "")), [race]);
+  const tex = useMemo(() => race.marbles.map((m) => marbleTextures(m.name, (m as { flag?: string }).flag ?? "", (m as { color?: string }).color)), [race]);
   const refs = useRef<(THREE.Mesh | null)[]>([]);
   useEffect(
     () =>
@@ -1535,9 +1580,9 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
               roughnessMap={tex[i].mr}
               metalness={1}
               roughness={1}
-              clearcoat={1}
-              clearcoatRoughness={0.03}
-              envMapIntensity={1.5}
+              clearcoat={0.4}
+              clearcoatRoughness={0.3}
+              envMapIntensity={0.75}
             />
           </mesh>
         );

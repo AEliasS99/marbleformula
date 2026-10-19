@@ -128,7 +128,29 @@ The rainbow studio became an outdoor circuit: asphalt floor with aggregate grain
 - The hammer is a solid pendulum axe over half the track; no marble passes through it.
 - Found on the way: the lift camera for the cabin by the pit building looked at its roof; it now picks a spot with a clear view of the cabin at its lowest. Monaco needed a second regroup gate: the leader ran away by 10–20 s.
 
+### Painted marbles and the light (v21)
+
+- Marbles painted in their flag's main colour (the season's marble colour), a wider flag band, chrome only on pinstripes; satin flake paint under a soft clear coat.
+- The walls were paper white and clipped to flat white in the sun: now a warm light grey with visible texture. The sky HDRI's sun (~22 700) is capped out of the environment (the directional light is the sun); the grass is brightened to make up for it.
+- The +8 % saturation grade turned pure reds and yellows into white blotches on the painted marbles (invisible on chrome): removed.
+- The tower header no longer wraps at three-digit times.
+
 ### D. Rendering speed
+
+Measured on this Mac (one render at a time, nothing else on the GPU), Monaco, 180 frames full screen and 180 split:
+
+| Setting (`--props`) | s per frame | Faster | Monaco (27 362 frames) |
+| --- | --- | --- | --- |
+| `{"dpr":2,"blur":3}` (default) | 0.30 | ×1.0 | 2.3 h |
+| `{"dpr":2,"blur":2}` | 0.21 | ×1.4 | 1.6 h |
+| `{"dpr":1.5,"blur":3}` | 0.19 | ×1.6 | 1.5 h |
+| `{"dpr":1.5,"blur":2}` | 0.15 | ×2.0 | 1.1 h |
+| `{"dpr":2,"blur":1}` | 0.14 | ×2.2 | 1.0 h |
+| `{"dpr":1.5,"blur":1}` | 0.11 | ×2.7 | 0.8 h |
+| `{"dpr":1,"blur":2}` | 0.11 | ×2.7 | 0.8 h |
+
+1.5× with 2 sub-frames looks the same as the default in stills; 1× shows stair-stepping on thin stripes; no blur looks sharper in stills but stutters in motion. Two renders at once on one GPU doubled the time per frame and garbled frames.
+
 
 - Current: 15 min per race, 1 tab (parallel tabs produced garbled frames).
 - Motion blur ×3 → ~45 min. Mitigation: render the AO/DOF at half resolution (`halfRes`), which costs nothing visible at 2×.
