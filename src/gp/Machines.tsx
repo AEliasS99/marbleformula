@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { subframe } from "./subframe";
 import { TRACK } from "./trackMesh.js";
-import { agitatorArm, agitatorQuat, vortexFrame, vortexGeometry } from "./vortex.js";
+import { agitatorArm, agitatorQuat, RAIL, vortexFrame, vortexGeometry, vortexRail } from "./vortex.js";
 import type { Race, Quat, Vec3 } from "./race";
 
 // The machines that change the physics rather than just deflecting: the
@@ -145,7 +145,14 @@ export function Machines({ race, t }: { race: Race; t: number }) {
     () =>
       vortices.map((v) => {
         const parts = vortexGeometry(v, 160);
-        return { cone: toGeometry(parts.cone), lip: toGeometry(parts.lip), rim: toGeometry(parts.rim), throat: toGeometry(parts.throat), stripe: toGeometry(parts.stripe), frame: vortexFrame(v) };
+        // The spiral rail: a chrome tube along the ridge (the collider is boxes along the same curve).
+        const railPts = (vortexRail(v).points as number[][]).map((p) => new THREE.Vector3(p[0], p[1] + RAIL.height * 0.65, p[2]));
+        const rail = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts), 600, RAIL.thick, 12, false);
+        // Concentric rings on the cone, every 0.45 units down the slope: they read the funnel's shape.
+        const fr = vortexFrame(v);
+        const rings: { r: number; y: number }[] = [];
+        for (let r = v.radius - 0.2; r > v.hole + 0.15; r -= 0.45) rings.push({ r, y: (-v.depth * (v.radius - r)) / (v.radius - v.hole) + 0.012 });
+        return { cone: toGeometry(parts.cone), lip: toGeometry(parts.lip), rim: toGeometry(parts.rim), throat: toGeometry(parts.throat), stripe: toGeometry(parts.stripe), frame: fr, rail, rings };
       }),
     [vortices],
   );
@@ -188,9 +195,19 @@ export function Machines({ race, t }: { race: Race; t: number }) {
         return (
           <group key={`v${i}`}>
             {/* The funnel: glossy white inside and out, a chrome throat, hazard stripes on the lip wall and a chrome rim on top. */}
-            {/* Clear acrylic: the swirl is the show, seen from outside too. */}
+            {/* Smoked acrylic: the swirl is the show, seen from outside too, but the funnel's shape reads. */}
             <mesh geometry={b.cone} receiveShadow>
-              <meshPhysicalMaterial color="#eef3f8" transparent opacity={0.32} roughness={0.06} metalness={0} clearcoat={1} clearcoatRoughness={0.04} side={THREE.DoubleSide} depthWrite={false} />
+              <meshPhysicalMaterial color="#cfd9e6" transparent opacity={0.5} roughness={0.08} metalness={0.1} clearcoat={1} clearcoatRoughness={0.04} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+            {b.rings.map((ring, k) => (
+              <mesh key={`ring${k}`} position={b.frame.toWorld(0, ring.y, 0) as Vec3} rotation-x={Math.PI / 2}>
+                <torusGeometry args={[ring.r, 0.012, 6, 128]} />
+                <meshStandardMaterial color={k % 3 === 0 ? "#d8232a" : "#ffffff"} roughness={0.4} />
+              </mesh>
+            ))}
+            {/* The spiral rail and its yellow cap. */}
+            <mesh geometry={b.rail} castShadow>
+              <meshStandardMaterial color="#ffcc00" roughness={0.3} metalness={0.2} />
             </mesh>
             <mesh geometry={b.lip}>
               <meshPhysicalMaterial color="#eef3f8" transparent opacity={0.3} roughness={0.06} metalness={0} clearcoat={1} clearcoatRoughness={0.04} side={THREE.DoubleSide} depthWrite={false} />
@@ -267,6 +284,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
         );
       })}
 
+      {elevators.length > 0 && <LiftTower elevators={elevators} groundY={groundY} tex={tex} />}
       {elevators.map((e, i) => (
         <LiftCabin key={`e${i}`} race={race} t={t} elevator={e} groundY={groundY} tex={tex} />
       ))}
@@ -443,57 +461,11 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
         const L = elevator.length;
         const W = elevator.width;
         const H = elevator.wall;
-        const top = elevator.lift;
-        const groundH = elevator.center[1] - groundY;
-        const postOff = [
-          [-L / 2 - 0.5, -W / 2 - 0.5],
-          [-L / 2 - 0.5, W / 2 + 0.5],
-          [L / 2 + 0.5, -W / 2 - 0.5],
-          [L / 2 + 0.5, W / 2 + 0.5],
-        ] as [number, number][];
-        const yawOnly = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(evFrame.fwd, new THREE.Vector3(0, 1, 0), evFrame.right));
+        void groundY;
         const bl = elevator.bar.lift * evBarOpen(t);
         const barUp = new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion(...elevator.bar.quat)).multiplyScalar(bl);
   return (
           <group>
-            {/* The tower: four lattice columns from the ground past the top dock, a head frame with the winding gear. */}
-            <group position={[elevator.center[0], elevator.center[1], elevator.center[2]]} quaternion={yawOnly}>
-              {postOff.map(([x, z], k) => (
-                <group key={k} position={[x, 0, z]}>
-                  <mesh position={[0, (top + 3 - groundH) / 2, 0]} castShadow>
-                    <boxGeometry args={[0.3, top + 3 + groundH, 0.3]} />
-                    <meshStandardMaterial {...steel} />
-                  </mesh>
-                  {Array.from({ length: Math.ceil((top + 3 + groundH) / 2.5) }, (_, j) => (
-                    <mesh key={j} position={[0, -groundH + j * 2.5 + 1.25, 0]} rotation-y={Math.PI / 4}>
-                      <boxGeometry args={[0.5, 0.06, 0.06]} />
-                      <meshStandardMaterial {...dark} />
-                    </mesh>
-                  ))}
-                </group>
-              ))}
-              {/* Cross braces between the columns on the two long sides. */}
-              {[-1, 1].map((e) =>
-                Array.from({ length: Math.ceil((top + 3 + groundH) / 5) }, (_, j) => (
-                  <mesh key={`${e}${j}`} position={[0, -groundH + j * 5 + 2.5, e * (W / 2 + 0.5)]} rotation-z={j % 2 ? 0.75 : -0.75}>
-                    <boxGeometry args={[Math.hypot(L + 1, 5), 0.08, 0.08]} />
-                    <meshStandardMaterial {...steel} />
-                  </mesh>
-                )),
-              )}
-              <mesh position={[0, top + 3.2, 0]} castShadow>
-                <boxGeometry args={[L + 1.6, 0.5, W + 1.6]} />
-                <meshStandardMaterial {...dark} />
-              </mesh>
-              <mesh position={[0, top + 3.9, 0]} rotation-x={Math.PI / 2} castShadow>
-                <cylinderGeometry args={[0.6, 0.6, 1.2, 32]} />
-                <meshStandardMaterial {...chrome} />
-              </mesh>
-              <mesh position={[0, top + 4.6, 0]} rotation-x={-Math.PI / 2}>
-                <planeGeometry args={[L + 1, 0.7]} />
-                <meshStandardMaterial map={tex.lift} roughness={0.5} side={THREE.DoubleSide} />
-              </mesh>
-            </group>
             {/* The cabin: a sloped floor plate, clear side walls in chrome frames, two sliding doors, cables. */}
             <group ref={cabinRef} position={[elevator.center[0], elevator.center[1] + p.h, elevator.center[2]]} quaternion={evFrame.quat}>
               <mesh position={[0, -0.06, 0]} castShadow receiveShadow>
@@ -551,5 +523,85 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
               ))}
             </group>
           </group>
+  );
+}
+
+/**
+ * One tower frame for all the cabins side by side: lattice columns only at the
+ * outer corners (fore and aft of the cabins, outside the track), braces on the
+ * two outer faces, and one head frame across the top with a winding drum and
+ * cable sheaves above each cabin. Nothing passes between the cabins.
+ */
+function LiftTower({ elevators, groundY, tex }: { elevators: Elevator[]; groundY: number; tex: { lift: THREE.Texture } }) {
+  const e0 = elevators[0];
+  const fwd = new THREE.Vector3(...e0.fwd).normalize();
+  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const yaw = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(fwd, new THREE.Vector3(0, 1, 0), right));
+  const centre = elevators.reduce((acc, e) => acc.add(new THREE.Vector3(...e.center)), new THREE.Vector3()).multiplyScalar(1 / elevators.length);
+  const L = e0.length;
+  const half = Math.max(...elevators.map((e) => Math.abs(e.lat) + e.width / 2)) + 0.55;
+  const top = e0.lift;
+  const groundH = centre.y - groundY;
+  const height = top + 3 + groundH;
+  const posts: [number, number][] = [
+    [-L / 2 - 0.5, -half],
+    [-L / 2 - 0.5, half],
+    [L / 2 + 0.5, -half],
+    [L / 2 + 0.5, half],
+  ];
+  return (
+    <group position={centre} quaternion={yaw}>
+      {posts.map(([x, z], k) => (
+        <group key={k} position={[x, 0, z]}>
+          <mesh position={[0, (top + 3 - groundH) / 2, 0]} castShadow>
+            <boxGeometry args={[0.34, height, 0.34]} />
+            <meshStandardMaterial {...steel} />
+          </mesh>
+          {Array.from({ length: Math.ceil(height / 2.5) }, (_, j) => (
+            <mesh key={j} position={[0, -groundH + j * 2.5 + 1.25, 0]} rotation-y={Math.PI / 4}>
+              <boxGeometry args={[0.55, 0.06, 0.06]} />
+              <meshStandardMaterial {...dark} />
+            </mesh>
+          ))}
+        </group>
+      ))}
+      {/* X-braces on the two outer faces only. */}
+      {[-1, 1].map((e) =>
+        Array.from({ length: Math.ceil(height / 5) }, (_, j) => (
+          <mesh key={`${e}${j}`} position={[0, -groundH + j * 5 + 2.5, e * half]} rotation-z={j % 2 ? 0.75 : -0.75}>
+            <boxGeometry args={[Math.hypot(L + 1, 5), 0.08, 0.08]} />
+            <meshStandardMaterial {...steel} />
+          </mesh>
+        )),
+      )}
+      {/* Head frame across both cabins, a drum and sheaves over each, and the sign on both outer faces. */}
+      <mesh position={[0, top + 3.2, 0]} castShadow>
+        <boxGeometry args={[L + 1.6, 0.5, 2 * half + 0.6]} />
+        <meshStandardMaterial {...dark} />
+      </mesh>
+      {elevators.map((e, k) => {
+        const z = new THREE.Vector3(...e.center).sub(centre).dot(right);
+        return (
+          <group key={k} position={[0, top + 3.9, z]}>
+            <mesh rotation-x={Math.PI / 2} castShadow>
+              <cylinderGeometry args={[0.55, 0.55, 1.1, 32]} />
+              <meshStandardMaterial {...chrome} />
+            </mesh>
+            {[-1, 1].map((g) => (
+              <mesh key={g} position={[g * (L / 2 - 0.3), -0.45, 0]} rotation-x={Math.PI / 2}>
+                <torusGeometry args={[0.18, 0.05, 10, 24]} />
+                <meshStandardMaterial {...steel} />
+              </mesh>
+            ))}
+          </group>
+        );
+      })}
+      {[-1, 1].map((e) => (
+        <mesh key={`s${e}`} position={[0, top + 2.55, e * (half + 0.32)]} rotation-y={e > 0 ? 0 : Math.PI}>
+          <planeGeometry args={[L + 1, 0.7]} />
+          <meshStandardMaterial map={tex.lift} roughness={0.5} />
+        </mesh>
+      ))}
+    </group>
   );
 }

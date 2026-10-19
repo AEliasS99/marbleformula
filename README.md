@@ -57,7 +57,7 @@ Each circuit has a fixed layout, the same for every seed. Obstacles are placed o
 | **The pusher** | a block that slides out from the wall across the track, timed to the leader |
 | **Big air** | a kicker with a 10° run-up, then a 2.0 fall: real flight, under clear guard panels |
 | **The lift** | a chain lift with cleats that carries the whole field up to a higher level |
-| **The vortex** | a clear funnel bowl set into the track (`src/gp/vortex.js`): a deflector fin sends the field in off-axis, it spirals down the cone and drops through the throat onto the lower track, which resumes under the hole. An agitator (three chrome paddles on a shaft through the throat, turning against the swirl) keeps the queue for the hole disorderly; the lip is 2.2 high because the paddles fling marbles. Reorders the whole pack. One per circuit |
+| **The vortex** | a smoked funnel bowl with ring markings set into the track (`src/gp/vortex.js`): a deflector fin sends the field in off-axis, it spirals down the cone and drops through the throat onto the lower track, which resumes under the hole. A yellow spiral rail winds 0.9 of a turn down the cone so marbles ride round it instead of dropping straight in, and an agitator (three chrome paddles on a shaft through the throat, sweeping over the rail) keeps them moving; the lip is 2.2 high because the paddles fling marbles. Reorders the whole pack. One per circuit |
 | **The rollers** | three knurled cylinders flush in the floor, all driving forward at 7, 4.5 and 10 u/s: marbles get kicked apart without contact |
 | **The fan** | a pulsing lateral gust over 5 units of track (a force in the bake), from a caged fan on a post beside the wall |
 | **Regroup gate** | a hazard bar across the track that holds the leaders until 60 % of the field still racing has arrived (or 7 s have passed), then lifts; two per lap (`REGROUP`). Keeps twenty marbles a race instead of a procession, and lets the overlay count "12 / 20 at the gate" |
@@ -144,6 +144,8 @@ Debug switches for `--round` runs:
 | The fan parked marbles against the wall | At 9 u/s² the gust's wall friction beat the 6.5° slope | Gust 6 u/s² |
 | Marbles popped through gate bars, cabin doors and guard panels | A pile pressing on a thin (0.05–0.12) box: penetration recovery pushes the deepest marble out the far side | Barrier colliders are 0.3–0.6 deep, extended away from the pile; the visible panel stays thin |
 | The hammer pushed marbles through the wall shell | Its reach left 0.4 to the wall: a marble got pinched between head and shell | Amplitude 24° leaves 0.88, more than a marble; period 1.7 keeps the punch |
+| A marble parked on the vortex's spiral rail for 40 s | 1.3 turns gave a 7 % grade; pressed against the rail by the 44° cone, its friction beat the grade | 0.9 of a turn (10 %), a frictionless rail, and agitator paddles long enough to sweep along it |
+| Lift towers poked through each other's cabins | Each cabin had its own four-column tower; side by side, the inner columns stood in the other cabin | One shared tower frame: columns only at the outer corners, one head frame across both cabins |
 | Gate bars on screen did not match the physics | The renderer eased from the first open only; the bake re-arms the gate every lap | The bake stores the bar's per-frame lift and the renderer replays it |
 
 ## The Zigzag Tower

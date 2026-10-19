@@ -13,7 +13,7 @@ import { Matrix4, PerspectiveCamera, Quaternion, Vector3 } from "three";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { loadOutline, marbleize, SCALE, SLOPE } from "./circuit.mjs";
 import { venueBlocks, venueClearance, venueLayout } from "../src/gp/venue.js";
-import { agitatorArm, agitatorQuat, vortexSoup } from "../src/gp/vortex.js";
+import { agitatorArm, agitatorQuat, vortexRail, vortexSoup } from "../src/gp/vortex.js";
 import { BANK_PIVOT, buildTrackMesh, liftCleatPose, pointInFrame, pointOnTrack, surfaceHeight as surfaceHeightAt, TRACK, TRACK_DEPTH } from "../src/gp/trackMesh.js";
 
 // --- Season ------------------------------------------------------------------------
@@ -105,7 +105,7 @@ const DAMPING = 0.075; // rolling resistance + air: caps the speed of a marble
 // send a marble back up the slope to oscillate against the obstacle for seconds.
 const MARBLE_RESTITUTION = 0.75;
 const TRACK_RESTITUTION = 0.4;
-const OBSTACLE_RESTITUTION = { bumper: 0.65, spinner: 0.35, fin: 0.5, splitter: 0.3, divider: 0.3, hammer: 0.3, cleat: 0.1, guard: 0.3, pusher: 0.2, turntable: 0.1, roller: 0.2, vortex: 0.2 };
+const OBSTACLE_RESTITUTION = { bumper: 0.65, spinner: 0.35, fin: 0.5, splitter: 0.3, divider: 0.3, hammer: 0.5, cleat: 0.1, guard: 0.3, pusher: 0.2, turntable: 0.1, roller: 0.2, vortex: 0.2 };
 const GUARD = { height: 1.4, segment: 1 }; // default; zones that throw marbles higher say so
 // Clear guard panels over the stretches where marbles can fly: a jump's kicker,
 // flight and landing, and every machine that can throw one.
@@ -190,7 +190,9 @@ const REGROUP = { count: 2, need: 0.6, hold: 7, lift: 1.7, time: 0.5, size: [0.1
 const VORTEX = { radius: 3.4, hole: 1.1, depth: 2.2, lip: 2.2, throat: 0.4, fall: 0.6, entry: 0.9, centre: 3.5, resume: 2.2, entryHalf: 1.9 }; // lip 2.2: the agitator flings marbles
 // The agitator: three paddles hugging the cone just above the throat, turning
 // against the swirl, so the queue for the hole is never orderly.
-const AGITATOR = { arms: 3, rIn: 1.2, rOut: 2.3, clearance: 0.28, height: 0.45, thickness: 0.12, speed: -1.8 };
+// The paddles reach out over the rail (they clear it: rail 0.17, clearance 0.28) and turn the same way as
+// the swirl, so they sweep along anything resting against the rail.
+const AGITATOR = { arms: 3, rIn: 1.2, rOut: 2.9, clearance: 0.28, height: 0.45, thickness: 0.12, speed: -1.8 };
 // Rollers: three cylinders across the floor, all driving forward but at
 // different speeds, so the field gets kicked apart. (A backward roller traps
 // marbles in the pocket between rollers.)
@@ -717,9 +719,11 @@ function buildObstacles(course, sync = {}) {
       // A pendulum swinging across the trough. Its pivot is high above, so the
       // swing is limited to where the head stays clear of the curved floor.
       const s = frameAt(f.u + 1);
+      const side = swings.length % 2 ? -1 : 1;
       swings.push({
         kind: "hammer",
-        pos: pointInFrame(s, 0, HAMMER.pivot).map(r3),
+        lat: r3(side * HAMMER.lat),
+        pos: pointInFrame(s, side * HAMMER.lat, HAMMER.pivot).map(r3),
         quat: quatArr(frameQuat(s)),
         length: HAMMER.length,
         head: HAMMER.head,
@@ -827,10 +831,11 @@ export function turntableQuat(tt, t) {
 }
 // Pivot height puts the head's centre at marble height (0.35) in mid-swing;
 // at the extremes it rises to ~0.8, and it reaches lat ±1.55 of the 2.1 half-width.
-// Amplitude 24°: the head's reach (3·sin 24° = 1.22) leaves 0.88 to the wall,
-// more than a marble, so nothing is ever pinched between head and wall (a
-// pinched marble pops through the thin wall shell or the head).
-const HAMMER = { pivot: 0.35 + 3.0, length: 3.0, head: [1.0, 0.5, 0.5], amp: (24 * Math.PI) / 180, period: 1.7 };
+// It sweeps only one half of the track: the pivot sits `lat` off the centre and
+// the head swings from the centre line to 1.1 from it, so the far half is a
+// safe lane and choosing it matters. The head's edge stops 0.75 from the wall,
+// more than a marble, so nothing is ever pinched against the wall.
+const HAMMER = { pivot: 0.35 + 1.9, length: 1.9, head: [1.0, 0.5, 0.5], lat: 0.55, amp: (16.8 * Math.PI) / 180, period: 1.5 };
 // A spinning plate set into the floor: marbles crossing it are dragged sideways.
 const TURNTABLE = { radius: 1.6, thickness: 0.08, speed: 3.0 };
 // A block that slides out from one wall across most of the track and back.
@@ -886,6 +891,21 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
       trackBody,
     );
   }
+  // The spiral rail on each vortex cone (fixed, clear to the cameras like the bowl).
+  for (const v of obstacles.vortices)
+    for (const sgm of vortexRail(v).segments)
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(sgm.size[0] / 2, sgm.size[1] / 2, sgm.size[2] / 2)
+          .setTranslation(...sgm.pos)
+          .setRotation(rot(sgm.quat))
+          // Frictionless: a marble pressed against the rail by the cone's slope must not brake on it.
+          .setFriction(0)
+          .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
+          .setRestitution(0.2)
+          .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
+          .setCollisionGroups(GROUP_CLEAR),
+        trackBody,
+      );
   const agitatorBodies = obstacles.vortices.map((v) => {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...v.center).setRotation(rot(agitatorQuat(v, 0))));
     for (let k = 0; k < v.agitator.arms; k++) {
@@ -921,7 +941,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
     );
     return body;
   });
-  const regroupState = obstacles.regroups.map(() => ({ first: null, open: null, opens: [], lift: 0, lifts: [] }));
+  const regroupState = obstacles.regroups.map(() => ({ first: null, open: null, opens: [], firsts: [], lift: 0, lifts: [] }));
 
   // The lifts: per bay, a cabin (sloped floor, side walls) and two doors, all
   // kinematic, plus a bar on the track that holds arrivals while the cabin is away.
@@ -1354,6 +1374,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
       // Re-arm for the next lap once everyone still racing has gone past (or is behind, a lap down).
       if (st.open !== null && f - st.open > 4 * FPS && frames[f].every((m, i) => finishFrame[i] !== null || dqFrame[i] !== null || uLocal(m[7]) > g.u + 3 || uLocal(m[7]) < g.u - 30)) {
         st.opens.push(st.open);
+        st.firsts.push(st.first);
         st.open = null;
         st.first = null;
       }
@@ -1680,7 +1701,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
     pushers: obstacles.pushers,
     rollers: obstacles.rollers,
     fans: obstacles.fans,
-    regroups: obstacles.regroups.map((g, k) => ({ ...g, firstFrame: regroupState[k].first, openFrame: regroupState[k].open, opens: regroupState[k].opens, lifts: regroupState[k].lifts })),
+    regroups: obstacles.regroups.map((g, k) => ({ ...g, firstFrame: regroupState[k].first, openFrame: regroupState[k].open, opens: regroupState[k].opens, firsts: regroupState[k].firsts, lifts: regroupState[k].lifts })),
     elevators: elevatorsData,
     laps,
     vortices: obstacles.vortices,
@@ -1868,7 +1889,8 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       const fwd = v3(elevator.fwd);
       const right = new Vector3(-fwd.z, 0, fwd.x);
       const side = elevator.lat < 0 ? -1 : 1;
-      const pos = c.clone().addScaledVector(right, side * (elevator.width / 2 + 7.5)).addScaledVector(fwd, -2.5).add(new Vector3(0, 2.6, 0));
+      // Square to the tower's outer face, midway between its fore and aft columns, so no column blocks the cabin.
+      const pos = c.clone().addScaledVector(right, side * (Math.abs(elevator.lat) + elevator.width / 2 + 8.5)).add(new Vector3(0, 3.0, 0));
       return { pos, target: c.clone().add(new Vector3(0, 0.7, 0)), fov: 44 };
     },
     onboard: (f, sh) => {

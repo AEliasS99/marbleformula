@@ -1,4 +1,4 @@
-import { Quaternion, Vector3 } from "three";
+import { Matrix4, Quaternion, Vector3 } from "three";
 
 // The vortex: a level funnel bowl set into the track. The upper track ends at
 // its rim; marbles enter off-centre (a deflector fin sends them to one side),
@@ -68,6 +68,60 @@ export function vortexGeometry(v, segments = 96) {
   band(parts.stripe, v.radius + 0.17, v.lip - 0.26, v.radius + 0.17, v.lip - 0.02, inOpening); // hazard band outside, near the top
   band(parts.throat, v.hole, -v.depth, v.hole, -v.depth - v.throat);
   return parts;
+}
+
+/**
+ * The spiral rail on the cone: a low ridge winding 1.3 turns from near the
+ * rim down toward the throat, in the direction the marbles circle (angle
+ * decreasing), so they ride round it instead of dropping straight in. It is
+ * lower than the agitator's clearance, so the paddles pass over it.
+ * Returns the rail's points (world) and its segment boxes for the collider.
+ */
+// 0.9 of a turn: a 10 % grade along the rail, enough that a marble resting
+// against it on the 44° cone keeps rolling (at 1.3 turns, 7 %, one stalled).
+export const RAIL = { turns: 0.9, a0: (55 * Math.PI) / 180, rFrom: 0.35, rTo: 0.55, height: 0.17, thick: 0.07, seg: 0.28 };
+export function vortexRail(v) {
+  const { fwd, right, toWorld } = vortexFrame(v);
+  const F = new Vector3(...fwd);
+  const Rt = new Vector3(...right);
+  const r0 = v.radius - RAIL.rFrom;
+  const r1 = v.hole + RAIL.rTo;
+  const yAt = (r) => (-v.depth * (v.radius - r)) / (v.radius - v.hole);
+  const total = RAIL.turns * Math.PI * 2;
+  const pts = [];
+  const n = 400;
+  for (let k = 0; k <= n; k++) {
+    const t = k / n;
+    const a = RAIL.a0 - t * total;
+    const r = r0 + (r1 - r0) * t;
+    pts.push({ a, local: [Math.cos(a) * r, yAt(r), Math.sin(a) * r] });
+  }
+  const slope = Math.atan(v.depth / (v.radius - v.hole));
+  const up = new Vector3(0, 1, 0);
+  const segments = [];
+  let acc = 0;
+  let from = pts[0];
+  for (let k = 1; k < pts.length; k++) {
+    acc += Math.hypot(pts[k].local[0] - pts[k - 1].local[0], pts[k].local[1] - pts[k - 1].local[1], pts[k].local[2] - pts[k - 1].local[2]);
+    if (acc < RAIL.seg && k < pts.length - 1) continue;
+    const to = pts[k];
+    const A = new Vector3(...toWorld(...from.local));
+    const B = new Vector3(...toWorld(...to.local));
+    const am = (from.a + to.a) / 2;
+    const radialOut = F.clone().multiplyScalar(Math.cos(am)).addScaledVector(Rt, Math.sin(am)).normalize();
+    const nrm = up.clone().multiplyScalar(Math.cos(slope)).addScaledVector(radialOut, -Math.sin(slope)).normalize();
+    const tx = B.clone().sub(A);
+    const len = tx.length();
+    tx.normalize();
+    const tz = new Vector3().crossVectors(tx, nrm).normalize();
+    const ty = new Vector3().crossVectors(tz, tx).normalize();
+    const q = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(tx, ty, tz));
+    const pos = A.clone().add(B).multiplyScalar(0.5).addScaledVector(ty, RAIL.height / 2);
+    segments.push({ pos: [pos.x, pos.y, pos.z], quat: [q.x, q.y, q.z, q.w], size: [len + 0.02, RAIL.height, RAIL.thick] });
+    acc = 0;
+    from = to;
+  }
+  return { points: pts.map((p) => toWorld(...p.local)), segments };
 }
 
 /** One triangle soup of every part, for the collider. */

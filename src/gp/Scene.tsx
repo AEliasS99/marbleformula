@@ -1085,8 +1085,9 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
         const swing = swingQuat(sw, sec);
         return (
           <group key={`h${i}`}>
-            {/* Bridge over the trough holding the pivot. */}
+            {/* Bridge over the trough holding the pivot (the pivot sits off-centre: the hammer sweeps one half). */}
             <group position={sw.pos} quaternion={sw.quat}>
+              <group position={[0, 0, -((sw as { lat?: number }).lat ?? 0)]}>
               <mesh position={[0, 0.22, 0]} castShadow>
                 <boxGeometry args={[0.24, 0.2, 2 * W + 0.8]} />
                 <meshPhysicalMaterial {...gloss} />
@@ -1094,16 +1095,6 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
               {[-1, 1].map((e) => (
                 <mesh key={e} position={[0, -0.9, e * (W + 0.35)]} castShadow>
                   <boxGeometry args={[0.16, 2.4, 0.16]} />
-                  <meshStandardMaterial {...chrome} />
-                </mesh>
-              ))}
-              <mesh rotation-z={Math.PI / 2}>
-                <cylinderGeometry args={[0.09, 0.09, 0.4, 24]} />
-                <meshStandardMaterial color="#15161b" roughness={0.4} />
-              </mesh>
-              {[-1, 1].map((e) => (
-                <mesh key={`br${e}`} position={[0, 0, e * 0.2]} rotation-x={Math.PI / 2}>
-                  <torusGeometry args={[0.13, 0.035, 10, 24]} />
                   <meshStandardMaterial {...chrome} />
                 </mesh>
               ))}
@@ -1127,6 +1118,22 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
                 <mesh key={`hz${e}`} position={[0, -1.9, e * (W + 0.35)]}>
                   <boxGeometry args={[0.17, 0.5, 0.17]} />
                   <meshStandardMaterial map={chev} roughness={0.5} />
+                </mesh>
+              ))}
+              </group>
+              {/* Pivot bearing under the bridge. */}
+              <mesh position={[0, 0.11, 0]}>
+                <boxGeometry args={[0.18, 0.22, 0.18]} />
+                <meshStandardMaterial {...chrome} />
+              </mesh>
+              <mesh rotation-z={Math.PI / 2}>
+                <cylinderGeometry args={[0.09, 0.09, 0.4, 24]} />
+                <meshStandardMaterial color="#15161b" roughness={0.4} />
+              </mesh>
+              {[-1, 1].map((e) => (
+                <mesh key={`br${e}`} position={[0, 0, e * 0.2]} rotation-x={Math.PI / 2}>
+                  <torusGeometry args={[0.13, 0.035, 10, 24]} />
+                  <meshStandardMaterial {...chrome} />
                 </mesh>
               ))}
             </group>

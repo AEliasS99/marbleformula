@@ -406,16 +406,21 @@ function Toasts({ race, f, s, layout }: { race: Race; f: number; s: number; layo
 
 /** While a regroup gate holds the leaders: who has arrived, and the gate going green. */
 function RegroupChip({ race, f, s, layout }: { race: Race; f: number; s: number; layout: Layout }) {
-  // Every pass of a gate: the opens it has made plus the one in progress.
-  const gates = ((race.data as unknown as { regroups?: { u: number; firstFrame: number | null; openFrame: number | null; opens?: number[] }[] }).regroups ?? []).flatMap((g) =>
-    [...(g.opens ?? []), ...(g.openFrame !== null ? [g.openFrame] : [])].map((openFrame) => ({ u: g.u, openFrame, firstFrame: openFrame - race.sec(7) })),
-  );
-  const g = gates.find((x) => f >= x.firstFrame && f < x.openFrame + race.sec(1.2) && race.marbles.some((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f) && race.uOf(i, f) >= x.u - 1.6 && race.uOf(i, f) < x.u + 2));
+  // Every pass of a gate (one per lap): from its first arrival to just after it opens, as the bake recorded them.
+  type Gate = { u: number; pos: [number, number, number]; firstFrame: number | null; openFrame: number | null; opens?: number[]; firsts?: (number | null)[] };
+  const gates = ((race.data as unknown as { regroups?: Gate[] }).regroups ?? []).flatMap((g) => {
+    const passes = (g.opens ?? []).map((openFrame, k) => ({ openFrame, firstFrame: g.firsts?.[k] ?? openFrame - race.sec(7) }));
+    if (g.openFrame !== null) passes.push({ openFrame: g.openFrame, firstFrame: g.firstFrame ?? g.openFrame - race.sec(7) });
+    return passes.map((p) => ({ ...p, u: g.u, pos: g.pos }));
+  });
+  // Only while the camera is actually at the gate: its target within a few units of the bar.
+  const target = race.shotAt(f).target;
+  const g = gates.find((x) => f >= x.firstFrame && f < x.openFrame + race.sec(1.2) && Math.hypot(target[0] - x.pos[0], target[1] - x.pos[1], target[2] - x.pos[2]) < 9);
   if (!g) return null;
   const racing = race.marbles.filter((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f));
   const here = race.marbles.filter((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f) && race.uOf(i, f) >= g.u - 1.6 && race.uOf(i, f) < g.u + 2).length;
   const open = f >= g.openFrame! + race.sec(0.3); // the bar takes half a second to lift
-  const k = spring({ frame: f - g.firstFrame!, fps: race.fps, config: { damping: 16 } });
+  const k = spring({ frame: f - g.firstFrame, fps: race.fps, config: { damping: 16 } });
   const out = interpolate(f, [g.openFrame! + race.sec(0.8), g.openFrame! + race.sec(1.2)], [1, 0], clamp);
   return (
     <div style={{ position: "absolute", left: 0, right: 0, bottom: (layout === "portrait" ? 640 : 130) * s, display: "flex", justifyContent: "center", opacity: k * out, transform: `translateY(${(1 - k) * 30 * s}px)` }}>
