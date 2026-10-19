@@ -42,6 +42,9 @@ export const OBSTACLES = [
   fan,
   vortex,
   regroup,
+  // Placed by the bake itself at the apex of the sharp bends (never in a layout): a short hump that
+  // throws fast marbles into the air in the curve. Banked, guarded.
+  shape("crest", "THE CREST", { before: 4, after: 5, maxCurv: 1 }, { card: { difficulty: 2, chaos: 3, seconds: 0.5, summary: "A hump at the apex of a bend: fast marbles take off sideways." } }),
 ];
 export const BY_TYPE = Object.fromEntries(OBSTACLES.map((o) => [o.type, o]));
 /** The machines every circuit gets, placed first and spread over the lap, in this order. */

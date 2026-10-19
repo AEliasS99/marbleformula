@@ -542,6 +542,10 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
   const backDoorRef = useRef<THREE.Group | null>(null);
   const frontDoorRef = useRef<THREE.Group | null>(null);
   const evBarRef = useRef<THREE.Group | null>(null);
+  // The boom hinges at the bay's outer edge (local z: across the track) and swings up to 85°.
+  const hingeSide = elevator.lat < 0 ? -1 : 1;
+  const hingeZ = (hingeSide * elevator.bar.size[2]) / 2;
+  const boomAngle = (open: number) => (85 * Math.PI) / 180 * Math.min(1, Math.max(0, open));
   const cableRefs = useRef<(THREE.Mesh | null)[]>([]);
   /** Cabin frame: local x forward (down the floor's slope), y the floor normal, z right. */
   const evFrame = useMemo(() => {
@@ -570,9 +574,7 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
       ref.current?.position.set(x, (elevator.wall * (1 - open)) / 2, 0);
       ref.current?.scale.set(1, Math.max(0.001, 1 - open), 1);
     }
-    const bl = elevator.bar.lift * evBarOpen(t);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion(...elevator.bar.quat)).multiplyScalar(bl);
-    evBarRef.current?.position.set(elevator.bar.pos[0] + up.x, elevator.bar.pos[1] + up.y, elevator.bar.pos[2] + up.z);
+    evBarRef.current?.rotation.set(hingeSide * boomAngle(evBarOpen(t)), 0, 0);
     // Cables from the cabin's roof corners up to the head frame: scale to the remaining height.
     const remaining = Math.max(0.05, elevator.lift + 2.0 - p.h);
     cableRefs.current.forEach((c) => {
@@ -587,8 +589,6 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
         const W = elevator.width;
         const H = elevator.wall;
         void groundY;
-        const bl = elevator.bar.lift * evBarOpen(t);
-        const barUp = new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion(...elevator.bar.quat)).multiplyScalar(bl);
   return (
           <group>
             {/* The cabin: a sloped floor plate, clear side walls in chrome frames, two sliding doors, cables. */}
@@ -678,20 +678,24 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
                 )),
               )}
             </group>
-            {/* The holding bar on the track before the dock. */}
-            <group ref={evBarRef} position={[elevator.bar.pos[0] + barUp.x, elevator.bar.pos[1] + barUp.y, elevator.bar.pos[2] + barUp.z]} quaternion={elevator.bar.quat}>
-              <mesh castShadow>
-                <boxGeometry args={elevator.bar.size} />
-                <meshStandardMaterial map={barStripes(elevator.bar.size[2])} roughness={0.4} />
-              </mesh>
-            </group>
+            {/* The holding bar on the track before the dock: a boom barrier hinged on its outer post. It swings
+                up to vertical while the cabin loads (lifted straight up, it looked as if the marbles rolled through it). */}
             <group position={elevator.bar.pos} quaternion={elevator.bar.quat}>
-              {[-1, 1].map((e) => (
-                <mesh key={e} position={[0, elevator.bar.lift / 2 + 0.5, e * (elevator.bar.size[2] / 2 + 0.2)]} castShadow>
-                  <boxGeometry args={[0.26, elevator.bar.lift + 1.8, 0.26]} />
-                  <meshStandardMaterial {...dark} />
+              <group ref={evBarRef} position={[0, 0, hingeZ]} rotation={[hingeSide * boomAngle(evBarOpen(t)), 0, 0]}>
+                <mesh position={[0, 0, -hingeZ]} castShadow>
+                  <boxGeometry args={elevator.bar.size} />
+                  <meshStandardMaterial map={barStripes(elevator.bar.size[2])} roughness={0.4} />
                 </mesh>
-              ))}
+              </group>
+              {/* The hinge post, with a counterweight box. */}
+              <mesh position={[0, 0.2, hingeZ + hingeSide * 0.18]} castShadow>
+                <boxGeometry args={[0.3, 1.4, 0.3]} />
+                <meshStandardMaterial {...dark} />
+              </mesh>
+              <mesh position={[0, 0.95, hingeZ + hingeSide * 0.18]}>
+                <boxGeometry args={[0.34, 0.12, 0.34]} />
+                <meshStandardMaterial map={tex.hazard} roughness={0.45} />
+              </mesh>
             </group>
           </group>
   );

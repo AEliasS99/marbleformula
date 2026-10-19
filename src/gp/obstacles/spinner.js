@@ -25,7 +25,7 @@ export default {
   build(f, { frameAt, out, sync }) {
     const s = frameAt(f.u);
     const dir = out.spinners.length % 2 ? -1 : 1;
-    const speed = dir * 2.1;
+    const speed = dir * 3.4; // fast: it flings, not just stirs
     out.spinners.push({
       kind: "spinner",
       pos: pointInFrame(s, 0, 0.3).map(r3),

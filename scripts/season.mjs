@@ -97,7 +97,9 @@ const SAMPLE = 0.5; // centreline sample spacing
 const GRAVITY = 22;
 // Every curve is banked (up to 22°) so the marbles carry their speed through it.
 const DESIGN_SPEED = 10; // for banking
-const MAX_BANK = (22 * Math.PI) / 180;
+// 20°: steeper banking could not flip fast enough through an S-bend (the rate limit below), so the
+// second half leaned the wrong way and pinned marbles to the wall.
+const MAX_BANK = (20 * Math.PI) / 180;
 // How fast banking may change along the track. On a flat floor, twisting faster
 // than this makes the low edge climb while the centre line descends: a bowl that
 // traps marbles. At 0.8 the low edge still descends, at a fifth of the slope.
@@ -167,6 +169,8 @@ const LIFT = { angle: (22 * Math.PI) / 180, len: 9, lead: 2.4, rise: 1.2, speed:
 const TWIST = { amp: (42 * Math.PI) / 180, length: 14 };
 const DROP_HEIGHT = 1.1;
 const BUMP = { amp: 0.13, length: 1.6, count: 4 };
+// Crests at the bends' apexes: a mini kicker (run-up, lip, small drop): fast marbles take off in the bend.
+const CREST = { runup: 2.5, runupSlope: Math.tan((14 * Math.PI) / 180), ramp: 1.2, lip: 0.22, drop: 0.25, minCurv: 0.035, maxCurv: 0.16, spacing: 18, max: 8 };
 
 function hashString(str) {
   let h = 2166136261;
@@ -436,6 +440,34 @@ export function buildCourse(round) {
   // The obstacle layout belongs to the circuit, not the race: same for every seed.
   // The circuit's own layout if it has one (src/gp/circuits/), else the planner's.
   const features = Array.isArray(round.layout) ? placeLayout(round.layout, curv, L, round.id) : planFeatures(us, curv, L, mulberry32(hashString(round.id)));
+  // Crests at the apex of the sharp bends, wherever the layout leaves room (CREST).
+  {
+    const k0 = Math.round(GRID_LENGTH / SAMPLE);
+    const peaks = [];
+    for (let k = k0 + 2; k < m - 2; k++) {
+      const c = Math.abs(curv[k]);
+      if (c < CREST.minCurv || c > CREST.maxCurv || c < Math.abs(curv[k - 1]) || c < Math.abs(curv[k + 1])) continue;
+      // Medium bends only, turning one way for ±6 units: in hairpins and S-bends marbles are slow and a lip stalls them.
+      let ok = true;
+      for (let j = -12; j <= 12 && ok; j++) {
+        const q = Math.max(0, Math.min(m - 1, k + j));
+        if (Math.sign(curv[q]) === -Math.sign(curv[k]) && Math.abs(curv[q]) > 0.02) ok = false;
+        if (Math.abs(curv[q]) > CREST.maxCurv) ok = false;
+      }
+      if (ok) peaks.push({ u: us[k], c });
+    }
+    peaks.sort((a, b) => b.c - a.c);
+    const crests = [];
+    for (const p of peaks) {
+      if (crests.length >= CREST.max) break;
+      if (p.u < 30 || p.u > L - 26) continue;
+      if (features.some((g) => p.u + 5 + 4 > g.u - g.span[0] && p.u - 4 - 4 < g.u + g.span[1])) continue;
+      if (crests.some((q) => Math.abs(q - p.u) < CREST.spacing)) continue;
+      crests.push(p.u);
+    }
+    for (const u of crests) features.push({ type: "crest", u: r3(u), label: "THE CREST", span: [4, 5] });
+    features.sort((a, b) => a.u - b.u);
+  }
 
   // Elevation: a steady descent with sudden drops and rumble strips, then a
   // run-off that levels out and climbs so finished marbles stop. The grid sits
@@ -462,6 +494,13 @@ export function buildCourse(round) {
       }
       // Lift: the belt climbs steeply (cancelling the usual descent too).
       if (f.type === "lift" && u > f.u && u <= f.u + LIFT.len) h += (Math.tan(LIFT.angle) + slope) * SAMPLE;
+      // Crest: a mini kicker in the bend. A steeper run-up, a lip that stays below where the run-up
+      // began (a hump above the line stalled the slow marbles), then a small step down.
+      if (f.type === "crest") {
+        if (u > f.u - CREST.ramp - CREST.runup && u <= f.u - CREST.ramp) h -= (CREST.runupSlope - slope) * SAMPLE;
+        if (u > f.u - CREST.ramp && u <= f.u) h += (CREST.lip / CREST.ramp) * SAMPLE;
+        if (us[k - 1] <= f.u && u > f.u) h -= CREST.lip + CREST.drop;
+      }
       // Jump: the floor kicks up into a lip, then falls away — marbles take off.
       if (f.type === "jump") {
         if (u > f.u - JUMP.ramp - JUMP.runup && u <= f.u - JUMP.ramp) h -= (JUMP.runupSlope - slope) * SAMPLE;
@@ -474,6 +513,7 @@ export function buildCourse(round) {
   const bumpAt = (u) => {
     let b = 0;
     for (const f of features) {
+
       if (f.type !== "bumps") continue;
       const x = u - f.u;
       if (x >= 0 && x <= BUMP.length * BUMP.count) b += (BUMP.amp * (1 - Math.cos((2 * Math.PI * x) / BUMP.length))) / 2;
@@ -1463,9 +1503,13 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     // The focus is the best battle, not necessarily the leader: the group
     // (within 6 units) with the most marbles, with a bonus for being at the
     // front, and a little loyalty to the group we were already following.
+    // Marbles queuing for the lift or riding it are not a battle: on a short lap the queue was
+    // always the biggest group, and the cameras stayed on it for minutes while the leaders raced on.
+    const running = racing.filter((i) => uLoc(f, i) < END - 8 && uLoc(f, i) > -GRID_LENGTH + 0.5);
+    const pool = running.length ? running : racing;
     let best = null;
-    racing.forEach((head, rank) => {
-      const members = racing.filter((i) => uOf(f, head) - uOf(f, i) >= 0 && uOf(f, head) - uOf(f, i) < 6);
+    pool.forEach((head, rank) => {
+      const members = pool.filter((i) => uOf(f, head) - uOf(f, i) >= 0 && uOf(f, head) - uOf(f, i) < 6);
       let score = members.length + (rank === 0 ? 1.2 : 0) - rank * 0.08;
       if (sticky !== null && members.includes(sticky)) score += 1.0;
       if (best === null || score > best.score) best = { head, members, score };
@@ -1549,39 +1593,48 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   // Field of view for a fixed camera: zoom in until the leader is at least
   // LEADER_MIN of the frame height, but never so far that the pack's spread
   // falls out of the frame.
-  const LEADER_MIN = 0.14;
+  const LEADER_MIN = 0.07; // was 0.14: too tight, the viewer lost the race around the marble
   const fovFor = (pos, f) => {
     const d = Math.max(0.5, pos.distanceTo(posOf(f, leader[f])));
     const forLeader = (2 * Math.atan(R / (LEADER_MIN * d)) * 180) / Math.PI;
     const forPack = (2 * Math.atan((spread[f] + 1.6) / pos.distanceTo(focus[f])) * 180) / Math.PI;
-    return Math.min(50, Math.max(16, Math.max(forPack, Math.min(forLeader, 50))));
+    return Math.min(55, Math.max(32, Math.max(forPack, Math.min(forLeader, 55))));
   };
 
   // Shot recipes: (frame) → { pos, target, fov }. Built from the smoothed focus.
   const liftSpots = {};
   const recipes = {
-    chase: (f) => {
-      const fr = frameAt(focusU[f] - 3.4);
-      return { pos: v3(pointInFrame(fr, 0, 1.6)).add(upW.clone().multiplyScalar(0.6)), target: focus[f].clone().addScaledVector(flatFwd(frameAt(focusU[f])), 2), fov: 52 };
+    chase: (f, sh) => {
+      // Set back and up: the pack and the track ahead of it in one frame (closer where the circuit is packed: `near`).
+      const nr = sh?.near;
+      const fr = frameAt(focusU[f] - (nr ? 4.2 : 6.5));
+      return { pos: v3(pointInFrame(fr, 0, nr ? 1.8 : 2.6)).add(upW.clone().multiplyScalar(nr ? 0.9 : 1.6)), target: focus[f].clone().addScaledVector(flatFwd(frameAt(focusU[f])), 3), fov: 54 };
     },
-    lead: (f) => {
-      const u = uLoc(f, leader[f]) + 3.2;
+    lead: (f, sh) => {
+      const nr = sh?.near;
+      const u = uLoc(f, leader[f]) + (nr ? 3.6 : 5.5);
       const fr = frameAt(Math.min(u, END));
-      return { pos: v3(pointInFrame(fr, 0, 1.3)).add(upW.clone().multiplyScalar(0.4)), target: focus[f], fov: 48 };
+      return { pos: v3(pointInFrame(fr, 0, nr ? 1.5 : 2.2)).add(upW.clone().multiplyScalar(nr ? 0.6 : 1.2)), target: focus[f], fov: 50 };
     },
     side: (f, sh) => {
       const fr = frameAt(focusU[f] + 0.6);
       // Close beside the wall, just high enough to look over it.
-      const pos = v3(fr.p).addScaledVector(flatRight(fr), sh.side * (W2 + 1.7)).add(upW.clone().multiplyScalar(3.6));
+      const pos = v3(fr.p).addScaledVector(flatRight(fr), sh.side * (W2 + (sh.near ? 2.0 : 3.6))).add(upW.clone().multiplyScalar(sh.near ? 4.0 : 5.5));
       return { pos, target: focus[f], fov: fovFor(pos, f) };
     },
-    top: (f) => {
+    top: (f, sh) => {
       const fr = frameAt(focusU[f]);
-      return { pos: focus[f].clone().add(upW.clone().multiplyScalar(6)).addScaledVector(flatFwd(fr), -2), target: focus[f], fov: 44 };
+      return { pos: focus[f].clone().add(upW.clone().multiplyScalar(sh?.near ? 7 : 10)).addScaledVector(flatFwd(fr), sh?.near ? -3 : -4), target: focus[f], fov: 48 };
     },
     orbit: (f, sh) => {
       const a = sh.phase + ((f - sh.start) / FPS) * 0.45 * sh.side;
-      return { pos: focus[f].clone().add(new Vector3(Math.sin(a) * 5, 2.8, Math.cos(a) * 5)), target: focus[f], fov: 42 };
+      const rr = sh.near ? 5.5 : 8;
+      return { pos: focus[f].clone().add(new Vector3(Math.sin(a) * rr, sh.near ? 3.2 : 4.5, Math.cos(a) * rr)), target: focus[f], fov: 46 };
+    },
+    // The race in context: high behind the pack, looking down the track ahead (the next obstacle, the chasers).
+    wide: (f, sh) => {
+      const fr = frameAt(focusU[f] - (sh?.near ? 7 : 11));
+      return { pos: v3(fr.p).add(upW.clone().multiplyScalar(sh?.near ? 8 : 11)), target: v3(frameAt(Math.min(focusU[f] + 7, END)).p), fov: 52 };
     },
     feature: (f, sh) => ({ pos: sh.cam, target: focus[f], fov: fovFor(sh.cam, f) }),
     // Wide and steady at the line: zooming in on whoever leads made a mess of the last metres.
@@ -1653,6 +1706,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   // the frame (not at the very edge), not hidden behind the trough's own wall
   // or another part of the circuit, and big enough to read.
   const lens = new PerspectiveCamera(40, 16 / 9, 0.05, 1500);
+  const lvWhy = {};
   const leaderVisible = (c, f) => {
     const i = leader[f];
     const p = posOf(f, i);
@@ -1662,23 +1716,32 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     lens.lookAt(c.target);
     lens.updateMatrixWorld();
     const ndc = p.clone().project(lens);
-    if (ndc.z >= 1 || Math.abs(ndc.x) > 0.8 || Math.abs(ndc.y) > 0.8) return false;
+    const tally = (k) => (lvWhy[k] = (lvWhy[k] ?? 0) + 1);
+    if (ndc.z >= 1 || Math.abs(ndc.x) > 0.8 || Math.abs(ndc.y) > 0.8) return tally(ndc.z >= 1 ? "behind" : "edge"), false;
     const d = c.pos.distanceTo(p);
     const apparent = (2 * R) / (2 * d * Math.tan((c.fov * Math.PI) / 360)); // fraction of frame height
-    if (apparent < 0.025) return false;
-    return clear(c.pos, p);
+    if (apparent < 0.025) return tally("small"), false;
+    const ok = clear(c.pos, p);
+    if (!ok) tally("blocked");
+    return ok;
   };
+  const why = {};
   const usable = (kind, sh, f0, f1) => {
     let ok = 0;
     const n = 5;
     for (let k = 0; k < n; k++) {
       const f = Math.min(lastFrame, Math.round(f0 + ((f1 - 1 - f0) * k) / (n - 1)));
       const c = recipes[kind](f, sh);
-      if (roomAt(c.pos, focusU[f]) < 1.6) return false;
+      if (roomAt(c.pos, focusU[f]) < 1.6) {
+        why[kind + ":room"] = (why[kind + ":room"] ?? 0) + 1;
+        return false;
+      }
       if (leaderVisible(c, f)) ok++;
     }
+    if (ok < 4) why[kind + ":view"] = (why[kind + ":view"] ?? 0) + 1;
     return ok >= 4;
   };
+  if (process.env.GP_SHOTS) process.on("exit", () => console.log("rejected shots:", JSON.stringify(why), "leader not visible:", JSON.stringify(lvWhy)));
 
   // One locked camera per obstacle, chosen from candidates on both sides,
   // upstream and downstream, low and high: the one that sees the leader best
@@ -1781,10 +1844,11 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   shots.push({ kind: "drone", start: 0, end: REVEAL });
   const gridEnd = raceStart + sec(2.0); // hold until the ten lanes have funnelled into the track
   shots.push({ kind: "grid", start: REVEAL, end: gridEnd });
-  const cycle = ["chase", "side", "lead", "top", "orbit", "side", "chase", "onboard", "lead", "side", "orbit", "top"];
+  const cycle = ["wide", "chase", "side", "lead", "wide", "top", "orbit", "side", "chase", "wide", "onboard", "lead", "side", "orbit"];
   let ci = 0;
   let f = gridEnd;
   let finishUsed = false;
+  const approachLaps = new Set();
   while (f <= lastFrame) {
     let sh = null;
     if (!finishUsed && winnerFrame - f <= sec(3.5)) {
@@ -1817,12 +1881,16 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       // (Up to 1.5 s early, so two obstacles close together both get their shot.)
       const es = elevatorShots.find((c) => !c.used && f >= c.start && f < c.end - sec(1));
       // The leader running into the lift bays: the wide approach camera until the lift's own shot.
-      const lu = uLoc(f, leader[f]);
-      if (!es && approach && lu > course.END - 22 && lu < course.END - 0.5) {
-        const nextLift = elevatorShots.find((c) => !c.used && c.start > f);
+      // Once per lap, following the real leader (P1): the director's focus can sit in the lift queue
+      // for minutes, and the shot used to fire again and again (2 min of one view).
+      let top = -1;
+      for (let i = 0; i < N; i++) if (!finished(i, f) && (top < 0 || uOf(f, i) > uOf(f, top))) top = i;
+      const lu = top >= 0 ? uLoc(f, top) : -1;
+      const lap = top >= 0 ? Math.floor((uOf(f, top) + GRID_LENGTH) / L) : -1;
+      if (!es && approach && top >= 0 && !approachLaps.has(lap) && lu > course.END - 22 && lu < course.END - 2) {
+        approachLaps.add(lap);
         let end = f + sec(1.5);
-        while (end < f + sec(6) && end <= lastFrame && uLoc(end, leader[f]) < course.END - 0.3 && uLoc(end, leader[f]) > course.END - 30) end++;
-        if (nextLift && nextLift.start - f < sec(8)) end = Math.max(end, nextLift.start);
+        while (end < f + sec(4) && end <= lastFrame && uLoc(end, top) < course.END - 0.3 && uLoc(end, top) > course.END - 30) end++;
         if (!finishUsed && winnerFrame - sec(3.5) > f) end = Math.min(end, winnerFrame - sec(3.5));
         if (end > f + sec(0.8)) sh = { kind: "approach", cam: approach.cam, aim: arr(approach.aim), start: f, end: Math.min(end, lastFrame + 1) };
       }
@@ -1860,6 +1928,11 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
         }
         cand.end = Math.min(cand.end, capAt);
         if (usable(kind, cand, f, Math.min(cand.end, lastFrame + 1))) sh = cand;
+        else if (kind !== "onboard") {
+          // The circuit is packed here: the same shot, closer in.
+          cand.near = true;
+          if (usable(kind, cand, f, Math.min(cand.end, lastFrame + 1))) sh = cand;
+        }
       }
       if (!sh) sh = { kind: "top", start: f, end: Math.min(f + sec(2.5), capAt) };
       // Don't run into the finish shot.
@@ -1931,7 +2004,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     // At a machine, the machine is in the shot too (a tight frame on the marble
     // showed "THE HAMMER" with no hammer): aim between them and open the lens to fit both.
     const machine = course.features
-      .filter((g) => g.type === h.feature && !["drop", "jump", "bumps", "lift", "elevator", "regroup"].includes(g.type))
+      .filter((g) => g.type === h.feature && !["drop", "jump", "bumps", "crest", "lift", "elevator", "regroup"].includes(g.type))
       .sort((a, b) => Math.abs(a.u - uLoc(h.f, h.marble)) - Math.abs(b.u - uLoc(h.f, h.marble)))[0];
     const anchor = machine && Math.abs(machine.u - uLoc(h.f, h.marble)) < 12 ? v3(frameAt(machine.u + 1).p).add(new Vector3(0, 1.0, 0)) : null;
     return sm.map((t) => {

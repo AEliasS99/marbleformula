@@ -3,7 +3,7 @@ import { frameQuat, pointInFrame, quatArr, r3, rot, TRACK } from "./kit.js";
 // Regroup gate: a hazard bar across the track that holds the leaders until
 // `need` of the field still racing has caught up (or `hold` seconds after the
 // first arrival), then lifts; it re-arms for every lap. Keeps the race a race.
-export const REGROUP = { count: 2, need: 0.6, hold: 7, lift: 1.7, time: 0.5, size: [0.12, 0.9, 0.0] };
+export const REGROUP = { count: 2, need: 0.5, hold: 4, lift: 1.7, time: 0.5, size: [0.12, 0.9, 0.0] };
 // Barriers are thin on screen but deep in the collider (extending away from
 // the pile): a pile pressing on a thin box pops marbles out the far side.
 const BARRIER_DEPTH = 0.6;

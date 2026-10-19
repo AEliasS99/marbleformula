@@ -6,7 +6,7 @@ import { frameQuat, pointInFrame, quatArr, r3, rot, solid } from "./kit.js";
 // centre, so they kick it sideways and up rather than stopping it) and a
 // domed hub that splits the pack toward the rim make it throw marbles across
 // the track and into each other.
-export const TURNTABLE = { radius: 1.6, thickness: 0.08, speed: 3.4, ribs: 6, ribHeight: 0.26, ribWidth: 0.09, ribFrom: 0.42, ribTo: 1.5, hub: 0.34, hubHeight: 0.22 };
+export const TURNTABLE = { radius: 1.95, thickness: 0.08, speed: 6.0, ribs: 6, ribHeight: 0.26, ribWidth: 0.09, ribFrom: 0.42, ribTo: 1.85, hub: 0.34, hubHeight: 0.22 };
 
 /** Ribs in the plate's own frame (y up), for the physics and the renderer. */
 export function turntableParts(tt) {
