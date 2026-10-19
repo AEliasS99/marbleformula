@@ -13,8 +13,10 @@ import { Matrix4, PerspectiveCamera, Quaternion, Vector3 } from "three";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { loadOutline, marbleize, SCALE, SLOPE } from "./circuit.mjs";
 import { venueBlocks, venueClearance, venueLayout } from "../src/gp/venue.js";
-import { agitatorArm, agitatorQuat, vortexSoup } from "../src/gp/vortex.js";
-import { spinnerParts } from "../src/gp/rotor.js";
+import { ALWAYS, BY_TYPE, OBSTACLES, PHYSICS_ORDER } from "../src/gp/obstacles/index.js";
+import { VORTEX } from "../src/gp/obstacles/vortex.js";
+import { REGROUP } from "../src/gp/obstacles/regroup.js";
+import { fanGust } from "../src/gp/obstacles/fan.js";
 import { BANK_PIVOT, buildTrackMesh, liftCleatPose, pointInFrame, pointOnTrack, surfaceHeight as surfaceHeightAt, TRACK, TRACK_DEPTH } from "../src/gp/trackMesh.js";
 
 // --- Season ------------------------------------------------------------------------
@@ -63,7 +65,7 @@ const DQ = {
   reach: +(process.env.DQ_REACH ?? 0.37),
   offset: +(process.env.DQ_OFF ?? 6.0),
   every: +(process.env.DQ_EVERY ?? 5), // a pad at every n-th machine
-  types: ["bumpers", "hammer", "turntable", "pusher"], // not the slalom or the splitter: those press everyone to the walls
+  types: OBSTACLES.filter((o) => o.dq).map((o) => o.type), // the modules say where a pad may go // not the slalom or the splitter: those press everyone to the walls
 };
 
 // --- Timing & physics constants ------------------------------------------------------
@@ -111,20 +113,8 @@ const GUARD = { height: 1.4, segment: 1 }; // default; zones that throw marbles 
 // Clear guard panels over the stretches where marbles can fly: a jump's kicker,
 // flight and landing, and every machine that can throw one.
 // Drops too: at speed, a marble leaving a drop in a bend can land on the wall top.
-// [from, to, height]: the vortex's lower track (marbles leave the throat at
-// swirl speed and ricochet), jumps and the pile behind a regroup gate (twenty
-// marbles climbing each other) need tall panels; the rest the default.
-const GUARD_ZONES = {
-  jump: [-3, 12, 2.0],
-  drop: [-1, 7],
-  hammer: [-1, 10, 2.0], // the hammer throws marbles far down the track
-  spinner: [-2, 4, 2.0], // it flings what it catches
-  turntable: [-2, 5],
-  pusher: [-1, 4],
-  rollers: [-1, 5, 1.2],
-  vortex: [2.6, 11, 2.0],
-  regroup: [-8, 1, 2.0],
-};
+// [from, to, height]: clear guard panels over each obstacle that throws marbles (from its module's `guard`).
+const GUARD_ZONES = Object.fromEntries(OBSTACLES.filter((o) => o.guard).map((o) => [o.type, o.guard]));
 // A steeper launch out of the lanes, so the race starts with a punch.
 const START_STEEP = { until: 25, slope: Math.tan((8 * Math.PI) / 180) };
 const BRAKE_DAMPING = 1.8; // after the chequered flag
@@ -163,61 +153,8 @@ const arr = (v) => [r3(v.x), r3(v.y), r3(v.z)];
 // `maxCurv`: physical obstacles need a truly straight track (banking in a bend
 // shifts the trough's lowest line sideways, steering marbles into them);
 // shape features (drops, bumps, twists) can't trap anything and go on gentle bends.
-const FEATURES = {
-  drop: { before: 2, after: 6, label: "THE DROP", maxCurv: 0.09 },
-  pegs: { before: 1, after: 13, label: "SLALOM", maxCurv: 0.035 },
-  bumpers: { before: 1, after: 5, label: "PINBALL", maxCurv: 0.035 },
-  spinner: { before: 2, after: 3, label: "THE WHIRLWIND", maxCurv: 0.035 },
-  splitter: { before: 1, after: 8, label: "SPLIT LANES", maxCurv: 0.035 },
-  bumps: { before: 1, after: 7, label: "RUMBLE STRIP", maxCurv: 0.09 },
-  jump: { before: 7, after: 9, label: "BIG AIR", maxCurv: 0.05 }, // gentle bends are fine: the guard panels catch any drift
-  hammer: { before: 1, after: 3, label: "THE HAMMER", maxCurv: 0.035 },
-  turntable: { before: 2, after: 4, label: "THE TURNTABLE", maxCurv: 0.035 },
-  pusher: { before: 1, after: 3, label: "THE PUSHER", maxCurv: 0.035 },
-  rollers: { before: 1, after: 5, label: "THE ROLLERS", maxCurv: 0.035 },
-  fan: { before: 1, after: 6, label: "THE FAN", maxCurv: 0.035 },
-  vortex: { before: 11, after: 10, label: "THE VORTEX", maxCurv: 0.025, once: true }, // placed once, with the machines; a straight run-up
-  regroup: { before: 6, after: 2, label: "REGROUP GATE", maxCurv: 0.07, once: true }, // two per lap, placed with the machines; a bar works in a bend
-};
-// Regroup gates: a bar across the track that holds the leaders until `need`
-// of the field still racing has caught up (or `hold` seconds have passed
-// since the first arrival), then lifts. Keeps the race a race.
-const REGROUP = { count: 2, need: 0.6, hold: 7, lift: 1.7, time: 0.5, size: [0.12, 0.9, 0.0] };
-// The vortex bowl (src/gp/vortex.js): level, its rim at the floor of the
-// upper track where that ends (`entry` past the feature's u), its axis
-// `centre` past it; the lower track resumes `resume` past it, D lower.
-// `centre` is close enough to `entry` that the rim reaches the track's end at
-// its edges (no void in the corners for a wall-hugging marble to drop through).
-// Hyperbolic profile y = -k (1/r - 1/R) (src/gp/vortex.js): with k = 3.4 a
-// marble orbits the rim at sqrt(g·k/R) ≈ 4.7 u/s and the throat at ~9; the
-// lip is 2.2 tall because fast arrivals ride up the wall.
-// Tangential entry, like a drain: the bowl sits `offset` to the left of the
-// track, so marbles hugging the right wall (the fin puts them there) arrive at
-// the bowl's side moving along the rim, not toward its centre. The track ends
-// `centre - entry` behind the bowl's axis, where the rim meets its right
-// edge; the lower track resumes under the hole.
-// (offset -1.3 = -(R - half-width) puts the track's right wall exactly on the
-// rim's tangent: the wall runs on into the bowl until it meets the lip, with a
-// small apron floor between the track end and the rim, so the right-hand lane
-// becomes the drain's outer orbit. The track ends 2.0 behind the axis.)
-// A steep run-up (`ramp` units at `rampSlope`) so the field arrives faster than
-// the rim's orbit speed, and a long gentle guide (`guide`°) that eases it to the
-// right instead of an abrupt fin that braked it to a crawl.
-const VORTEX = { radius: 3.4, hole: 0.85, k: 2.9, lip: 2.2, throat: 0.4, fall: 0.6, entry: 0.4, centre: 2.4, resume: 1.8, offset: -1.3, ramp: 8, rampSlope: Math.tan((15 * Math.PI) / 180), guide: 13 };
-VORTEX.depth = Math.round(VORTEX.k * (1 / VORTEX.hole - 1 / VORTEX.radius) * 1000) / 1000;
-// The agitator: three paddles that hug the bowl a hair above its surface and
-// turn with the swirl, sweeping every marble in their path round the drain.
-// Tip speed (1.2 rad/s × 3.0 = 3.6 u/s) stays below the rim's orbit speed, so
-// they herd and shove but never hold marbles up forever.
-// They work the outer, shallow part only (r 1.8–2.9): on the steep inner funnel a paddle carried marbles round at a
-// fixed radius for minutes. The tip stops 0.5 from the wall, too narrow for a marble to be pinned there.
-const AGITATOR = { arms: 0, rIn: 1.8, rOut: 2.9, clearance: 0.05, height: 0.4, thickness: 0.1, speed: -1.2 }; // none: any paddle slower than the orbit brakes it (a drain needs a free bowl)
-// Rollers: three cylinders across the floor, all driving forward but at
-// different speeds, so the field gets kicked apart. (A backward roller traps
-// marbles in the pocket between rollers.)
-const ROLLER = { radius: 0.3, proud: 0.03, spacing: 1.4, surfaces: [7, 4.5, 10] }; // nearly flush: only the top touches, so a slow marble is never pushed back
-// The fan: a lateral gust across a stretch of track, pulsing.
-const FAN = { length: 5, accel: 6, period: 1.6 }; // 6: at 9 the gust pins marbles against the wall and friction beats the slope
+// The obstacle library (src/gp/obstacles/) says what each one needs; the planner reads it in its order.
+const FEATURES = Object.fromEntries(OBSTACLES.map((o) => [o.type, { before: o.place.before, after: o.place.after, label: o.label, maxCurv: o.place.maxCurv, ...(o.place.once ? { once: true } : {}) }]));
 // Kicker: a 10° run-up (so even a slow marble arrives with enough speed to clear
 // the lip: v²/2g must exceed `lip`), the ramp up to the lip, then the fall.
 const JUMP = { runup: 4, runupSlope: Math.tan((10 * Math.PI) / 180), lip: 0.45, ramp: 2.0, drop: 2.0 };
@@ -282,7 +219,7 @@ function planFeatures(us, curv, L, rand) {
   }
   // The machines are the show: one turntable and one pusher per circuit,
   // spread over the lap, before the cycling obstacles fill in the rest.
-  for (const [j, type] of ["vortex", "spinner", "turntable", "rollers", "pusher"].entries()) {
+  for (const [j, type] of ALWAYS.entries()) {
     const target = 12 + START.funnel + ((j + 0.7) / 5.4) * (L - 30 - START.funnel);
     let best = null;
     for (let x = 12 + START.funnel; x <= L - 18; x += 1) {
@@ -528,39 +465,10 @@ const mod = (x, m) => ((x % m) + m) % m;
 const frameQuat = (s) => new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(v3(s.t), v3(s.n), v3(s.r)));
 
 /** A hammer's orientation at time t: its frame swung about the track direction. */
-export function swingQuat(sw, t) {
-  const a = sw.amp * Math.sin((2 * Math.PI * t) / sw.period + sw.phase);
-  const q = new Quaternion(...sw.quat).multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), a));
-  return [q.x, q.y, q.z, q.w];
-}
-
-/** A spinner's orientation at time t: its base frame turned about the trough's normal. */
-export function spinnerQuat(sp, t) {
-  const spin = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), sp.phase + sp.speed * t);
-  const q = new Quaternion(...sp.quat).multiply(spin);
-  return [q.x, q.y, q.z, q.w];
-}
-
-/**
- * Colliders for every obstacle. Spacing rule: any opening is either wider than
- * a marble with room to spare, or too narrow to enter, so nothing wedges.
- */
-/**
- * Machines are phased to the race: `sync` maps a feature's u to the second the
- * leader reaches it (from a previous pass of the same race), and the hammer or
- * paddle is timed to sweep through the middle of the track at that moment.
- */
 function buildObstacles(course, sync = {}) {
   const { frameAt, features } = course;
   const statics = [];
-  const spinners = [];
-  const swings = [];
-  const turntables = [];
-  const pushers = [];
-  const rollers = [];
-  const fans = [];
-  const vortices = [];
-  const regroups = [];
+  const out = Object.fromEntries(OBSTACLES.filter((o) => o.collection).map((o) => [o.collection, []]));
   const quatArr = (q) => [q.x, q.y, q.z, q.w].map(r3);
   const cylinder = (kind, u, lat, radius, height, restitution) => {
     const s = frameAt(u);
@@ -575,200 +483,11 @@ function buildObstacles(course, sync = {}) {
       restitution,
     });
   };
-  for (const f of features) {
-    // The trough funnels marbles to its centre line, so nothing sits exactly
-    // on it: a marble meeting an obstacle head-on there would stop balanced.
-    // Everything is offset so every hit is a glancing one.
-    if (f.type === "pegs") {
-      // A slalom: one peg per row, alternating sides. Openings narrower than
-      // ~3 marble widths let marbles lock into an arch and clog, so each row
-      // leaves one wide way past.
-      // Slalom: deflector fins from alternate walls, angled 24° toward the inside
-      // and bouncy, so marbles ricochet through instead of sliding and stalling.
-      // A marble hugging the wall slides along the fin to its tip; the corner at
-      // the fin's root is obtuse, so there is no pocket to get pinned in. The
-      // tip leaves a wide opening (> 3 marbles) on the other side.
-      const W2 = TRACK.width / 2;
-      [1, -1, 1].forEach((side, row) => {
-        const dl = W2 - 0.04 - 0.55; // from the wall in to lateral ±0.55
-        const du = dl / Math.tan((24 * Math.PI) / 180);
-        const u0 = f.u + row * 4.2;
-        const s = frameAt(u0 + du / 2);
-        const yaw = Math.atan2(side * dl, du); // rotate the fin from along-track toward the centre
-        const q = frameQuat(s).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), yaw));
-        statics.push({
-          kind: "fin",
-          shape: "box",
-          pos: pointInFrame(s, side * (W2 - 0.04 - dl / 2), 0.3).map(r3),
-          quat: quatArr(q),
-          size: [Math.hypot(du, dl), 0.6, 0.08],
-          restitution: 0.6,
-        });
-      });
-    } else if (f.type === "bumpers") {
-      // Three sizes, so each one throws marbles differently.
-      // Small and near the middle, staggered: wide openings (> 2 marbles) on
-      // both sides, and never touching a wall (no pocket to get pinned in).
-      // Offset enough that a marble can't ping-pong between two of them.
-      // Small: with twenty marbles arriving together, a gap under ~2.3 marbles beside a bumper clogs.
-      cylinder("bumper", f.u, 0.3, 0.2, 0.75, 0.8);
-      cylinder("bumper", f.u + 2.3, -0.4, 0.24, 0.75, 0.8);
-      cylinder("bumper", f.u + 4.5, 0.35, 0.22, 0.75, 0.8);
-    } else if (f.type === "splitter") {
-      const s = frameAt(f.u + 3.5);
-      const lat = 0.15; // two wide lanes; just off-centre so nothing meets the nose head-on
-      statics.push({
-        kind: "splitter",
-        shape: "box",
-        pos: pointInFrame(s, lat, surfaceHeightAt(lat) + 0.4).map(r3),
-        quat: quatArr(frameQuat(s)),
-        size: [6.5, 0.95, 0.24],
-        restitution: 0.4,
-      });
-      cylinder("splitter", f.u + 0.25, lat, 0.2, 0.95, 0.4); // round nose
-    } else if (f.type === "spinner") {
-      const s = frameAt(f.u);
-      // The whirlwind: a three-blade rotor reaching almost to the walls (a 0.25 gap,
-      // too narrow for a marble to slip past), each blade ending in a hook that
-      // forms a pocket on its leading side: it scoops marbles up, carries them
-      // round and flings them out. At the wall a blade meets it square, so a
-      // marble there is shoved along the wall, never wedged.
-      const dir = spinners.length % 2 ? -1 : 1;
-      const speed = dir * 2.1;
-      spinners.push({
-        kind: "spinner",
-        pos: pointInFrame(s, 0, 0.3).map(r3),
-        quat: quatArr(frameQuat(s)),
-        size: [0.12, 0.5, 1.82], // blade: thickness, height, reach from the axis
-        arms: 3,
-        hook: 0.5, // hook length, on the leading side
-        dir,
-        speed,
-        // A blade lies across the track's centre line, sweeping toward the field, as the leader arrives.
-        phase: r3(sync[f.u] !== undefined ? mod(Math.PI / 2 - speed * sync[f.u], (2 * Math.PI) / 3) : (f.u * 0.37) % Math.PI),
-      });
-    } else if (f.type === "turntable") {
-      const s = frameAt(f.u + 1);
-      turntables.push({
-        kind: "turntable",
-        pos: pointInFrame(s, 0, TURNTABLE.thickness / 2 - 0.03).map(r3),
-        quat: quatArr(frameQuat(s)),
-        radius: TURNTABLE.radius,
-        thickness: TURNTABLE.thickness,
-        speed: (turntables.length % 2 ? -1 : 1) * TURNTABLE.speed,
-        phase: r3((f.u * 0.53) % (Math.PI * 2)),
-      });
-    } else if (f.type === "vortex") {
-      const W2 = TRACK.width / 2;
-      // A long, gentle guide from the left wall to the centre line: the field drifts right without losing speed,
-      // and the opening it leaves (2.1, three marbles) cannot clog.
-      {
-        const side = -1;
-        const dl = W2 - 0.04;
-        const du = dl / Math.tan((VORTEX.guide * Math.PI) / 180);
-        const s = frameAt(f.u + VORTEX.entry - 0.6 - du / 2);
-        const yaw = Math.atan2(side * dl, du);
-        const q = frameQuat(s).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), yaw));
-        statics.push({ kind: "fin", shape: "box", pos: pointInFrame(s, side * (W2 - 0.04 - dl / 2), 0.3).map(r3), quat: quatArr(q), size: [Math.hypot(du, dl), 0.6, 0.08], restitution: 0.6 });
-      }
-      const se = frameAt(f.u + VORTEX.entry);
-      const sc = frameAt(f.u + VORTEX.centre);
-      const fl = Math.hypot(sc.t[0], sc.t[2]);
-      const rgt = [-sc.t[2] / fl, sc.t[0] / fl]; // same "right" as src/gp/vortex.js
-      // In the bowl's frame the track runs along x at z = -offset; its walls bound the opening in the lip.
-      const zc = -VORTEX.offset;
-      vortices.push({
-        u: f.u,
-        center: [sc.p[0] + rgt[0] * VORTEX.offset, se.p[1] - 0.02, sc.p[2] + rgt[1] * VORTEX.offset].map(r3),
-        fwd: [sc.t[0], 0, sc.t[2]].map(r3),
-        radius: VORTEX.radius,
-        hole: VORTEX.hole,
-        depth: VORTEX.depth,
-        lip: VORTEX.lip,
-        throat: VORTEX.throat,
-        entryLo: r3(zc - W2 - 0.2),
-        entryHi: r3(zc + W2 + 0.2),
-        chute: { x0: r3(-(VORTEX.centre - VORTEX.entry) - 0.1), z: r3(zc + W2) },
-        k: VORTEX.k,
-        agitator: { ...AGITATOR, phase: r3((f.u * 0.61) % (Math.PI * 2)) },
-      });
-    } else if (f.type === "regroup") {
-      const W2 = TRACK.width / 2;
-      const s = frameAt(f.u);
-      regroups.push({
-        kind: "regroup",
-        u: r3(f.u),
-        pos: pointInFrame(s, 0, REGROUP.size[1] / 2 + 0.02).map(r3),
-        quat: quatArr(frameQuat(s)),
-        size: [REGROUP.size[0], REGROUP.size[1], 2 * W2 - 0.08],
-        lift: REGROUP.lift,
-        time: REGROUP.time,
-      });
-    } else if (f.type === "rollers") {
-      const W2 = TRACK.width / 2;
-      ROLLER.surfaces.forEach((surface, k) => {
-        const s = frameAt(f.u + 0.6 + k * ROLLER.spacing);
-        rollers.push({
-          kind: "roller",
-          pos: pointOnTrack(s, 0, -ROLLER.radius + ROLLER.proud).map(r3),
-          quat: quatArr(frameQuat(s)),
-          radius: ROLLER.radius,
-          length: 2 * W2 - 0.1,
-          omega: r3(surface / ROLLER.radius), // about the across-track axis; positive drives marbles forward
-          phase: r3((f.u * 0.37 + k) % (Math.PI * 2)),
-        });
-      });
-    } else if (f.type === "fan") {
-      const W2 = TRACK.width / 2;
-      const side = fans.length % 2 ? -1 : 1; // the gust blows toward this side
-      const s = frameAt(f.u + FAN.length / 2);
-      fans.push({
-        kind: "fan",
-        u0: r3(f.u),
-        u1: r3(f.u + FAN.length),
-        side,
-        dir: [side * s.r[0], 0, side * s.r[2]].map(r3),
-        pos: pointInFrame(s, -side * (W2 + 1.9), 1.1).map(r3),
-        quat: quatArr(frameQuat(s)),
-        accel: FAN.accel,
-        period: FAN.period,
-        phase: r3((f.u * 0.29) % (Math.PI * 2)),
-      });
-    } else if (f.type === "pusher") {
-      const s = frameAt(f.u + 1);
-      const W2 = s.w ?? TRACK.width / 2;
-      const side = pushers.length % 2 ? 1 : -1;
-      pushers.push({
-        kind: "pusher",
-        // Rest position: flush with the wall it comes out of.
-        pos: pointInFrame(s, side * (W2 - PUSHER.size[2] / 2 - 0.02), PUSHER.size[1] / 2 + 0.02).map(r3),
-        dir: [-side * s.r[0], -side * s.r[1], -side * s.r[2]].map(r3),
-        quat: quatArr(frameQuat(s)),
-        size: PUSHER.size,
-        travel: PUSHER.travel,
-        period: PUSHER.period,
-        // Fully out as the leader arrives (the cosine's trough).
-        phase: r3(sync[f.u] !== undefined ? mod(Math.PI - (2 * Math.PI * sync[f.u]) / PUSHER.period, 2 * Math.PI) : (f.u * 0.71) % (Math.PI * 2)),
-      });
-    } else if (f.type === "hammer") {
-      // A pendulum swinging across the trough. Its pivot is high above, so the
-      // swing is limited to where the head stays clear of the curved floor.
-      const s = frameAt(f.u + 1);
-      const side = swings.length % 2 ? -1 : 1;
-      swings.push({
-        kind: "hammer",
-        lat: r3(side * HAMMER.lat),
-        pos: pointInFrame(s, side * HAMMER.lat, HAMMER.pivot).map(r3),
-        quat: quatArr(frameQuat(s)),
-        length: HAMMER.length,
-        head: HAMMER.head,
-        amp: HAMMER.amp,
-        period: HAMMER.period,
-        // The head passes the centre line, at full speed, as the leader arrives.
-        phase: r3(sync[f.u] !== undefined ? mod(-(2 * Math.PI * sync[f.u]) / HAMMER.period, 2 * Math.PI) : (f.u * 0.61) % (Math.PI * 2)),
-      });
-    }
-  }
+  // Every obstacle builds itself (src/gp/obstacles/). The trough funnels marbles
+  // to its centre line, so nothing sits exactly on it: a marble meeting an
+  // obstacle head-on there would stop balanced. Every hit is a glancing one.
+  const ctx = { frameAt, statics, out, sync, cylinder };
+  for (const f of features) BY_TYPE[f.type]?.build?.(f, ctx);
   // Clear guard panels along both walls over every jump, in short segments
   // that follow the floor (over the kicker, the drop and the landing), so a
   // marble that drifts sideways in the air stays on the track.
@@ -838,43 +557,8 @@ function buildObstacles(course, sync = {}) {
   const lifts = features
     .filter((f) => f.type === "lift")
     .map((f) => ({ u0: r3(f.u), len: LIFT.len, lead: LIFT.lead, rise: LIFT.rise, speed: LIFT.speed, spacing: LIFT.spacing, count: LIFT.count, half: TRACK.width / 2 - 0.16 }));
-  return { statics, spinners, swings, lifts, turntables, pushers, rollers, fans, vortices, regroups };
+  return { statics, ...out, lifts };
 }
-
-/** A roller's orientation at time t: the frame, spun about its across-track axis. */
-export function rollerQuat(r, t) {
-  const spin = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), r.phase + r.omega * t);
-  const q = new Quaternion(...r.quat).multiply(spin);
-  return [q.x, q.y, q.z, q.w];
-}
-/** The fan's gust strength at time t, 0..1: pulses, never fully off. */
-export function fanGust(fan, t) {
-  const s = Math.sin((2 * Math.PI * t) / fan.period + fan.phase);
-  return 0.3 + 0.7 * Math.max(0, s) ** 2;
-}
-
-/** A pusher's position at time t: out of the wall by travel·(1−cos)/2. */
-export function pusherPos(p, t) {
-  const k = (1 - Math.cos((2 * Math.PI * t) / p.period + p.phase)) / 2;
-  const d = p.travel * k;
-  return { x: p.pos[0] + p.dir[0] * d, y: p.pos[1] + p.dir[1] * d, z: p.pos[2] + p.dir[2] * d };
-}
-/** A turntable's orientation at time t. */
-export function turntableQuat(tt, t) {
-  const q = new Quaternion(...tt.quat).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), tt.phase + tt.speed * t));
-  return [q.x, q.y, q.z, q.w];
-}
-// Pivot height puts the head's centre at marble height (0.35) in mid-swing;
-// at the extremes it rises to ~0.8, and it reaches lat ±1.55 of the 2.1 half-width.
-// It sweeps only one half of the track: the pivot sits `lat` off the centre and
-// the head swings from the centre line to 1.1 from it, so the far half is a
-// safe lane and choosing it matters. The head's edge stops 0.75 from the wall,
-// more than a marble, so nothing is ever pinched against the wall.
-const HAMMER = { pivot: 0.35 + 1.9, length: 1.9, head: [1.0, 0.5, 0.5], lat: 0.55, amp: (16.8 * Math.PI) / 180, period: 1.5 };
-// A spinning plate set into the floor: marbles crossing it are dragged sideways.
-const TURNTABLE = { radius: 1.6, thickness: 0.08, speed: 3.0 };
-// A block that slides out from one wall across most of the track and back.
-const PUSHER = { size: [1.2, 0.6, 0.3], travel: 2.6, period: 1.7 };
 
 // --- Race ----------------------------------------------------------------------------
 /** Runs the race, then re-runs it with the machines timed to the pack it produced. */
@@ -915,60 +599,20 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
   );
 
   const obstacles = buildObstacles(course, sync);
-  // The drain is polished: grip enough on the floor to roll, none on the walls
-  // a fast marble rides along (wall friction braked the orbits within a turn).
-  for (const v of obstacles.vortices)
-    for (const [which, friction] of [["floor", 0.25], ["walls", 0]]) {
-      const soup = vortexSoup(v, which);
-      world.createCollider(
-        RAPIER.ColliderDesc.trimesh(soup.vertices, soup.indices, RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
-          .setFriction(friction)
-          .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
-          .setRestitution(OBSTACLE_RESTITUTION.vortex)
-          .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-          .setCollisionGroups(GROUP_CLEAR),
-        trackBody,
-      );
+  // Every machine creates its own bodies (src/gp/obstacles/), in a fixed order:
+  // the order colliders are created in is part of every bake's result.
+  const pctx = { RAPIER, groups: { track: GROUP_TRACK, clear: GROUP_CLEAR }, trackBody, samples, GRID_LENGTH, SAMPLE, FPS };
+  const machines = {};
+  const createMachines = (types) => {
+    for (const type of types) {
+      const o = BY_TYPE[type];
+      if (o.physics) machines[type] = o.physics(world, obstacles[o.collection], pctx);
     }
-  // Inside the bowl a marble keeps almost all its speed (little air drag, no rolling resistance worth the name).
-  const inVortex = (p) =>
-    obstacles.vortices.some((v) => Math.hypot(p.x - v.center[0], p.z - v.center[2]) < v.radius + 0.05 && p.y < v.center[1] + v.lip && p.y > v.center[1] - v.depth - 0.2);
+  };
+  createMachines(PHYSICS_ORDER.beforeLifts);
+  // Inside the drain a marble keeps almost all its speed (little air drag, no rolling resistance worth the name).
+  const inVortex = (p) => machines.vortex.inside(p);
   const vortexDamping = MARBLES.map(() => false);
-  const agitatorBodies = obstacles.vortices.map((v) => {
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...v.center).setRotation(rot(agitatorQuat(v, 0))));
-    for (let k = 0; k < v.agitator.arms; k++)
-      for (const seg of agitatorArm(v, k))
-        world.createCollider(
-          RAPIER.ColliderDesc.cuboid(seg.size[0] / 2, seg.size[1] / 2, seg.size[2] / 2)
-            .setTranslation(...seg.pos)
-            .setRotation(rot(seg.quat))
-            .setFriction(0.2)
-            .setRestitution(0.4)
-            .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-            .setCollisionGroups(GROUP_TRACK),
-          body,
-        );
-    // The shaft down the throat (only with paddles: alone it leaves a one-marble gap that wedges).
-    if (v.agitator.arms > 0) world.createCollider(RAPIER.ColliderDesc.cylinder(v.depth / 2 + v.throat, 0.12).setTranslation(0, -v.depth / 2 - v.throat, 0).setCollisionGroups(GROUP_TRACK), body);
-    return body;
-  });
-  // Barriers are thin on screen but deep in the collider (extending away from
-  // the pile): a pile pressing on a thin box pops marbles out the far side.
-  const BARRIER_DEPTH = 0.6;
-  const regroupBodies = obstacles.regroups.map((g) => {
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...g.pos).setRotation(rot(g.quat)));
-    world.createCollider(
-      RAPIER.ColliderDesc.cuboid(BARRIER_DEPTH / 2, g.size[1] / 2, g.size[2] / 2)
-        .setTranslation(BARRIER_DEPTH / 2 - g.size[0] / 2, 0, 0)
-        .setFriction(0.2)
-        .setRestitution(0.2)
-        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-        .setCollisionGroups(GROUP_TRACK),
-      body,
-    );
-    return body;
-  });
-  const regroupState = obstacles.regroups.map(() => ({ first: null, open: null, opens: [], firsts: [], lift: 0, lifts: [] }));
 
   // The lifts: per bay, a cabin (sloped floor, side walls) and two doors, all
   // kinematic, plus a bar on the track that holds arrivals while the cabin is away.
@@ -1027,20 +671,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
     }
   };
   const evPose = (lift, f) => evPoseT(lift, f / FPS);
-  const rollerBodies = obstacles.rollers.map((r) => {
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...r.pos).setRotation(rot(rollerQuat(r, 0))));
-    const axis = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2); // cylinder axis (local y) across the track (local z)
-    world.createCollider(
-      RAPIER.ColliderDesc.cylinder(r.length / 2, r.radius)
-        .setRotation({ x: axis.x, y: axis.y, z: axis.z, w: axis.w })
-        .setFriction(1.0)
-        .setRestitution(OBSTACLE_RESTITUTION.roller)
-        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-        .setCollisionGroups(GROUP_TRACK),
-      body,
-    );
-    return body;
-  });
+  createMachines(PHYSICS_ORDER.beforeStatics);
   for (const o of obstacles.statics) {
     if (o.kind === "dq") continue; // a sensor in the bake loop, not a collider
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(...o.pos).setRotation(rot(o.quat)));
@@ -1057,69 +688,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
       .setCollisionGroups(o.kind === "guard" ? GROUP_CLEAR : GROUP_TRACK); // cameras see through the clear guard panels
     world.createCollider(desc, body);
   }
-  const spinnerBodies = obstacles.spinners.map((sp) => {
-    const body = world.createRigidBody(
-      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...sp.pos).setRotation(rot(spinnerQuat(sp, 0))),
-    );
-    for (const part of spinnerParts(sp))
-      world.createCollider(
-        RAPIER.ColliderDesc.cuboid(part.size[0] / 2, part.size[1] / 2, part.size[2] / 2)
-          .setTranslation(...part.pos)
-          .setRotation(rot(part.quat))
-          .setFriction(0.2)
-          .setRestitution(OBSTACLE_RESTITUTION.spinner)
-          .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-          .setCollisionGroups(GROUP_TRACK),
-        body,
-      );
-    world.createCollider(RAPIER.ColliderDesc.cylinder(sp.size[1] / 2, 0.22).setCollisionGroups(GROUP_TRACK), body); // hub
-    return body;
-  });
-  const swingBodies = obstacles.swings.map((sw) => {
-    const body = world.createRigidBody(
-      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...sw.pos).setRotation(rot(swingQuat(sw, 0))),
-    );
-    world.createCollider(
-      RAPIER.ColliderDesc.cuboid(0.05, sw.length / 2, 0.05).setTranslation(0, -sw.length / 2, 0).setCollisionGroups(GROUP_TRACK),
-      body,
-    );
-    world.createCollider(
-      RAPIER.ColliderDesc.cuboid(sw.head[0] / 2, sw.head[1] / 2, sw.head[2] / 2)
-        .setTranslation(0, -sw.length, 0)
-        .setRestitution(OBSTACLE_RESTITUTION.hammer)
-        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-        .setFriction(0.2)
-        .setCollisionGroups(GROUP_TRACK),
-      body,
-    );
-    return body;
-  });
-
-  const turntableBodies = obstacles.turntables.map((tt) => {
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...tt.pos).setRotation(rot(turntableQuat(tt, 0))));
-    world.createCollider(
-      RAPIER.ColliderDesc.cylinder(tt.thickness / 2, tt.radius)
-        .setFriction(0.9)
-        .setRestitution(OBSTACLE_RESTITUTION.turntable)
-        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-        .setCollisionGroups(GROUP_TRACK),
-      body,
-    );
-    return body;
-  });
-  const pusherBodies = obstacles.pushers.map((p) => {
-    const at = pusherPos(p, 0);
-    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(at.x, at.y, at.z).setRotation(rot(p.quat)));
-    world.createCollider(
-      RAPIER.ColliderDesc.cuboid(p.size[0] / 2, p.size[1] / 2, p.size[2] / 2)
-        .setFriction(0.3)
-        .setRestitution(OBSTACLE_RESTITUTION.pusher)
-        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-        .setCollisionGroups(GROUP_TRACK),
-      body,
-    );
-    return body;
-  });
+  createMachines(PHYSICS_ORDER.afterStatics);
 
   const cleats = [];
   for (const lift of obstacles.lifts)
@@ -1403,28 +972,8 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
     if (allDone !== null && (f - allDone >= 20 * FPS || finishFrame.every((x, i) => x !== null || dqFrame[i] !== null))) break;
 
     // Regroup gates: count who has reached the bar; open on quorum or timeout.
-    obstacles.regroups.forEach((g, k) => {
-      const st = regroupState[k];
-      // Re-arm for the next lap once everyone still racing has gone past (or is behind, a lap down).
-      if (st.open !== null && f - st.open > 4 * FPS && frames[f].every((m, i) => finishFrame[i] !== null || dqFrame[i] !== null || uLocal(m[7]) > g.u + 3 || uLocal(m[7]) < g.u - 30)) {
-        st.opens.push(st.open);
-        st.firsts.push(st.first);
-        st.open = null;
-        st.first = null;
-      }
-      // The bar's lift, 0..1, eased toward open or closed; the renderer replays this exact curve.
-      {
-        const target = st.open !== null ? 1 : 0;
-        const stepMax = 1 / (REGROUP.time * FPS);
-        st.lift += Math.max(-stepMax, Math.min(stepMax, target - st.lift));
-        st.lifts.push(r3(st.lift * st.lift * (3 - 2 * st.lift)));
-      }
-      if (st.open !== null) return;
-      const racing = MARBLES.filter((_, i) => finishFrame[i] === null && dqFrame[i] === null).length;
-      const here = frames[f].filter((m, i) => finishFrame[i] === null && dqFrame[i] === null && uLocal(m[7]) >= g.u - 1.6 && uLocal(m[7]) < g.u + 2).length;
-      if (here > 0 && st.first === null) st.first = f;
-      if (st.first !== null && (here >= Math.ceil(REGROUP.need * racing) || f - st.first >= REGROUP.hold * FPS)) st.open = f;
-    });
+    // Machines with per-frame logic (the regroup gates count arrivals and open).
+    for (const m of Object.values(machines)) m.frame?.(f, { frames, finishFrame, dqFrame, uLocal, nMarbles: MARBLES.length });
 
     for (let s = 0; s < SUBSTEPS; s++) {
       const t = (step + 1) * DT;
@@ -1443,23 +992,12 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
         const bl = bar.lift * barOpen;
         barBody.setNextKinematicTranslation({ x: bar.pos[0] + bar.n[0] * bl, y: bar.pos[1] + bar.n[1] * bl, z: bar.pos[2] + bar.n[2] * bl });
       }
-      obstacles.regroups.forEach((g, k) => {
-        const st = regroupState[k];
-        const lift = g.lift * (st.lifts[st.lifts.length - 1] ?? 0);
-        const n = samples[Math.round((g.u + GRID_LENGTH) / SAMPLE)].n;
-        regroupBodies[k].setNextKinematicTranslation({ x: g.pos[0] + n[0] * lift, y: g.pos[1] + n[1] * lift, z: g.pos[2] + n[2] * lift });
-      });
-      for (const [k, sw] of obstacles.swings.entries()) swingBodies[k].setNextKinematicRotation(rot(swingQuat(sw, t)));
+      for (const m of Object.values(machines)) m.kinematics?.(t);
       for (const c of cleats) {
         const pose = liftCleatPose(c.lift, c.k, t, course.frameAt);
         c.body.setNextKinematicTranslation({ x: pose.pos[0], y: pose.pos[1], z: pose.pos[2] });
         c.body.setNextKinematicRotation(rot(pose.quat));
       }
-      obstacles.spinners.forEach((sp, k) => spinnerBodies[k].setNextKinematicRotation(rot(spinnerQuat(sp, t))));
-      obstacles.turntables.forEach((tt, k) => turntableBodies[k].setNextKinematicRotation(rot(turntableQuat(tt, t))));
-      obstacles.pushers.forEach((p, k) => pusherBodies[k].setNextKinematicTranslation(pusherPos(p, t)));
-      obstacles.rollers.forEach((r, k) => rollerBodies[k].setNextKinematicRotation(rot(rollerQuat(r, t))));
-      obstacles.vortices.forEach((v, k) => agitatorBodies[k].setNextKinematicRotation(rot(agitatorQuat(v, t))));
       // Fans: a lateral force on every marble in their stretch.
       if (obstacles.fans.length) {
         const mass = bodies[0].mass();
@@ -1735,7 +1273,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {} }) {
     pushers: obstacles.pushers,
     rollers: obstacles.rollers,
     fans: obstacles.fans,
-    regroups: obstacles.regroups.map((g, k) => ({ ...g, firstFrame: regroupState[k].first, openFrame: regroupState[k].open, opens: regroupState[k].opens, firsts: regroupState[k].firsts, lifts: regroupState[k].lifts })),
+    regroups: machines.regroup.export(),
     elevators: elevatorsData,
     laps,
     vortices: obstacles.vortices,
