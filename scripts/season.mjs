@@ -1460,9 +1460,14 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       const c = v3(elevator.center).add(new Vector3(0, elevator.cabinY[Math.min(f, elevator.cabinY.length - 1)] ?? 0, 0));
       const fwd = v3(elevator.fwd);
       const right = new Vector3(-fwd.z, 0, fwd.x);
-      const side = elevator.lat < 0 ? -1 : 1;
+      // The camera stays on one side of the tower for the whole shot (the side of the cabin the shot began with)
+      // and only pans and rises to the cabin that is moving: switching sides mid-shot dragged it through the tower.
+      const home = elevators[sh.cabin ?? 0];
+      const side = home.lat < 0 ? -1 : 1;
+      const towerCentre = elevators.reduce((acc, e) => acc.add(v3(e.center)), new Vector3()).multiplyScalar(1 / elevators.length);
+      const halfSpan = Math.max(...elevators.map((e) => Math.abs(e.lat) + e.width / 2));
       // Square to the tower's outer face, midway between its fore and aft columns, so no column blocks the cabin.
-      const pos = c.clone().addScaledVector(right, side * (Math.abs(elevator.lat) + elevator.width / 2 + 8.5)).add(new Vector3(0, 3.0, 0));
+      const pos = new Vector3(towerCentre.x, c.y, towerCentre.z).addScaledVector(right, side * (halfSpan + 8.5)).add(new Vector3(0, 3.0, 0));
       return { pos, target: c.clone().add(new Vector3(0, 0.7, 0)), fov: 44 };
     },
     onboard: (f, sh) => {

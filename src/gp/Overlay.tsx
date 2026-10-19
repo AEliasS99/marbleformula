@@ -232,7 +232,8 @@ function TimingTower({ race, f, s }: { race: Race; f: number; s: number }) {
           else gap = `+${race.gapAt(i, gf).toFixed(1)}`;
           const out = race.dqBy(i, f);
           return (
-            <div key={m.abbr} style={{ position: "absolute", left: 0, right: 0, top: 5 * s + slot * ROW, height: ROW, display: "flex", alignItems: "center", gap: 12 * s, padding: `0 ${14 * s}px`, fontSize: fs * s, fontWeight: 800, opacity: out ? 0.45 : 1 }}>
+            // A solid row: while two rows trade places the one sliding over hides the other instead of mixing text with it.
+            <div key={m.abbr} style={{ position: "absolute", left: 0, right: 0, top: 5 * s + slot * ROW, height: ROW, display: "flex", alignItems: "center", gap: 12 * s, padding: `0 ${14 * s}px`, fontSize: fs * s, fontWeight: 800, opacity: out ? 0.45 : 1, background: "#ffffff", zIndex: slot > race.ranking(f).indexOf(i) + 0.01 ? 2 : 1 /* the one climbing passes in front */ }}>
               <span style={{ width: (fs + 5) * s, height: (fs + 5) * s, borderRadius: 8 * s, display: "flex", alignItems: "center", justifyContent: "center", background: pos <= 3 && !out ? ink : "transparent", color: pos <= 3 && !out ? "white" : ink, fontSize: (fs - 5) * s, fontVariantNumeric: "tabular-nums" }}>
                 {pos}
               </span>

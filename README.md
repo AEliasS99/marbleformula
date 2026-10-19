@@ -43,6 +43,8 @@ Circuit outlines come from [bacinger/f1-circuits](https://github.com/bacinger/f1
 
 ### Obstacles
 
+**The library** (`src/gp/obstacles/`): every obstacle is a module with its label, placement rules (`place`: the clear straight it needs, `always`, `once`), guard panels, whether a DQ pad may sit beside it, a card (difficulty, chaos, seconds, a one-line summary), `build` (its records and static colliders for one placement) and `physics` (its Rapier bodies and their motion, per-frame logic if any). `index.js` lists them in the planner's order and the physics creation order; both are part of every bake's result, so a refactor must leave them alone (the move to modules was checked byte-for-byte against the previous bake). Adding an obstacle is a new module plus its renderer; designing a circuit becomes a list of these.
+
 Each circuit has a fixed layout, the same for every seed. Obstacles are placed on the straights and cycle through these types:
 
 | Type | What it is |
@@ -53,14 +55,14 @@ Each circuit has a fixed layout, the same for every seed. Obstacles are placed o
 | **The whirlwind** | a three-blade rotor reaching to within 0.25 of the walls, each blade ending in a hook that forms a pocket on its leading side (`src/gp/rotor.js`): it scoops marbles up in batches, carries them round and flings them out. One per circuit |
 | **Split lanes** | an off-centre fin that splits the field into two lanes |
 | **Rumble strip** | bumps that make the marbles hop |
-| **The turntable** | a spinning plate set into the floor; marbles crossing it are dragged sideways |
+| **The turntable** | a spinning plate set into the floor with six raised rubber ribs and a domed hub: it throws marbles across the track and into each other (flat, it hardly did anything) |
 | **The pusher** | a block that slides out from the wall across the track, timed to the leader |
 | **Big air** | a kicker with a 10° run-up, then a 2.0 fall: real flight, under clear guard panels |
 | **The lift** | a chain lift with cleats that carries the whole field up to a higher level |
 | **The vortex** | a drain (`src/gp/vortex.js`): a smoked bowl with a hyperbolic profile y = -k(1/r - 1/R), the shape of a coin "wishing well", on which a marble orbits at sqrt(g·k/r). A steep run-up and a long gentle guide bring the field in fast along the right wall, which runs on as a chute to the rim's tangent point, so marbles enter along the rim and circle round the wall like water down a drain, the fast ones riding high and crashing into the slow ones below, before they drop through the throat onto the lower track. Polished: frictionless walls and almost no rolling resistance inside. No paddles: anything slower than the orbit brakes it. One per circuit |
 | **The rollers** | three knurled cylinders flush in the floor, all driving forward at 7, 4.5 and 10 u/s: marbles get kicked apart without contact |
 | **The fan** | a pulsing lateral gust over 5 units of track (a force in the bake), from a caged fan on a post beside the wall |
-| **Regroup gate** | a hazard bar across the track that holds the leaders until 60 % of the field still racing has arrived (or 7 s have passed), then lifts; two per lap (`REGROUP`). Keeps twenty marbles a race instead of a procession, and lets the overlay count "12 / 20 at the gate" |
+| **Regroup gate** | a striped barrier in a steel frame with guide rails, a red/amber/green signal on each post and a lit board; the bar across the track that holds the leaders until 60 % of the field still racing has arrived (or 7 s have passed), then lifts; two per lap (`REGROUP`). Keeps twenty marbles a race instead of a procession, and lets the overlay count "12 / 20 at the gate" |
 
 There are two rules so that no marble ever gets stuck:
 

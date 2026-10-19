@@ -92,6 +92,65 @@ const hazardTex = (repeat: [number, number] = [24, 1]) =>
     },
     repeat,
   );
+/** Barrier stripes for a bar `length` long (on the faces whose u runs along it): one red/white pair every 0.5 units. */
+const stripeCache = new Map<string, THREE.Texture>();
+function barStripes(length: number, height = 0) {
+  const key = `${length.toFixed(2)}x${height.toFixed(2)}`;
+  const hit = stripeCache.get(key);
+  if (hit) return hit;
+  const t = canvasTexture(256, 128, (g) => {
+    g.fillStyle = "#f4f4f2";
+    g.fillRect(0, 0, 256, 128);
+    g.fillStyle = "#d8232a";
+    for (let x = -128; x < 256; x += 128) {
+      g.beginPath();
+      g.moveTo(x, 128);
+      g.lineTo(x + 64, 128);
+      g.lineTo(x + 128, 0);
+      g.lineTo(x + 64, 0);
+      g.closePath();
+      g.fill();
+    }
+    g.fillStyle = "#1b1c20";
+    g.fillRect(0, 0, 256, 10);
+    g.fillRect(0, 118, 256, 10);
+    for (let i = 0; i < 400; i++) {
+      g.fillStyle = `rgba(0,0,0,${Math.random() * 0.08})`;
+      g.fillRect(Math.random() * 256, Math.random() * 128, 2, 2);
+    }
+  });
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(Math.max(1, Math.round(length / 0.5)), height > 0 ? Math.max(1, Math.round(height / 0.25)) : 1); // a panel (height > 0) tiles the bands up its face too
+  t.needsUpdate = true;
+  stripeCache.set(key, t);
+  return t;
+}
+
+const numberCache = new Map<number, THREE.Texture>();
+/** A cabin's number on a yellow roundel. */
+function numberTex(n: number) {
+  const hit = numberCache.get(n);
+  if (hit) return hit;
+  const t = canvasTexture(256, 256, (g) => {
+    g.clearRect(0, 0, 256, 256);
+    g.fillStyle = "#ffcc00";
+    g.beginPath();
+    g.arc(128, 128, 120, 0, Math.PI * 2);
+    g.fill();
+    g.lineWidth = 10;
+    g.strokeStyle = "#1b1c20";
+    g.stroke();
+    g.fillStyle = "#1b1c20";
+    g.font = "900 170px 'Avenir Next', system-ui, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(String(n), 128, 140);
+  });
+  numberCache.set(n, t);
+  return t;
+}
+
 const signTex = (text: string) =>
   canvasTexture(1024, 128, (g) => {
     g.fillStyle = "#111216";
@@ -144,7 +203,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
   const rollers = data.rollers ?? [];
   const fans = data.fans ?? [];
   const groundY = useMemo(() => Math.min(...data.samples.map((s) => s.p[1])) - 1.4, [data]);
-  const tex = useMemo(() => ({ hazard: hazardTex(), bar: hazardTex([1, 1]), knurl: knurlTex(), sign: signTex("REGROUP"), lift: signTex("LIFT TOWER") }), []);
+  const tex = useMemo(() => ({ hazard: hazardTex(), bar: hazardTex([1, 1]), hazardV: hazardTex([1, 6]), knurl: knurlTex(), sign: signTex("REGROUP"), lift: signTex("LIFT TOWER") }), []);
   const bowls = useMemo(
     () =>
       vortices.map((v) => {
@@ -176,12 +235,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
         rollers.forEach((r, i) => rollerRefs.current[i]?.quaternion.copy(rollerQuat(r, s)));
         regroups.forEach((g, i) => {
           regroupRefs.current[i]?.position.set(...barPos(g, race.simAt(vf).t));
-          const m = lampRefs.current[i];
-          if (m) {
-            const open = barLift(g, race.simAt(vf).t) > g.lift * 0.5;
-            m.color.set(open ? "#4cff6a" : "#ff3344");
-            m.emissive.set(open ? "#19e04a" : "#ff1f2f");
-          }
+          void lampRefs; // the signal follows React's per-frame render (it changes once per lap)
         });
         vortices.forEach((v, i) => agitatorRefs.current[i]?.quaternion.set(...(agitatorQuat(v, s) as Quat)));
         fans.forEach((fan, i) => {
@@ -302,36 +356,91 @@ export function Machines({ race, t }: { race: Race; t: number }) {
 
       {regroups.map((g, i) => {
         const open = barLift(g, t) > g.lift * 0.5;
+        const span = 2 * (W2 + 0.16);
         return (
           <group key={`g${i}`}>
-            {/* The bar: hazard-striped, lifting straight up when the gate opens. */}
+            {/* The bar: striped barrier with rubber skirt and chrome end caps that run in the posts' guides. */}
             <group ref={(el) => void (regroupRefs.current[i] = el)} position={barPos(g, t)} quaternion={g.quat}>
               <mesh castShadow receiveShadow>
                 <boxGeometry args={g.size} />
-                <meshStandardMaterial map={tex.bar} roughness={0.4} />
+                <meshStandardMaterial map={barStripes(g.size[2])} roughness={0.4} />
               </mesh>
-              <mesh position={[0, g.size[1] / 2 + 0.02, 0]}>
-                <boxGeometry args={[g.size[0] + 0.06, 0.04, g.size[2] + 0.06]} />
-                <meshStandardMaterial {...chrome} />
+              <mesh position={[0, -g.size[1] / 2 + 0.05, 0]}>
+                <boxGeometry args={[g.size[0] + 0.04, 0.1, g.size[2]]} />
+                <meshStandardMaterial color="#1b1c20" roughness={0.9} />
               </mesh>
+              {[-1, 1].map((e) => (
+                <mesh key={e} position={[0, 0, e * (g.size[2] / 2 + 0.1)]}>
+                  <boxGeometry args={[0.2, g.size[1] + 0.06, 0.2]} />
+                  <meshStandardMaterial {...chrome} />
+                </mesh>
+              ))}
             </group>
-            {/* Posts on both walls with the bar's guides, a lamp and a sign above. */}
+            {/* The frame: two steel posts with chrome guide rails and hazard strips, a truss across the top
+                carrying the lit REGROUP board, and a three-light signal on each post. */}
             <group position={g.pos} quaternion={g.quat}>
               {[-1, 1].map((e) => (
-                <group key={e} position={[0, 0, e * (W2 + 0.16)]}>
-                  <mesh position={[0, g.lift / 2 + 0.6, 0]} castShadow>
-                    <boxGeometry args={[0.26, g.lift + 2.0, 0.26]} />
-                    <meshStandardMaterial {...dark} />
+                <group key={e} position={[0, 0, e * (W2 + 0.3)]}>
+                  <mesh position={[0, g.lift / 2 + 0.55, 0]} castShadow>
+                    <boxGeometry args={[0.34, g.lift + 2.0, 0.3]} />
+                    <meshStandardMaterial {...steel} />
                   </mesh>
-                  <mesh position={[0, g.lift + 1.75, 0]}>
-                    <sphereGeometry args={[0.11, 20, 10]} />
-                    <meshStandardMaterial ref={(el) => void (lampRefs.current[i] = el)} color={open ? "#4cff6a" : "#ff3344"} emissive={open ? "#19e04a" : "#ff1f2f"} emissiveIntensity={3} toneMapped={false} />
+                  {[-1, 1].map((x) => (
+                    <mesh key={x} position={[x * 0.13, g.lift / 2 + 0.55, -e * 0.16]}>
+                      <boxGeometry args={[0.04, g.lift + 2.0, 0.04]} />
+                      <meshStandardMaterial {...chrome} />
+                    </mesh>
+                  ))}
+                  <mesh position={[0, g.lift / 2 + 0.2, -e * 0.155]}>
+                    <boxGeometry args={[0.18, g.lift + 0.8, 0.01]} />
+                    <meshStandardMaterial map={tex.hazardV} roughness={0.5} />
                   </mesh>
+                  {/* Signal: red, amber, green, stacked; the live one glows. */}
+                  <group position={[0, g.lift + 1.15, -e * 0.17]}>
+                    <mesh>
+                      <boxGeometry args={[0.24, 0.62, 0.08]} />
+                      <meshStandardMaterial {...dark} />
+                    </mesh>
+                    {(["#ff3344", "#ffb000", "#4cff6a"] as const).map((c, k) => {
+                      const lit = (k === 0 && !open) || (k === 2 && open);
+                      return (
+                        <mesh key={c} position={[0, 0.19 - k * 0.19, -e * 0.045]} rotation-y={e > 0 ? Math.PI : 0}>
+                          <circleGeometry args={[0.07, 24]} />
+                          <meshStandardMaterial
+                            ref={k === 0 ? (el) => void (lampRefs.current[i] = el) : undefined}
+                            color={lit ? c : "#2a2c30"}
+                            emissive={lit ? c : "#000000"}
+                            emissiveIntensity={lit ? 3 : 0}
+                            toneMapped={false}
+                          />
+                        </mesh>
+                      );
+                    })}
+                  </group>
                 </group>
               ))}
-              <mesh position={[0, g.lift + 1.45, 0]} castShadow>
-                <boxGeometry args={[0.1, 0.5, 2 * (W2 + 0.16)]} />
-                <meshStandardMaterial map={tex.sign} roughness={0.5} />
+              {/* Truss and board. */}
+              <mesh position={[0, g.lift + 1.65, 0]} castShadow>
+                <boxGeometry args={[0.3, 0.12, span + 0.5]} />
+                <meshStandardMaterial {...steel} />
+              </mesh>
+              <mesh position={[0, g.lift + 2.05, 0]}>
+                <boxGeometry args={[0.3, 0.12, span + 0.5]} />
+                <meshStandardMaterial {...steel} />
+              </mesh>
+              {Array.from({ length: 9 }, (_, k) => (
+                <mesh key={k} position={[0, g.lift + 1.85, -span / 2 + (k * span) / 8]} rotation-x={k % 2 ? 0.7 : -0.7}>
+                  <boxGeometry args={[0.05, 0.5, 0.05]} />
+                  <meshStandardMaterial {...steel} />
+                </mesh>
+              ))}
+              <mesh position={[-0.17, g.lift + 1.85, 0]} rotation-y={-Math.PI / 2}>
+                <planeGeometry args={[2.2, 0.36]} />
+                <meshStandardMaterial map={tex.sign} emissive="#ffcc00" emissiveMap={tex.sign} emissiveIntensity={0.6} roughness={0.5} />
+              </mesh>
+              <mesh position={[0.17, g.lift + 1.85, 0]} rotation-y={Math.PI / 2}>
+                <planeGeometry args={[2.2, 0.36]} />
+                <meshStandardMaterial map={tex.sign} emissive="#ffcc00" emissiveMap={tex.sign} emissiveIntensity={0.6} roughness={0.5} />
               </mesh>
             </group>
           </group>
@@ -423,7 +532,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
 }
 
 /** One lift cabin with its tower, doors, cables and the bar across its bay. */
-function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number; elevator: Elevator; groundY: number; tex: { bar: THREE.Texture; knurl: THREE.Texture; lift: THREE.Texture } }) {
+function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number; elevator: Elevator; groundY: number; tex: { bar: THREE.Texture; knurl: THREE.Texture; lift: THREE.Texture; hazard: THREE.Texture } }) {
   const W2 = TRACK.width / 2;
   void W2;
   const cabinRef = useRef<THREE.Group | null>(null);
@@ -503,11 +612,34 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
               ))}
               <mesh ref={backDoorRef} position={[-L / 2 + 0.06, H / 2 - H * p.back, 0]}>
                 <boxGeometry args={[0.08, H, W - 0.1]} />
-                <meshStandardMaterial map={tex.bar} roughness={0.45} />
+                <meshStandardMaterial map={barStripes(W - 0.1, H)} roughness={0.45} />
               </mesh>
               <mesh ref={frontDoorRef} position={[L / 2 - 0.06, H / 2 - H * p.front, 0]}>
                 <boxGeometry args={[0.08, H, W - 0.1]} />
-                <meshStandardMaterial map={tex.bar} roughness={0.45} />
+                <meshStandardMaterial map={barStripes(W - 0.1, H)} roughness={0.45} />
+              </mesh>
+              {/* Roof ring with a lit LED strip, a cross-beam the cables hang from, hazard edges on the floor, and the cabin's number. */}
+              {[-1, 1].map((e) => (
+                <mesh key={`led${e}`} position={[0, H - 0.02, e * (W / 2 - 0.12)]}>
+                  <boxGeometry args={[L + 0.1, 0.04, 0.04]} />
+                  <meshStandardMaterial color="#dff6ff" emissive="#9fe7ff" emissiveIntensity={2.2} toneMapped={false} />
+                </mesh>
+              ))}
+              {[-1, 1].map((x) => (
+                <mesh key={`beam${x}`} position={[x * (L / 2 - 0.3), H + 0.06, 0]} castShadow>
+                  <boxGeometry args={[0.14, 0.12, W + 0.2]} />
+                  <meshStandardMaterial {...steel} />
+                </mesh>
+              ))}
+              {[-1, 1].map((e) => (
+                <mesh key={`edge${e}`} position={[0, 0.006, e * (W / 2 - 0.2)]}>
+                  <boxGeometry args={[L, 0.012, 0.16]} />
+                  <meshStandardMaterial map={tex.hazard} roughness={0.5} />
+                </mesh>
+              ))}
+              <mesh position={[0, H * 0.62, (elevator.lat < 0 ? -1 : 1) * (W / 2 + 0.02)]} rotation-y={elevator.lat < 0 ? Math.PI : 0}>
+                <planeGeometry args={[0.7, 0.7]} />
+                <meshStandardMaterial map={numberTex(elevator.lat < 0 ? 1 : 2)} roughness={0.4} transparent />
               </mesh>
               {[-1, 1].map((e) =>
                 [-1, 1].map((g) => (
@@ -522,7 +654,7 @@ function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number;
             <group ref={evBarRef} position={[elevator.bar.pos[0] + barUp.x, elevator.bar.pos[1] + barUp.y, elevator.bar.pos[2] + barUp.z]} quaternion={elevator.bar.quat}>
               <mesh castShadow>
                 <boxGeometry args={elevator.bar.size} />
-                <meshStandardMaterial map={tex.bar} roughness={0.4} />
+                <meshStandardMaterial map={barStripes(elevator.bar.size[2])} roughness={0.4} />
               </mesh>
             </group>
             <group position={elevator.bar.pos} quaternion={elevator.bar.quat}>
