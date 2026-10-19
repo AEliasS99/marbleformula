@@ -19,6 +19,7 @@ import { N8AOPostPass } from "n8ao";
 import type { Layout, Race } from "./race";
 import { subframe } from "./subframe";
 import { useView } from "./view";
+import { isNight } from "./look";
 import { quality } from "./quality";
 
 // Camera-like finishing, the cues that make a render read as a photograph of a
@@ -146,7 +147,10 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     const dof = new DepthOfFieldEffect(camera, { worldFocusRange: 6, bokehScale: 1.1, height: 720 });
     // The set is white: only true specular glints (well above diffuse white) may bloom.
     // With a bright studio the white track sits near 1.0: only real glints, well above it, may bloom.
-    const bloom = new BloomEffect({ mipmapBlur: true, intensity: 0.25, luminanceThreshold: 2.6, luminanceSmoothing: 0.3 });
+    // Night: the neon and the glints bloom generously; day: only real specular glints.
+    const bloom = isNight()
+      ? new BloomEffect({ mipmapBlur: true, intensity: 0.9, luminanceThreshold: 1.4, luminanceSmoothing: 0.25, radius: 0.7 })
+      : new BloomEffect({ mipmapBlur: true, intensity: 0.25, luminanceThreshold: 2.6, luminanceSmoothing: 0.3 });
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
     // A light grade after tone mapping: a touch more contrast and colour, so the low sun bites.
     const grade = new BrightnessContrastEffect({ brightness: 0.0, contrast: 0.14 });

@@ -14,7 +14,8 @@ import { buildTrackMesh, floorVRange, pointInFrame, pointOnTrack, TRACK, TRACK_D
 import { fovFor, type Layout, type Race, type Vec3 } from "./race";
 import { spinnerParts } from "./rotor.js";
 import { turntableParts } from "./obstacles/turntable.js";
-import { asphaltMaps, grassMaps, plasticMaps } from "./surfaces";
+import { asphaltMaps, floorMaps, grassMaps, plasticMaps } from "./surfaces";
+import { isNight } from "./look";
 import { boltGeometry } from "./Details";
 
 // The 3D world, in a clean studio look: a seamless white set, a glossy white
@@ -129,9 +130,15 @@ export function Environment() {
     const pmrem = new THREE.PMREMGenerator(gl);
     scene.environment = pmrem.fromScene(studioScene(), 0, 0.1, 200, { size: 512 }).texture;
     scene.environmentIntensity = 0.55;
+    if (isNight()) {
+      // The dark studio: its softboxes are what the metal and the marbles reflect.
+      scene.environmentIntensity = 0.7;
+      scene.background = new THREE.Color("#07080b");
+    }
     pmrem.dispose();
   }, [gl, scene]);
   useEffect(() => {
+    if (isNight()) return; // no sky at night
     const handle = delayRender("Loading the studio HDRI");
     let cancelled = false;
     new EXRLoader()
@@ -179,7 +186,7 @@ export function Sun({ target }: { target: Vec3 }) {
   const sun = useMemo(() => {
     RectAreaLightUniformsLib.init();
     // Late-afternoon sun, low and warm: long shadows from posts, guards and marbles.
-    const l = new THREE.DirectionalLight("#ffd9a6", 3.2);
+    const l = isNight() ? new THREE.DirectionalLight("#dfe8ff", 2.2) : new THREE.DirectionalLight("#ffd9a6", 3.2);
     l.castShadow = true;
     l.shadow.mapSize.set(4096, 4096);
     l.shadow.bias = -0.00025;
@@ -190,7 +197,8 @@ export function Sun({ target }: { target: Vec3 }) {
     return l;
   }, []);
   const [x, y, z] = target;
-  sun.position.set(x + 30, y + 21, z + 14); // ~32° above the horizon
+  if (isNight()) sun.position.set(x + 8, y + 40, z + 10); // a high studio key: short shadows under each marble
+  else sun.position.set(x + 30, y + 21, z + 14); // ~32° above the horizon
   sun.target.position.set(x, y, z);
   sun.target.updateMatrixWorld();
   return (
@@ -308,7 +316,7 @@ export function Circuit({ race }: { race: Race }) {
       LT,
       (g) => {
         // The walls' inner faces: a warm light grey, not paper white (in the sun that clipped to flat white).
-        g.fillStyle = "#d9d6d0";
+        g.fillStyle = isNight() ? "#3b3f47" : "#d9d6d0";
         g.fillRect(0, 0, LA, LT);
         g.fillStyle = "#34363b";
         g.fillRect(0, fv0 * LT, LA, (fv1 - fv0) * LT);
@@ -528,7 +536,7 @@ export function Circuit({ race }: { race: Race }) {
       t.repeat.set(1, 4);
       t.needsUpdate = true;
     }
-    const grassBase = grassMaps();
+    const grassBase = isNight() ? floorMaps("#1c1e23") : grassMaps();
     const floor = { color: grassBase.color.clone(), roughness: grassBase.roughness.clone(), normal: grassBase.normal.clone() };
     for (const t of [floor.color, floor.roughness, floor.normal]) {
       t.repeat.set(70, 70);
@@ -590,18 +598,23 @@ export function Circuit({ race }: { race: Race }) {
         </mesh>
       ))}
       <mesh geometry={geos.rim} castShadow receiveShadow>
-        <meshStandardMaterial color="#dcdad4" roughness={0.45} />
+        {isNight() ? <meshStandardMaterial color="#cfd2d8" metalness={1} roughness={0.22} /> : <meshStandardMaterial color="#dcdad4" roughness={0.45} />}
       </mesh>
       {/* The walls: a warm off-white moulded plastic with visible texture, not paper white (which read as flat CG). */}
       <mesh geometry={geos.shell} castShadow receiveShadow>
-        <meshPhysicalMaterial
-          color="#c9c6bf"
-          roughness={1}
-          roughnessMap={built.plastic.roughness}
-          normalMap={built.plastic.normal}
-          normalScale={new THREE.Vector2(0.14, 0.14)}
-          envMapIntensity={0.35}
-        />
+        {isNight() ? (
+          // Dark brushed metal.
+          <meshPhysicalMaterial color="#5a5f69" metalness={0.85} roughness={0.42} roughnessMap={built.plastic.roughness} normalMap={built.plastic.normal} normalScale={new THREE.Vector2(0.25, 0.25)} envMapIntensity={1.1} />
+        ) : (
+          <meshPhysicalMaterial
+            color="#c9c6bf"
+            roughness={1}
+            roughnessMap={built.plastic.roughness}
+            normalMap={built.plastic.normal}
+            normalScale={new THREE.Vector2(0.14, 0.14)}
+            envMapIntensity={0.35}
+          />
+        )}
       </mesh>
       <mesh geometry={geos.caps} castShadow>
         <meshStandardMaterial color="#eceae6" roughness={0.45} />
@@ -628,7 +641,12 @@ export function Circuit({ race }: { race: Race }) {
         <planeGeometry args={[3000, 3000]} />
         {/* A polished studio floor: a blurred planar reflection of the track grounds it in the room. */}
         {/* Brightened: the grass used to get most of its light from the sky's own sun, now capped out of it. */}
-        <meshStandardMaterial map={built.floor.color} color={new THREE.Color(2.2, 2.2, 2.0)} roughnessMap={built.floor.roughness} roughness={1} normalMap={built.floor.normal} normalScale={new THREE.Vector2(0.5, 0.5)} />
+        {isNight() ? (
+          // Polished dark concrete: soft reflections of the neon and the softboxes.
+          <meshStandardMaterial map={built.floor.color} roughnessMap={built.floor.roughness} roughness={0.55} metalness={0.2} normalMap={built.floor.normal} normalScale={new THREE.Vector2(0.3, 0.3)} envMapIntensity={1.2} />
+        ) : (
+          <meshStandardMaterial map={built.floor.color} color={new THREE.Color(2.2, 2.2, 2.0)} roughnessMap={built.floor.roughness} roughness={1} normalMap={built.floor.normal} normalScale={new THREE.Vector2(0.5, 0.5)} />
+        )}
       </mesh>
     </>
   );
@@ -698,7 +716,8 @@ function Flange({ radius, y }: { radius: number; y: number }) {
     </mesh>
   );
 }
-const gloss = { color: "#ffffff", roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.08 } as const;
+// Machines' body paint: glossy white by day, graphite at night (white glared against the dark set).
+const gloss = isNight() ? ({ color: "#2b2e35", roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 } as const) : ({ color: "#ffffff", roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.08 } as const);
 
 /** The turntable's top: brushed steel rings with eight rubber spokes and a hazard rim. */
 function ridgeTexture() {

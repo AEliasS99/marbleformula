@@ -18,6 +18,17 @@ export const Root = () => (
             height={1080}
             defaultProps={{ id: r.id, layout: "landscape" as const }}
           />
+          {/* 4K: YouTube gives 4K uploads a far higher bitrate, so even 1080p viewers see a sharper picture.
+              Render it with {"dpr":1}: the same pixel count as 1080p at dpr 2. */}
+          <Composition
+            id={`GP-${r.id}-4k`}
+            component={GrandPrix}
+            durationInFrames={r.timeline.total + ((r as { intro?: { total: number } }).intro?.total ?? 0)}
+            fps={r.fps}
+            width={3840}
+            height={2160}
+            defaultProps={{ id: r.id, layout: "landscape" as const }}
+          />
           <Composition
             id={`GP-${r.id}-vertical`}
             component={GrandPrix}

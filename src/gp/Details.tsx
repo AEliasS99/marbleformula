@@ -5,6 +5,7 @@ import { useView } from "./view";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { liftCleatPose, pointInFrame, TRACK, TRACK_DEPTH, troughProfile } from "./trackMesh.js";
 import type { Race, Vec3 } from "./race";
+import { isNight } from "./look";
 
 // The small things that make the track read as a real object: rounded rims,
 // joints every few units with a collar and hex bolts, saddle clamps where the
@@ -37,7 +38,7 @@ function frameAt(samples: Sample[], u: number): Sample {
 }
 
 /** Sweeps a closed or open 2D ring (lateral, up) along the track from u0 to u1. */
-function sweep(
+export function sweep(
   samples: Sample[],
   ringIn: [number, number][] | ((w: number) => [number, number][]),
   u0: number,
@@ -266,7 +267,7 @@ export function TrackDetails({ race }: { race: Race }) {
   return (
     <>
       <mesh geometry={built.rims} castShadow receiveShadow>
-        <meshPhysicalMaterial color="#ffffff" roughness={0.18} clearcoat={1} clearcoatRoughness={0.05} />
+        {isNight() ? <meshStandardMaterial color="#d6d9df" metalness={1} roughness={0.18} /> : <meshPhysicalMaterial color="#ffffff" roughness={0.18} clearcoat={1} clearcoatRoughness={0.05} />}
       </mesh>
       <mesh geometry={built.collars} castShadow receiveShadow>
         <meshPhysicalMaterial color="#eceef2" roughness={0.3} clearcoat={0.7} />
