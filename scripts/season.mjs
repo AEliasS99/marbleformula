@@ -186,6 +186,7 @@ const bayReserve = (L) => L - GRID_LENGTH - ELEVATOR.cabin - 18;
 const PLANNER_SKIP = ["crest", "booster", "tube", "switch", "regroup"];
 const FLIPPER = { length: 4.0, amp: (25 * Math.PI) / 180, period: 2.4 };
 const STAIR_SHOT_MAX = 7 * 60; // frames
+const FOCUS_HOLD = 5 * 60; // frames: the director follows a group at least this long
 const STAIR_CAM = { back: 11, above: 6, fov: 46 };
 const CAM_FEATURES = ["vortex", "spinner", "hammer", "turntable", "rollers", "pusher", "jump", "drop", "lift", "fan", "bumpers", "pegs", "splitter"];
 const TUBES = { minCurv: 0.17, height: 1.7 };
@@ -1691,6 +1692,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   const spread = [];
   const leader = [];
   let sticky = null;
+  let focusSince = 0;
   for (let f = 0; f <= lastFrame; f++) {
     const racing = [...Array(N).keys()]
       .filter((i) => !finished(i, f - LINGER))
@@ -1716,6 +1718,13 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       if (sticky !== null && members.includes(sticky)) score += 1.0;
       if (best === null || score > best.score) best = { head, members, score };
     });
+    // Hold a group for FOCUS_HOLD before switching to another (each switch is a cut): unless the
+    // group we follow is gone (finished, out, or on the stair).
+    if (sticky !== null && best.head !== sticky && f - focusSince < FOCUS_HOLD && pool.includes(sticky)) {
+      const members = pool.filter((i) => uOf(f, sticky) - uOf(f, i) >= 0 && uOf(f, sticky) - uOf(f, i) < 6);
+      best = { head: sticky, members, score: 0 };
+    }
+    if (best.head !== sticky) focusSince = f;
     sticky = best.head;
     leader.push(best.head);
     const pack = best.members.slice(0, 3);
@@ -1756,6 +1765,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   // between switches, and shots are cut there (below).
   const focusSwitches = [];
   for (let f = 1; f <= lastFrame; f++) if (Math.abs(rawU[f] - rawU[f - 1]) > 10 || rawFocus[f].distanceTo(rawFocus[f - 1]) > 10) focusSwitches.push(f);
+  if (process.env.GP_FOCUS) for (const f of focusSwitches) console.log(`switch f=${f} head ${leader[f - 1]}→${leader[f]} u ${rawU[f - 1].toFixed(1)}→${rawU[f].toFixed(1)}`);
   let focus = rawFocus;
   let focusU = rawU;
   {
@@ -2160,11 +2170,29 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   };
   // A shot that follows the focus is cut where the focus switches group (see focusSwitches).
   const FOLLOWING = ["chase", "lead", "side", "top", "orbit", "wide", "feature", "finish", "approach"];
+  // A switch near a shot's start or end moves that cut onto the switch (the neighbouring shot absorbs
+  // the difference) instead of leaving a sliver of a shot: never a piece under MIN_PIECE.
+  const MIN_PIECE = sec(2.5);
   for (let k = 0; k < shots.length; k++) {
     const sh = shots[k];
     if (!FOLLOWING.includes(sh.kind)) continue;
     const at = focusSwitches.find((x) => x > sh.start && x < sh.end);
     if (at === undefined) continue;
+    const prev = shots[k - 1];
+    const next = shots[k + 1];
+    const head = at - sh.start;
+    const tail = sh.end - at;
+    if (head < MIN_PIECE && prev && (tail >= head || !next)) {
+      prev.end = at;
+      sh.start = at;
+      k--; // look at this shot again (another switch may follow)
+      continue;
+    }
+    if (tail < MIN_PIECE && next) {
+      next.start = at;
+      sh.end = at;
+      continue;
+    }
     shots.splice(k + 1, 0, { ...sh, start: at });
     sh.end = at;
   }
