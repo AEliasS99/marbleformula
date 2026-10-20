@@ -106,6 +106,30 @@ function build(data: RoundData) {
     const df = (marbles[i] as { dqFrame?: number | null }).dqFrame ?? null;
     return df !== null && df <= f;
   };
+  // The drain: from its DQ frame a marble slides into the nearest drain slot and drops down the
+  // shaft over 0.7 s, then is gone (it used to vanish on the spot).
+  const pads = ((data.obstacles as unknown as { kind: string; pos: Vec3 }[]) ?? []).filter((o) => o.kind === "dq");
+  const drainOf = marbles.map((m, i) => {
+    const df = (m as { dqFrame?: number | null }).dqFrame ?? null;
+    if (df === null || !pads.length) return null;
+    const at = frames[Math.max(0, Math.min(df - 1, lastFrame))][i]; // on its DQ frame the bake has already moved it out of the world
+    let best = pads[0];
+    for (const p of pads) if (Math.hypot(p.pos[0] - at[0], p.pos[2] - at[2]) < Math.hypot(best.pos[0] - at[0], best.pos[2] - at[2])) best = p;
+    return { frame: df, from: [at[0], at[1], at[2]] as Vec3, pad: best.pos };
+  });
+  const drainPose = (i: number, t: number): { pos: Vec3; visible: boolean } | null => {
+    const d = drainOf[i];
+    if (!d || t < d.frame) return null;
+    const k = (t - d.frame) / (0.7 * fps);
+    if (k >= 1) return { pos: d.pad, visible: false };
+    const slide = Math.min(1, k / 0.35);
+    const fall = Math.max(0, (k - 0.3) / 0.7);
+    const x = d.from[0] + (d.pad[0] - d.from[0]) * slide;
+    const z = d.from[2] + (d.pad[2] - d.from[2]) * slide;
+    const y = d.from[1] - 1.4 * fall * fall;
+    return { pos: [x, y, z], visible: true };
+  };
+
   // Finishers by time, then the rest by progress, then the disqualified (first out, last).
   const rankKey = (i: number, f: number): [number, number] => {
     if (f < timeline.raceStart) return [1, marbles[i].grid]; // on the grid: by grid position
@@ -316,6 +340,7 @@ function build(data: RoundData) {
     lastFrame,
     simAt,
     marblePose,
+    drainPose,
     progress,
     lapOf,
     uOf,

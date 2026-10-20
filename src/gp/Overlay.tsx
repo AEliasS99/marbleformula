@@ -486,10 +486,10 @@ function Toasts({ race, f, s, layout }: { race: Race; f: number; s: number; layo
     return (
       <div style={{ position: "absolute", left: layout === "portrait" ? 40 * s : 360 * s, bottom: (layout === "portrait" ? 560 : 50) * s, opacity: k * out, transform: `translateX(${(1 - k) * -60 * s}px)` }}>
         <Chip s={s} bg={card} size={28}>
-          <span style={{ background: "#e8414a", color: "white", padding: `${2 * s}px ${8 * s}px`, borderRadius: 6 * s, fontSize: 18 * s }}>DISQUALIFIED</span>
+          <span style={{ background: "#e8414a", color: "white", padding: `${2 * s}px ${8 * s}px`, borderRadius: 6 * s, fontSize: 18 * s }}>DRAINED</span>
           <MarbleDot s={s} color={a.color} flag={flagOf(a)} />
           {a.name.toUpperCase()}
-          <span style={{ color: "#5b606e" }}>touched a red DQ pad at {featureName(race, (ev as { feature?: string }).feature)} · out of the race</span>
+          <span style={{ color: "#5b606e" }}>fell into the drain at {featureName(race, (ev as { feature?: string }).feature)} · out of the race</span>
         </Chip>
       </div>
     );
@@ -759,13 +759,13 @@ function DqExplainer({ race, split, h, pane, frame, s, opacity }: { race: Race; 
       {pt && pt.visible && pt.x > pane.w * 0.06 && pt.x < pane.w * 0.94 && pt.y > pane.h * 0.3 && pt.y < pane.h * 0.94 && (
         <div style={{ position: "absolute", left: pane.x + pt.x, top: pane.y + pt.y, transform: "translate(-50%, -50%)", opacity }}>
           <div style={{ width: (70 + 24 * pulse) * s, height: (70 + 24 * pulse) * s, borderRadius: "50%", border: `${5 * s}px solid #e8414a`, boxShadow: `0 0 ${18 * s}px rgba(232,65,74,0.8)` }} />
-          <div style={{ position: "absolute", left: "50%", top: -40 * s, transform: "translateX(-50%)", whiteSpace: "nowrap", background: "#e8414a", color: "white", fontWeight: 900, fontSize: 20 * s, padding: `${3 * s}px ${10 * s}px`, borderRadius: 6 * s }}>DQ PAD</div>
+          <div style={{ position: "absolute", left: "50%", top: -40 * s, transform: "translateX(-50%)", whiteSpace: "nowrap", background: "#e8414a", color: "white", fontWeight: 900, fontSize: 20 * s, padding: `${3 * s}px ${10 * s}px`, borderRadius: 6 * s }}>DRAIN</div>
         </div>
       )}
       <div style={{ position: "absolute", left: pane.x + pane.w / 2, top: pane.y + 160 * s, transform: "translateX(-50%)", opacity, width: pane.w * 0.7 }}>
         <div style={{ background: "rgba(255,255,255,0.96)", borderRadius: 14 * s, borderLeft: `${8 * s}px solid #e8414a`, padding: `${12 * s}px ${18 * s}px`, boxShadow: "0 8px 30px rgba(20,24,40,0.18)", fontSize: 24 * s, fontWeight: 800, color: "#111216", textAlign: "center" }}>
-          {touched ? "Touched the red pad by the wall: OUT of the race" : "Watch the red pad by the wall…"}
-          <div style={{ fontSize: 17 * s, fontWeight: 600, opacity: 0.65, marginTop: 4 * s }}>Every machine has one. Roll over it pressed against the wall and you are disqualified.</div>
+          {touched ? "Down the drain: OUT of the race" : "Watch the drain by the wall…"}
+          <div style={{ fontSize: 17 * s, fontWeight: 600, opacity: 0.65, marginTop: 4 * s }}>Some machines have a drain at the foot of the wall. Roll into it and you drop out.</div>
         </div>
       </div>
     </>

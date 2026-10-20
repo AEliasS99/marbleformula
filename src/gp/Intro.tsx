@@ -42,10 +42,12 @@ const BLURBS: Record<string, { line: string; danger: number }> = {
   rollers: { line: "Spinning rollers: a boost for some, a kick sideways for others.", danger: 3 },
   fan: { line: "Gusts of wind across the track.", danger: 3 },
   bumps: { line: "Bumps that make the marbles hop.", danger: 1 },
+  booster: { line: "A speed pad: every marble on it is shot forward.", danger: 1 },
+  switch: { line: "Two half-width bars rise and sink in turn: take the open half or wait.", danger: 3 },
   crest: { line: "Humps at the apex of the bends: take them fast and you fly.", danger: 3 },
   pusher: { line: "A ram that sweeps across the track.", danger: 4 },
   elevator: { line: "Two cabins carry the field back up for the next lap. First come, first served.", danger: 2 },
-  dq: { line: "Touch a red pad beside a machine and you are out of the race.", danger: 5 },
+  dq: { line: "A drain by the wall at some machines: roll into it and you drop out of the race.", danger: 5 },
 };
 
 type Sample = { u: number; p: Vec3; t: Vec3; r: Vec3; n: Vec3; w?: number };

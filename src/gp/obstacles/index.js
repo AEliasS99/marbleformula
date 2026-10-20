@@ -9,6 +9,8 @@ import rollers from "./rollers.js";
 import fan from "./fan.js";
 import vortex from "./vortex.js";
 import regroup from "./regroup.js";
+import booster from "./booster.js";
+import switchGate from "./switch.js";
 
 // The obstacle library. Every obstacle is a module (this folder) with:
 //   type, label           what the overlay and the director call it
@@ -42,6 +44,8 @@ export const OBSTACLES = [
   fan,
   vortex,
   regroup,
+  switchGate,
+  booster, // placed by the bake on the straights after the bends
   // Placed by the bake itself at the apex of the sharp bends (never in a layout): a short hump that
   // throws fast marbles into the air in the curve. Banked, guarded.
   shape("crest", "THE CREST", { before: 4, after: 5, maxCurv: 1 }, { card: { difficulty: 2, chaos: 3, seconds: 0.5, summary: "A hump at the apex of a bend: fast marbles take off sideways." } }),
@@ -50,4 +54,4 @@ export const BY_TYPE = Object.fromEntries(OBSTACLES.map((o) => [o.type, o]));
 /** The machines every circuit gets, placed first and spread over the lap, in this order. */
 export const ALWAYS = ["vortex", "spinner", "turntable", "rollers", "pusher"];
 /** Physics creation order (it decides the solver's order, so it is part of every bake's result). */
-export const PHYSICS_ORDER = { beforeLifts: ["vortex", "regroup"], beforeStatics: ["rollers"], afterStatics: ["spinner", "hammer", "turntable", "pusher"] };
+export const PHYSICS_ORDER = { beforeLifts: ["vortex", "regroup"], beforeStatics: ["rollers"], afterStatics: ["spinner", "hammer", "turntable", "pusher", "switch"] };

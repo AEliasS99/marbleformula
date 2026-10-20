@@ -10,7 +10,7 @@
 
 export const TRACK = {
   width: 4.2, // usual floor width, wall to wall
-  wallHeight: 1.0,
+  wallHeight: 1.35, // taller walls for the steep banking
   fillet: 0.14,
   wall: 0.16, // shell thickness
 };

@@ -96,14 +96,15 @@ const SAMPLE = 0.5; // centreline sample spacing
 // like a small, quick marble.
 const GRAVITY = 22;
 // Every curve is banked (up to 22°) so the marbles carry their speed through it.
-const DESIGN_SPEED = 10; // for banking
-// 20°: steeper banking could not flip fast enough through an S-bend (the rate limit below), so the
-// second half leaned the wrong way and pinned marbles to the wall.
-const MAX_BANK = (20 * Math.PI) / 180;
+// Steep banking: the marbles carry their speed round the bends instead of piling into the outer wall.
+// (Through an S-bend the rate limit below decides how fast it can flip.)
+const DESIGN_SPEED = Number(process.env.GP_DESIGN_SPEED ?? 14); // for banking
+const MAX_BANK = (Number(process.env.GP_MAX_BANK ?? 28) * Math.PI) / 180;
 // How fast banking may change along the track. On a flat floor, twisting faster
 // than this makes the low edge climb while the centre line descends: a bowl that
 // traps marbles. At 0.8 the low edge still descends, at a fifth of the slope.
-const BANK_RATE = (Math.tan(SLOPE) * 0.8) / (TRACK.width / 2); // radians per unit
+const BANK_FLIP = Number(process.env.GP_BANK_FLIP ?? 1.0); // ×slope: above 1 the low edge may climb briefly in an S
+const BANK_RATE = (Math.tan(SLOPE) * BANK_FLIP) / (TRACK.width / 2); // radians per unit
 const DAMPING = 0.075; // rolling resistance + air: caps the speed of a marble
 // Marble–marble contacts average the two marbles' restitution: 0.75, glass on
 // glass, lively. Everything else (track, obstacles, machines) uses the Min
@@ -170,6 +171,7 @@ const TWIST = { amp: (42 * Math.PI) / 180, length: 14 };
 const DROP_HEIGHT = 1.1;
 const BUMP = { amp: 0.13, length: 1.6, count: 4 };
 // Crests at the bends' apexes: a mini kicker (run-up, lip, small drop): fast marbles take off in the bend.
+const BOOSTERS = { spacing: 30, max: Number(process.env.GP_BOOSTERS ?? 8) };
 const CREST = { runup: 2.5, runupSlope: Math.tan((14 * Math.PI) / 180), ramp: 1.2, lip: 0.22, drop: 0.25, minCurv: 0.035, maxCurv: 0.16, spacing: 18, max: 8 };
 
 function hashString(str) {
@@ -468,6 +470,26 @@ export function buildCourse(round) {
     for (const u of crests) features.push({ type: "crest", u: r3(u), label: "THE CREST", span: [4, 5] });
     features.sort((a, b) => a.u - b.u);
   }
+  // Boosters on the straights just after the bends, where the pack has slowed (BOOSTERS).
+  {
+    const straight = (u0, u1) => {
+      for (let u = u0; u <= u1; u += SAMPLE) if (Math.abs(curv[Math.max(0, Math.min(m - 1, Math.round((u + GRID_LENGTH) / SAMPLE)))]) > 0.04) return false;
+      return true;
+    };
+    const bendBefore = (u) => {
+      for (let x = u - 10; x < u; x += SAMPLE) if (Math.abs(curv[Math.max(0, Math.min(m - 1, Math.round((x + GRID_LENGTH) / SAMPLE)))]) > 0.07) return true;
+      return false;
+    };
+    const placed = [];
+    for (let u = 26; u <= L - 30 && placed.length < BOOSTERS.max; u += 1) {
+      if (!bendBefore(u) || !straight(u - 1, u + 6)) continue;
+      if (placed.some((q) => Math.abs(q - u) < BOOSTERS.spacing)) continue;
+      if (features.some((g) => u + 6 + 3 > g.u - g.span[0] && u - 1 - 3 < g.u + g.span[1])) continue;
+      placed.push(u);
+    }
+    for (const u of placed) features.push({ type: "booster", u: r3(u), label: "BOOSTER", span: [1, 5] });
+    features.sort((a, b) => a.u - b.u);
+  }
 
   // Elevation: a steady descent with sudden drops and rumble strips, then a
   // run-off that levels out and climbs so finished marbles stop. The grid sits
@@ -537,8 +559,12 @@ export function buildCourse(round) {
       s += bankRaw[q];
       c++;
     }
-    // No banking on the grid or in the run-off.
-    return us[k] < 2 || us[k] > L ? 0 : s / c;
+    // No banking on the grid or in the run-off, at the obstacles (they need a level floor, and a steep
+    // bank running into one left a ridge that stopped the pack) or on the run into the lift bays.
+    const u = us[k];
+    if (u < 2 || u > L || u > END - 18) return 0;
+    if (features.some((g) => g.type !== "crest" && g.type !== "booster" && u > g.u - g.span[0] - 3 && u < g.u + g.span[1] + 3)) return 0;
+    return s / c;
   });
   const maxStep = BANK_RATE * SAMPLE;
   for (let k = 1; k < m; k++) bank[k] = Math.max(bank[k - 1] - maxStep, Math.min(bank[k - 1] + maxStep, bank[k]));
@@ -1030,7 +1056,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
             const w = z.s.w ?? TRACK.width / 2;
             if (dqCrossing) {
               // Crossed the pad's line this frame (same lap): how close to the wall?
-              const crossed = prevU[i] !== null && prevU[i] < z.u && u >= z.u && u - prevU[i] < 2 && up < 0.6;
+              const crossed = prevU[i] !== null && prevU[i] < z.u && u >= z.u && u - prevU[i] < 2 && up < 0.6 && up > -0.5; // on the floor (a marble falling past is no drain)
               if (!crossed) continue;
               const gap = w - lat * z.side;
               dqGaps.push(gap);
@@ -1181,8 +1207,9 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
         c.body.setNextKinematicTranslation({ x: pose.pos[0], y: pose.pos[1], z: pose.pos[2] });
         c.body.setNextKinematicRotation(rot(pose.quat));
       }
-      // Fans: a lateral force on every marble in their stretch.
-      if (obstacles.fans.length) {
+      // Fans: a lateral force on every marble in their stretch. Boosters: a forward
+      // force along the track, up to their target speed.
+      if (obstacles.fans.length || obstacles.boosters.length) {
         const mass = bodies[0].mass();
         bodies.forEach((b, i) => {
           b.resetForces(true);
@@ -1192,6 +1219,14 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
             if (u < fan.u0 || u > fan.u1) continue;
             const g = fan.accel * fanGust(fan, t) * mass;
             b.addForce({ x: fan.dir[0] * g, y: 0, z: fan.dir[2] * g }, true);
+          }
+          for (const bo of obstacles.boosters) {
+            if (u < bo.u0 || u > bo.u1) continue;
+            const tg = course.frameAt(u).t;
+            const v = b.linvel();
+            if (v.x * tg[0] + v.y * tg[1] + v.z * tg[2] >= bo.target) continue;
+            const g = bo.accel * mass;
+            b.addForce({ x: tg[0] * g, y: tg[1] * g, z: tg[2] * g }, true);
           }
         });
       }
@@ -1313,7 +1348,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
   // A disqualification is always replayed.
   for (const e of dqEvents) {
     if (e.frame <= raceStart + sec(2.5) || e.frame >= winnerFrame - sec(5)) continue;
-    highlights.push({ f: e.frame, marble: e.a, strength: 99, label: `DISQUALIFIED · ${MARBLES[e.a].name.toUpperCase()}`, feature: e.feature, dq: true });
+    highlights.push({ f: e.frame, marble: e.a, strength: 99, label: `DRAINED · ${MARBLES[e.a].name.toUpperCase()}`, feature: e.feature, dq: true });
   }
   for (const im of candidates) {
     if (highlights.length >= HIGHLIGHTS.count) break;
@@ -1323,8 +1358,8 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
   highlights.sort((a, b) => a.f - b.f);
   for (const h of highlights) {
     h.from = Math.max(raceStart, h.f - sec(HIGHLIGHTS.before));
-    // A disqualified marble vanishes on the pad: its replay ends just after, not on an empty pad.
-    h.to = Math.min(lastFrame, h.f + sec(h.dq ? 0.25 : HIGHLIGHTS.after));
+    // A drained marble drops down the shaft in 0.7 s: its replay ends just after that.
+    h.to = Math.min(lastFrame, h.f + sec(h.dq ? 0.85 : HIGHLIGHTS.after));
     h.speed = HIGHLIGHTS.speed;
     h.frames = Math.ceil((h.to - h.from) / h.speed);
     h.insert = Math.min(lastFrame, h.f + sec(HIGHLIGHTS.after) + sec(0.2)); // live frame after which the replay plays
@@ -1453,6 +1488,8 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     pushers: obstacles.pushers,
     rollers: obstacles.rollers,
     fans: obstacles.fans,
+    boosters: obstacles.boosters,
+    switches: obstacles.switches,
     regroups: machines.regroup.export(),
     elevators: elevatorsData,
     laps,
@@ -1985,8 +2022,10 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   // Replay cameras for the highlights: a fixed camera beside the impact, low
   // and close, tracking the marble that was hit with a tight field of view.
   const highlightCams = highlights.map((h) => {
-    const hit = posOf(h.f, h.marble);
-    const u = uOf(h.f, h.marble);
+    // A drained marble is moved out of the world on its DQ frame: frame it where it last was.
+    const until = (g) => (h.dq ? Math.min(g, h.f - 1) : g);
+    const hit = posOf(until(h.f), h.marble);
+    const u = uOf(until(h.f), h.marble);
     const fr = frameAt(u + 0.8);
     let best = null;
     for (const side of [1, -1])
@@ -1994,12 +2033,12 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
         const pos = v3(fr.p).addScaledVector(flatRight(fr), side * lat).add(new Vector3(0, lift, 0));
         if (roomAt(pos, u) < 1.4) continue;
         let score = 0;
-        for (let g = h.from; g <= h.to; g += 6) if (clear(pos, posOf(g, h.marble))) score++;
+        for (let g = h.from; g <= h.to; g += 6) if (clear(pos, posOf(until(g), h.marble))) score++;
         if (best === null || score > best.score) best = { pos, score };
       }
     const pos = best ? best.pos : v3(fr.p).add(new Vector3(0, 6, 0));
     const path = [];
-    for (let g = h.from; g <= h.to; g++) path.push(posOf(g, h.marble));
+    for (let g = h.from; g <= h.to; g++) path.push(posOf(until(g), h.marble));
     const sm = gauss(path, sec(0.15));
     // At a machine, the machine is in the shot too (a tight frame on the marble
     // showed "THE HAMMER" with no hammer): aim between them and open the lens to fit both.

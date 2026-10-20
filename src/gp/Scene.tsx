@@ -717,6 +717,8 @@ function Flange({ radius, y }: { radius: number; y: number }) {
   );
 }
 // Machines' body paint: glossy white by day, graphite at night (white glared against the dark set).
+/** The drain slot's length along the track (the bake's DQ line sits in its middle). */
+export const DRAIN_LEN = 0.75;
 const gloss = isNight() ? ({ color: "#2b2e35", roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 } as const) : ({ color: "#ffffff", roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.08 } as const);
 
 /** The turntable's top: brushed steel rings with eight rubber spokes and a hazard rim. */
@@ -758,20 +760,20 @@ function ridgeTexture() {
 }
 
 /** The red disqualification pad: "DQ" between hazard borders. */
+/** Yellow and black hazard stripes for the frame painted round a drain. */
 function dqTexture() {
-  return canvasTexture(512, 512, (g) => {
-    g.fillStyle = "#d8232a";
-    g.fillRect(0, 0, 512, 512);
-    for (let x = 0; x < 512; x += 64) {
-      g.fillStyle = (x / 64) % 2 ? "#ffffff" : "#1b1c20";
-      g.fillRect(x, 0, 64, 40);
-      g.fillRect(x + 32, 472, 64, 40);
+  return canvasTexture(256, 256, (g) => {
+    g.fillStyle = "#111216";
+    g.fillRect(0, 0, 256, 256);
+    g.fillStyle = "#ffcc00";
+    for (let x = -256; x < 512; x += 48) {
+      g.beginPath();
+      g.moveTo(x, 256);
+      g.lineTo(x + 24, 256);
+      g.lineTo(x + 280, 0);
+      g.lineTo(x + 256, 0);
+      g.fill();
     }
-    g.fillStyle = "#ffffff";
-    g.font = "900 300px 'Avenir Next', system-ui, sans-serif";
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    g.fillText("DQ", 256, 262);
   });
 }
 
@@ -872,26 +874,43 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
     <>
       {statics.map((o, i) => {
         if (o.kind === "dq") {
-          // Disqualification pad: a red plate flush with the floor at the wall's
-          // foot, "DQ" on it, a red lamp on the wall top above it.
-          const [len, , wid] = o.size!;
+          // The drain: an open slot in the floor at the foot of the wall, a chrome grate rim, hazard
+          // paint around it and a dark shaft below. A marble that rolls in drops out of the race.
+          const [, , wid] = o.size!;
           const side = (o as unknown as { side: number }).side;
+          const L = DRAIN_LEN;
+          const W = wid + 0.06;
+          const z = side * 0.03; // tucked against the wall
           return (
             <group key={i} position={o.pos} quaternion={o.quat}>
-              <mesh position={[0, 0.02, 0]} receiveShadow>
-                <boxGeometry args={[len, 0.03, wid]} />
-                <meshStandardMaterial map={dqTex} emissive="#ff2030" emissiveMap={dqTex} emissiveIntensity={0.35} roughness={0.35} />
+              {/* Hazard frame painted on the floor around the slot. */}
+              <mesh position={[0, 0.006, z]} rotation-x={-Math.PI / 2}>
+                <planeGeometry args={[L + 0.28, W + 0.2]} />
+                <meshStandardMaterial map={dqTex} roughness={0.5} polygonOffset polygonOffsetFactor={-2} />
               </mesh>
-              <mesh position={[0, 0.045, 0]} rotation-x={-Math.PI / 2}>
-                <planeGeometry args={[len, wid]} />
-                <meshStandardMaterial map={dqTex} transparent roughness={0.35} polygonOffset polygonOffsetFactor={-2} />
+              {/* The hole: black, with a shaft going down so it reads as depth. */}
+              <mesh position={[0, 0.009, z]} rotation-x={-Math.PI / 2}>
+                <planeGeometry args={[L, W]} />
+                <meshBasicMaterial color="#020203" polygonOffset polygonOffsetFactor={-4} />
               </mesh>
-              {/* A red panel on the wall above the pad, so the zone reads from any angle. */}
-              <mesh position={[0, TRACK.wallHeight / 2, side * (wid / 2 + 0.04 - 0.012)]}>
-                <boxGeometry args={[len + 0.1, TRACK.wallHeight - 0.08, 0.02]} />
-                <meshStandardMaterial color="#d8232a" emissive="#ff2030" emissiveIntensity={0.25} roughness={0.4} />
+              {[-1, 1].map((e) => (
+                <mesh key={`sx${e}`} position={[(e * L) / 2, -0.25, z]}>
+                  <boxGeometry args={[0.02, 0.5, W]} />
+                  <meshStandardMaterial color="#141519" roughness={0.6} />
+                </mesh>
+              ))}
+              {/* Chrome rim. */}
+              {[-1, 1].map((e) => (
+                <mesh key={`rx${e}`} position={[(e * (L + 0.04)) / 2, 0.015, z]}>
+                  <boxGeometry args={[0.04, 0.03, W + 0.04]} />
+                  <meshStandardMaterial color="#dfe2e8" metalness={1} roughness={0.2} />
+                </mesh>
+              ))}
+              <mesh position={[0, 0.015, z - side * (W / 2 + 0.01)]}>
+                <boxGeometry args={[L + 0.08, 0.03, 0.04]} />
+                <meshStandardMaterial color="#dfe2e8" metalness={1} roughness={0.2} />
               </mesh>
-              {/* Lamp housing on the wall top, lens facing the track. */}
+              {/* An amber warning lamp on the wall top above it. */}
               <group position={[0, TRACK.wallHeight + 0.1, side * (wid / 2 + 0.04 + 0.08)]}>
                 <mesh castShadow>
                   <boxGeometry args={[0.3, 0.2, 0.16]} />
@@ -899,7 +918,7 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
                 </mesh>
                 <mesh position={[0, 0, -side * 0.085]}>
                   <sphereGeometry args={[0.07, 24, 12]} />
-                  <meshStandardMaterial color="#ff5560" emissive="#ff1f2f" emissiveIntensity={3} toneMapped={false} />
+                  <meshStandardMaterial color="#ffb000" emissive="#ff9a00" emissiveIntensity={3} toneMapped={false} />
                 </mesh>
               </group>
             </group>
@@ -1560,9 +1579,10 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
           const m = refs.current[i];
           if (!m) return;
           const { pos, quat } = race.marblePose(i, tt);
-          m.position.set(...pos);
+          const drained = race.drainPose(i, tt);
+          m.position.set(...(drained ? drained.pos : pos));
           m.quaternion.set(...quat);
-          m.visible = !race.dqBy(i, tt);
+          m.visible = drained ? drained.visible : !race.dqBy(i, tt);
         });
       }),
     [race],
@@ -1571,8 +1591,9 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
     <>
       {race.marbles.map((_, i) => {
         const { pos, quat } = race.marblePose(i, t);
+        const drained = race.drainPose(i, t);
         return (
-          <mesh key={i} ref={(el) => void (refs.current[i] = el)} position={pos} quaternion={quat} visible={!race.dqBy(i, t)} castShadow receiveShadow>
+          <mesh key={i} ref={(el) => void (refs.current[i] = el)} position={drained ? drained.pos : pos} quaternion={quat} visible={drained ? drained.visible : !race.dqBy(i, t)} castShadow receiveShadow>
             <sphereGeometry args={[race.data.marbleRadius, 96, 64]} />
             <meshPhysicalMaterial
               map={tex[i].map}
