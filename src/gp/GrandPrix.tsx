@@ -10,7 +10,7 @@ import { Intro } from "./Intro";
 // P1 live on the left (top, in portrait), and on the right a slow-motion
 // replay, the lift tower, or action elsewhere, each with its own clock.
 
-export const GrandPrix = ({ id, layout }: { id: string; layout: Layout }) => {
+export const GrandPrix = ({ id, layout, clean = false }: { id: string; layout: Layout; clean?: boolean }) => {
   const race = getRace(id);
   const video = useCurrentFrame();
   const { width, height } = useVideoConfig();
@@ -57,7 +57,7 @@ export const GrandPrix = ({ id, layout }: { id: string; layout: Layout }) => {
       ) : (
         <Stage race={race} view={race.mainView} layout={layout} frame={frame} width={width} height={height} />
       )}
-      <Overlay race={race} frame={frame} t={t} section={section} shot={shot} layout={layout} width={width} height={height} split={split} />
+      {!clean && <Overlay race={race} frame={frame} t={t} section={section} shot={shot} layout={layout} width={width} height={height} split={split} />}
       {audio}
     </AbsoluteFill>
   );

@@ -149,6 +149,23 @@ Debug switches for `--round` runs:
 - `GP_PROBE=27.5,-1`: drops a single marble at a point.
 - `GP_FALL=1`: reports any marble that goes through the floor, with its last second.
 
+### The factory
+
+One command makes a whole season, unattended, and resumes where it stopped after a crash or a reboot:
+
+```bash
+npm run factory -- --season 2                       # sweep, bake, render, metadata, thumbnails
+nohup scripts/factory-loop.sh 2 > out/factory/loop.log 2>&1 &   # season after season, nonstop
+```
+
+- **Sweep:** season N tries seeds (N−1)·100+1 … +8 on every circuit in parallel and picks per circuit the closest finish with nobody stuck and one or two drains.
+- **Bake:** `scripts/season.mjs` with those seeds (`GP_SEEDS`); the season's data is kept in `out/factory/s<N>/data`.
+- **Render:** per round the 4K video (`GP-<id>-4k`, dpr 1) and the vertical Short (`GP-<id>-short`: the final lap to the results), each checked for garbled frames and rendered again once if needed, then encoded for upload. It stops when less than 12 GB is free.
+- **Metadata:** `youtube.json` / `youtube.md` per round: a spoiler-free title, a description with chapters, the results below a spoiler line, tags, and the Short's title and description.
+- **Thumbnails:** a clean 1080p still of the pack in the first lap, graded, with the Grand Prix name (`scripts/thumbnail.py`).
+
+Output: `out/factory/s<N>/<round>/{video.mp4, short.mp4, youtube.md, youtube.json, thumb.jpg}`. About 9 hours and 7 GB per season on an M1 Pro.
+
 ### Pitfalls found the hard way
 
 | Symptom | Cause | Fix |

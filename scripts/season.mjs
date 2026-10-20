@@ -10,7 +10,7 @@
 // out of order, so the composition only looks things up by frame number.
 import RAPIER from "@dimforge/rapier3d-compat";
 import { Matrix4, PerspectiveCamera, Quaternion, Vector3 } from "three";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadOutline, marbleize, SCALE, SLOPE } from "./circuit.mjs";
@@ -26,7 +26,9 @@ import { BANK_PIVOT, buildTrackMesh, liftCleatPose, pointInFrame, pointOnTrack, 
 
 // --- Season ------------------------------------------------------------------------
 // The circuits and their designs live in src/gp/circuits/ (one file each).
-const ROUNDS = CIRCUITS;
+// GP_SEEDS=<file.json> ({ "r1-monaco": 7, ... }) overrides the design files' seeds (the factory's picks).
+const SEED_OVERRIDE = process.env.GP_SEEDS ? JSON.parse(readFileSync(process.env.GP_SEEDS, "utf8")) : {};
+const ROUNDS = CIRCUITS.map((c) => (SEED_OVERRIDE[c.id] !== undefined ? { ...c, seed: SEED_OVERRIDE[c.id] } : c));
 const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 
 // Each marble carries a national flag (drawn in src/gp/flags.ts); `color` is a

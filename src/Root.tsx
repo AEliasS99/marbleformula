@@ -1,5 +1,7 @@
 import { Composition, Folder } from "remotion";
 import { GrandPrix } from "./gp/GrandPrix";
+import { GrandPrixShort } from "./gp/Short";
+import { shortRange } from "./gp/short-range";
 import { rounds } from "./gp/race";
 import { MarbleRace } from "./tower/MarbleRace";
 import { fps, timeline } from "./tower/race";
@@ -28,6 +30,16 @@ export const Root = () => (
             width={3840}
             height={2160}
             defaultProps={{ id: r.id, layout: "landscape" as const }}
+          />
+          {/* The Short: final lap to results, 9:16 (scripts/factory.mjs renders it with every round). */}
+          <Composition
+            id={`GP-${r.id}-short`}
+            component={GrandPrixShort}
+            durationInFrames={shortRange(r as unknown as Parameters<typeof shortRange>[0]).frames}
+            fps={r.fps}
+            width={1080}
+            height={1920}
+            defaultProps={{ id: r.id }}
           />
           <Composition
             id={`GP-${r.id}-vertical`}
