@@ -665,11 +665,11 @@ function StairBay({ race, t, elevator, tex }: { race: Race; t: number; elevator:
     <group>
       <instancedMesh ref={mesh} args={[undefined, undefined, loop.count]} castShadow receiveShadow frustumCulled={false}>
         <boxGeometry args={[L - 0.06, STAIR.plate, W - 0.06]} />
-        <meshStandardMaterial color={night ? "#1d2027" : "#e9ebef"} metalness={0.6} roughness={0.4} />
+        <meshStandardMaterial color={night ? "#565d6b" : "#e9ebef"} emissive={night ? "#1a2a40" : "#000000"} emissiveIntensity={night ? 1.2 : 0} metalness={0.4} roughness={0.35} />
       </instancedMesh>
       <instancedMesh ref={edges} args={[undefined, undefined, loop.count]} frustumCulled={false}>
-        <boxGeometry args={[0.08, STAIR.plate + 0.01, W - 0.1]} />
-        <meshStandardMaterial color="#ffcc00" emissive="#ffb300" emissiveIntensity={night ? 3 : 0.6} toneMapped={!night} />
+        <boxGeometry args={[0.14, STAIR.plate + 0.04, W - 0.06]} />
+        <meshStandardMaterial color="#ffcc00" emissive="#ffb300" emissiveIntensity={night ? 5 : 0.8} toneMapped={!night} />
       </instancedMesh>
       {/* The shaft as an open frame (its walls are physics only: solid, they hid the stair from
           every camera): corner posts, a rail along the front at grid level and a lit lip at the entrance. */}

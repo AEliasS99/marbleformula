@@ -176,6 +176,10 @@ const BUMP = { amp: 0.13, length: 1.6, count: 4 };
 // Crests at the bends' apexes: a mini kicker (run-up, lip, small drop): fast marbles take off in the bend.
 const VORTEX_SWIRL = { accel: 9, share: 0.9 };
 // Obstacles that get their own locked camera (the small ones are seen in passing: too many cuts otherwise).
+// Long enough that its tip sweeps to within 0.4 of each wall: whichever side it closes, the marbles go to the other bay.
+const FIN_CHANNEL = 2.2;
+const FLIPPER = { length: 4.0, amp: (25 * Math.PI) / 180, period: 2.4 };
+const STAIR_CAM = { back: 11, above: 6, fov: 46 };
 const CAM_FEATURES = ["vortex", "spinner", "hammer", "turntable", "rollers", "pusher", "jump", "drop", "lift", "fan", "bumpers", "pegs", "splitter"];
 const TUBES = { minCurv: 0.17, height: 1.7 };
 const LAUNCHES = { max: 2, gap: 12 };
@@ -794,6 +798,32 @@ function buildObstacles(course, sync = {}) {
     const s = frameAt(course.END - ELEVATOR.funnel / 2 + 0.6);
     statics.push({ kind: "divider", shape: "box", pos: pointInFrame(s, 0, 0.45).map(r3), quat: quatArr(frameQuat(s)), size: [ELEVATOR.funnel - 1.2, 0.9, 0.1], restitution: 0.3 });
     cylinder("divider", course.END - ELEVATOR.funnel + 1.0, 0, 0.12, 0.9, 0.3);
+    // Guide fins from both walls into a central channel (FIN_CHANNEL wide, three marbles: never
+    // narrow enough to clog) ahead of the distributor flap: the run-in's curve, banking or a machine
+    // just before it sent everyone along one wall, past the flap, into one bay.
+    const a = course.END - ELEVATOR.funnel - 9;
+    const b = course.END - ELEVATOR.funnel - 4.5;
+    for (let u = a; u < b; u += 0.5) {
+      const k0 = (u - a) / (b - a);
+      const k1 = (u + 0.5 - a) / (b - a);
+      for (const side of [-1, 1]) {
+        const s0 = frameAt(u);
+        const w0 = (s0.w ?? TRACK.width / 2) - 0.05;
+        const l0 = side * (w0 - (w0 - FIN_CHANNEL / 2) * k0);
+        const l1 = side * (w0 - (w0 - FIN_CHANNEL / 2) * k1);
+        const p0 = v3(pointInFrame(s0, l0, 0.45));
+        const p1 = v3(pointInFrame(frameAt(u + 0.5), l1, 0.45));
+        const mid = p0.clone().add(p1).multiplyScalar(0.5);
+        const dir = p1.clone().sub(p0);
+        const len = dir.length();
+        dir.normalize();
+        const up = v3(s0.n);
+        const z = new Vector3().crossVectors(dir, up).normalize();
+        const y = new Vector3().crossVectors(z, dir).normalize();
+        const q = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(dir, y, z));
+        statics.push({ kind: "fin", shape: "box", pos: arr(mid), quat: quatArr(q), size: [len + 0.06, 0.9, 0.1], restitution: 0.3 });
+      }
+    }
   }
   // Lane dividers in the start area: thin walls between the ten lanes.
   const laneW = (2 * START.half) / GRID.lanes;
@@ -925,6 +955,24 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     const ev = { cycles: [], cabinY: [], doors: [], rides: [] };
     return { EV, evFwd, evRight, evQuat, evCentre, loop, plates, at, ev };
   });
+  // The distributor: a flap hinged on the bays' divider nose, swinging ±FLIPPER.amp, so the
+  // field splits between the two stairs (the run-in's curve sent nearly everyone to one bay).
+  const flipper = (() => {
+    if (!course.END || course.elevators.length < 2) return null;
+    const u = course.END - ELEVATOR.funnel + 1.0;
+    const s = course.frameAt(u);
+    const pos = pointInFrame(s, 0, 0.45);
+    const base = frameQuat(s);
+    const rec = { pos: pos.map(r3), quat: quatArr2(base), length: FLIPPER.length, height: 0.9, amp: FLIPPER.amp, period: FLIPPER.period };
+    const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...pos).setRotation(rot(rec.quat)));
+    world.createCollider(RAPIER.ColliderDesc.cuboid(FLIPPER.length / 2, 0.45, 0.06).setTranslation(-FLIPPER.length / 2, 0, 0).setFriction(0.1).setRestitution(0.2).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK), body);
+    const quatAt = (t) => {
+      const a = FLIPPER.amp * Math.sin((2 * Math.PI * t) / FLIPPER.period);
+      const q = new Quaternion(...rec.quat).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), a));
+      return rot([q.x, q.y, q.z, q.w]);
+    };
+    return { rec, body, quatAt };
+  })();
   let stairStop = null; // the stairs stop when everyone still racing is on the last lap
   const riding = MARBLES.map(() => null); // the bay a marble is riding up, and since when
   createMachines(PHYSICS_ORDER.beforeStatics);
@@ -1223,6 +1271,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     for (let s = 0; s < SUBSTEPS; s++) {
       const t = (step + 1) * DT;
       gateBody.setNextKinematicRotation(gateRotation(t));
+      if (flipper) flipper.body.setNextKinematicRotation(flipper.quatAt(t));
       const st = stairStop === null ? t : Math.min(t, stairStop);
       for (const lift of lifts)
         lift.plates.forEach((body, k) => {
@@ -1553,6 +1602,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     switches: obstacles.switches,
     regroups: machines.regroup.export(),
     elevators: elevatorsData,
+    flipper: flipper ? flipper.rec : null,
     laps,
     vortices: obstacles.vortices,
     swings: obstacles.swings,
@@ -1701,6 +1751,28 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
 
   // Shot recipes: (frame) → { pos, target, fov }. Built from the smoothed focus.
   const liftSpots = {};
+  // How high the riders are on the stair (the higher bay), smoothed over ~1.5 s: the stair camera's height.
+  const stairH = (() => {
+    const n = lastFrame + 1;
+    const raw = Array.from({ length: n }, (_, f) => Math.max(0, ...elevators.map((e) => e.cabinY[Math.min(f, e.cabinY.length - 1)] ?? 0)));
+    const sig = sec(1.5);
+    const w = Math.ceil(sig * 3);
+    // Box-filter approximations are enough here: three passes of a moving average.
+    let a = raw;
+    for (let pass = 0; pass < 3; pass++) {
+      const out = new Array(n);
+      let acc = 0;
+      const r = Math.round(w / 3);
+      for (let i = 0; i < n; i++) {
+        acc += a[i] - (i - 2 * r - 1 >= 0 ? a[i - 2 * r - 1] : 0);
+        const lo = Math.max(0, i - 2 * r);
+        out[Math.max(0, i - r)] = acc / (i - lo + 1);
+      }
+      for (let i = n - r; i < n; i++) out[i] = out[n - r - 1] ?? a[i];
+      a = out;
+    }
+    return a;
+  })();
   const recipes = {
     chase: (f, sh) => {
       // Set back and up: the pack and the track ahead of it in one frame (closer where the circuit is packed: `near`).
@@ -1739,52 +1811,15 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     finish: (f, sh) => ({ pos: sh.cam, target: focus[f], fov: Math.max(40, Math.min(50, fovFor(sh.cam, f))) }),
     // The run into the lift: one fixed wide camera over the bays, aimed between the bays and the pack.
     approach: (f, sh) => ({ pos: sh.cam, target: v3(sh.aim).lerp(focus[f], 0.35), fov: 50 }),
-    elevator: (f, sh) => {
-      // Beside the tower, riding up with whichever cabin is moving (the higher one if both are).
-      const at = (e, fr) => e.cabinY[Math.max(0, Math.min(fr, e.cabinY.length - 1))] ?? 0;
-      let elevator = elevators[sh.cabin ?? 0];
-      let bestScore = -Infinity;
-      for (const e of sh.fixed ? [] : elevators) {
-        const y = at(e, f);
-        const dy = at(e, f + 2) - at(e, f - 2);
-        // Rising first, then one unloading at the top; never the empty cabin coming back down.
-        const score = (dy > 0.02 ? 3 : dy < -0.02 ? -3 : 0) + y / Math.max(1, e.lift);
-        if (score > bestScore) {
-          bestScore = score;
-          elevator = e;
-        }
-      }
-      const c = v3(elevator.center).add(new Vector3(0, elevator.cabinY[Math.min(f, elevator.cabinY.length - 1)] ?? 0, 0));
-      const fwd = v3(elevator.fwd);
-      const right = new Vector3(-fwd.z, 0, fwd.x);
-      // The camera stays on one side of the tower for the whole shot (the side of the cabin the shot began with)
-      // and only pans and rises to the cabin that is moving: switching sides mid-shot dragged it through the tower.
-      const home = elevators[sh.cabin ?? 0];
-      const side = home.lat < 0 ? -1 : 1;
-      const towerCentre = elevators.reduce((acc, e) => acc.add(v3(e.center)), new Vector3()).multiplyScalar(1 / elevators.length);
-      const halfSpan = Math.max(...elevators.map((e) => Math.abs(e.lat) + e.width / 2));
-      // Square to the tower's outer face, midway between its fore and aft columns, so no column blocks the cabin.
-      // Where along the tower to stand: square to it unless a building would block the view
-      // of a cabin at the bottom (a pit building beside the tower filled half the frame);
-      // chosen once per side so it never jumps during a shot.
-      const key = `${side}`;
-      if (!liftSpots[key]) {
-        const bottom = v3(home.center).add(new Vector3(0, 0.7, 0));
-        const spots = [];
-        for (const rise of [2.3, 4.5, 7, 9]) for (const out of [8.5, 7.0, 5.0, 3.6]) for (const along of [0, 4, -4, 8, -8]) spots.push({ rise, out, along });
-        const at = ({ rise, out, along }) => new Vector3(towerCentre.x, bottom.y + rise, towerCentre.z).addScaledVector(right, side * (halfSpan + out)).addScaledVector(fwd, along);
-        liftSpots[key] =
-          spots.find((sp) => {
-            const p = at(sp);
-            if (venueClearance(venueGround, [p.x, p.y, p.z]) < 0.8) return false;
-            // The cabin and the frame below it (down to 1.4 under its floor) must be in clear view.
-            return [0, -0.6, -1.4].every((dy) => !venueBlocks(venueGround, [p.x, p.y, p.z], [bottom.x, bottom.y + dy, bottom.z]));
-          }) ?? spots[0];
-      }
-      const spot = liftSpots[key];
-      const pos = new Vector3(towerCentre.x, c.y + 0.7 + spot.rise, towerCentre.z).addScaledVector(right, side * (halfSpan + spot.out)).addScaledVector(fwd, spot.along);
-      const target = c.clone().add(new Vector3(0, 0.7, 0));
-      return { pos, target, fov: 44 };
+    // The stair, from the front and far back: both bays whole in the frame, the camera only rising
+    // slowly with the riders (a smoothed height); never from the side, never swinging between bays.
+    elevator: (f) => {
+      const h = stairH[Math.max(0, Math.min(stairH.length - 1, f))];
+      const fwd = v3(elevators[0].fwd);
+      const c = elevators.reduce((acc, e) => acc.add(v3(e.center)), new Vector3()).multiplyScalar(1 / elevators.length);
+      const y = c.y + Math.max(2.5, h + 1.0);
+      const pos = c.clone().addScaledVector(fwd, -STAIR_CAM.back).setY(y + STAIR_CAM.above);
+      return { pos, target: new Vector3(c.x, y, c.z), fov: STAIR_CAM.fov };
     },
     onboard: (f, sh) => {
       const i = sh.marble;
@@ -2148,7 +2183,14 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   };
   const camForKey = (key, f) => {
     // P1 riding the lift: the crane on its cabin (a chase camera would sit in the tower's frame).
-    if (key[0] === "c") return recipes.elevator(f, { cabin: Number(key.slice(1)), fixed: true });
+    if (key[0] === "c") {
+      // P1 on the stair: a closer frontal view of its own bay (the right half has the wide one).
+      const e = elevators[Number(key.slice(1))];
+      const h = e.cabinY[Math.min(f, e.cabinY.length - 1)] ?? 0;
+      const c = v3(e.center);
+      const y = c.y + Math.max(1.5, h + 0.5);
+      return { pos: c.clone().addScaledVector(v3(e.fwd), -7).setY(y + 1.5), target: new Vector3(c.x, y, c.z), fov: 40 };
+    }
     const i = Number(key.slice(1));
     const p = posOf(f, i);
     const fr = frameAt(uLoc(f, i));
@@ -2263,7 +2305,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
         const lk = left.keys[j];
         return lk[0] === "c" ? `c${1 - Number(lk.slice(1))}` : `c${sp.cabin}`;
       });
-      const right = subjectCams(want, sp.start, sec(2.5), camForKey);
+      const right = subjectCams(want.map(() => "stair"), sp.start, sec(2.5), (_, f) => recipes.elevator(f));
       sp.cams = right.pos.map((p, k) => [...arr(p), ...arr(right.target[k]), r3(right.fov[k])]);
     } else if (sp.kind === "action") {
       sp.cams = [];

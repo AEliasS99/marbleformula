@@ -151,3 +151,33 @@ export function Switches({ race, t }: { race: Race; t: number }) {
     </>
   );
 }
+
+type Flipper = { pos: Vec3; quat: Quat; length: number; height: number; amp: number; period: number };
+
+/** The distributor flap on the stair bays' divider nose: it swings side to side, sending the field to both stairs. */
+export function DistributorFlap({ race, t }: { race: Race; t: number }) {
+  const view = useView(race);
+  const fl = (race.data as unknown as { flipper?: Flipper | null }).flipper ?? null;
+  const ref = useRef<THREE.Group | null>(null);
+  const angle = (tt: number) => (fl ? fl.amp * Math.sin((2 * Math.PI * (tt / race.fps)) / fl.period) : 0);
+  useEffect(() => subframe.subscribe((vf) => ref.current?.rotation.set(0, angle(view.tAt(vf)), 0)), [race]);
+  if (!fl) return null;
+  return (
+    <group position={fl.pos} quaternion={fl.quat}>
+      <group ref={ref} rotation={[0, angle(t), 0]}>
+        <mesh position={[-fl.length / 2, 0, 0]} castShadow>
+          <boxGeometry args={[fl.length, fl.height, 0.12]} />
+          <meshStandardMaterial color="#ffcc00" roughness={0.35} metalness={0.3} />
+        </mesh>
+        <mesh position={[-fl.length / 2, fl.height / 2 + 0.03, 0]}>
+          <boxGeometry args={[fl.length, 0.05, 0.14]} />
+          <meshStandardMaterial color="#ffffff" emissive="#ffcc00" emissiveIntensity={2.5} toneMapped={false} />
+        </mesh>
+      </group>
+      <mesh position={[0, 0.1, 0]} castShadow>
+        <cylinderGeometry args={[0.16, 0.16, 1.2, 24]} />
+        <meshStandardMaterial color="#2b2e35" metalness={0.8} roughness={0.3} />
+      </mesh>
+    </group>
+  );
+}

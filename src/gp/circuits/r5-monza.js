@@ -36,6 +36,5 @@ export default {
     ["bumps", 400.58],
     ["pusher", 416],
     ["pusher", 424.358],
-    ["turntable", 434.971],
   ],
 };
