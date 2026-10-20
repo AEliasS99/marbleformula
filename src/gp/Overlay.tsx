@@ -428,7 +428,7 @@ function SplitGraphics({ race, split, f, frame, s, layout, width, height }: { ra
     right = top(
       panes[1],
       <>
-        <Chip s={s} size={28}>THE LIFT TOWER</Chip>
+        <Chip s={s} size={28}>THE STAIRWAY</Chip>
         {riding.map((c) => (
           <Chip key={c.cabin} s={s} bg={card} size={20}>
             <span style={{ width: 30 * s, height: 30 * s, borderRadius: 15 * s, background: yellow, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900 }}>{c.cabin + 1}</span>

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useView } from "./view";
+import { STAIR, stairLocal, stairLoop, stairTime } from "./stair.js";
+import { isNight } from "./look";
 import { subframe } from "./subframe";
 import { TRACK } from "./trackMesh.js";
 import { agitatorArm, agitatorQuat, vortexFrame, vortexGeometry, vortexY } from "./vortex.js";
@@ -43,7 +45,8 @@ type Elevator = {
   cabinY: number[];
   doors: [number, number][];
   cycles: { closeAt: number; riseAt?: number; topAt?: number; openAt?: number }[];
-  bar: { pos: Vec3; quat: Quat; size: Vec3; lift: number };
+  bar?: { pos: Vec3; quat: Quat; size: Vec3; lift: number };
+  stopAt?: number | null;
 };
 type Regroup = { u: number; pos: Vec3; quat: Quat; size: Vec3; lift: number; time: number; firstFrame: number | null; openFrame: number | null; lifts?: number[] };
 
@@ -205,7 +208,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
   const rollers = data.rollers ?? [];
   const fans = data.fans ?? [];
   const groundY = useMemo(() => Math.min(...data.samples.map((s) => s.p[1])) - 1.4, [data]);
-  const tex = useMemo(() => ({ hazard: hazardTex(), bar: hazardTex([1, 1]), hazardV: hazardTex([1, 6]), knurl: knurlTex(), sign: signTex("REGROUP"), lift: signTex("LIFT TOWER") }), []);
+  const tex = useMemo(() => ({ hazard: hazardTex(), bar: hazardTex([1, 1]), hazardV: hazardTex([1, 6]), knurl: knurlTex(), sign: signTex("REGROUP"), lift: signTex("STAIRWAY") }), []);
   const bowls = useMemo(
     () =>
       vortices.map((v) => {
@@ -351,9 +354,9 @@ export function Machines({ race, t }: { race: Race; t: number }) {
         );
       })}
 
-      {elevators.length > 0 && <LiftTower elevators={elevators} groundY={groundY} tex={tex} />}
+
       {elevators.map((e, i) => (
-        <LiftCabin key={`e${i}`} race={race} t={t} elevator={e} groundY={groundY} tex={tex} />
+        <StairBay key={`e${i}`} race={race} t={t} elevator={e} tex={tex} />
       ))}
 
       {regroups.map((g, i) => {
@@ -533,174 +536,6 @@ export function Machines({ race, t }: { race: Race; t: number }) {
   );
 }
 
-/** One lift cabin with its tower, doors, cables and the bar across its bay. */
-function LiftCabin({ race, t, elevator, groundY, tex }: { race: Race; t: number; elevator: Elevator; groundY: number; tex: { bar: THREE.Texture; knurl: THREE.Texture; lift: THREE.Texture; hazard: THREE.Texture } }) {
-  const view = useView(race);
-  const W2 = TRACK.width / 2;
-  void W2;
-  const cabinRef = useRef<THREE.Group | null>(null);
-  const backDoorRef = useRef<THREE.Group | null>(null);
-  const frontDoorRef = useRef<THREE.Group | null>(null);
-  const evBarRef = useRef<THREE.Group | null>(null);
-  // The boom hinges at the bay's outer edge (local z: across the track) and swings up to 85°.
-  const hingeSide = elevator.lat < 0 ? -1 : 1;
-  const hingeZ = (hingeSide * elevator.bar.size[2]) / 2;
-  const boomAngle = (open: number) => (85 * Math.PI) / 180 * Math.min(1, Math.max(0, open));
-  const cableRefs = useRef<(THREE.Mesh | null)[]>([]);
-  /** Cabin frame: local x forward (down the floor's slope), y the floor normal, z right. */
-  const evFrame = useMemo(() => {
-    const fwd = new THREE.Vector3(...elevator.fwd).normalize();
-    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-    const yaw = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(fwd, new THREE.Vector3(0, 1, 0), right));
-    const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.atan(elevator.slope));
-    return { fwd, right, quat: yaw.multiply(tilt) };
-  }, [elevator]);
-  const evAt = (t: number) => {
-    const f = Math.max(0, Math.min(elevator.cabinY.length - 1, Math.floor(t)));
-    const f1 = Math.min(elevator.cabinY.length - 1, f + 1);
-    const a = Math.min(1, Math.max(0, t - f));
-    const d = elevator.doors;
-    return { h: elevator.cabinY[f] + (elevator.cabinY[f1] - elevator.cabinY[f]) * a, back: d[f][0] + (d[f1][0] - d[f][0]) * a, front: d[f][1] + (d[f1][1] - d[f][1]) * a };
-  };
-  const evBarOpen = (t: number) => {
-    // The bar is up while the cabin loads: cabin at the bottom with its back door down.
-    const p = evAt(t);
-    return p.h < 0.01 ? p.back : 0;
-  };
-  const applyElevator = (t: number) => {
-    const p = evAt(t);
-    cabinRef.current?.position.set(elevator.center[0], elevator.center[1] + p.h, elevator.center[2]);
-    for (const [ref, x, open] of [[backDoorRef, -elevator.length / 2 + 0.06, p.back], [frontDoorRef, elevator.length / 2 - 0.06, p.front]] as const) {
-      ref.current?.position.set(x, (elevator.wall * (1 - open)) / 2, 0);
-      ref.current?.scale.set(1, Math.max(0.001, 1 - open), 1);
-    }
-    evBarRef.current?.rotation.set(hingeSide * boomAngle(evBarOpen(t)), 0, 0);
-    // Cables from the cabin's roof corners up to the head frame: scale to the remaining height.
-    const remaining = Math.max(0.05, elevator.lift + 2.0 - p.h);
-    cableRefs.current.forEach((c) => {
-      if (!c) return;
-      c.scale.set(1, remaining, 1);
-      c.position.y = elevator.wall + remaining / 2;
-    });
-  };
-  useEffect(() => subframe.subscribe((vf) => applyElevator(view.tAt(vf))), [race, elevator]);
-  const p = evAt(t);
-        const L = elevator.length;
-        const W = elevator.width;
-        const H = elevator.wall;
-        void groundY;
-  return (
-          <group>
-            {/* The cabin: a sloped floor plate, clear side walls in chrome frames, two sliding doors, cables. */}
-            <group ref={cabinRef} position={[elevator.center[0], elevator.center[1] + p.h, elevator.center[2]]} quaternion={evFrame.quat}>
-              <mesh position={[0, -0.06, 0]} castShadow receiveShadow>
-                <boxGeometry args={[L + 0.2, 0.12, W]} />
-                <meshStandardMaterial map={tex.knurl} metalness={0.7} roughness={0.4} />
-              </mesh>
-              {/* Open steel sides (no glass: it hid the riders and tinted the doors pink): a kick plate,
-                  two rails and the top rail, posts at the ends and the middle. The walls are colliders only. */}
-              {[-1, 1].map((e) => (
-                <group key={e} position={[0, 0, e * (W / 2 - 0.05)]}>
-                  <mesh position={[0, 0.16, 0]} castShadow>
-                    <boxGeometry args={[L + 0.2, 0.32, 0.05]} />
-                    <meshStandardMaterial {...steel} />
-                  </mesh>
-                  {[H * 0.42, H * 0.72, H].map((y) => (
-                    <mesh key={y} position={[0, y, 0]} castShadow>
-                      <boxGeometry args={[L + 0.3, 0.07, 0.09]} />
-                      <meshStandardMaterial {...chrome} />
-                    </mesh>
-                  ))}
-                  {[-L / 2, 0, L / 2].map((x) => (
-                    <mesh key={x} position={[x, H / 2, 0]} castShadow>
-                      <boxGeometry args={[0.1, H, 0.12]} />
-                      <meshStandardMaterial {...chrome} />
-                    </mesh>
-                  ))}
-                </group>
-              ))}
-              {/* The doors: yellow barred gates that sink into a slot in the floor (scaled to what is above it,
-                  so they never poke out under the cabin). */}
-              {[
-                { ref: backDoorRef, x: -L / 2 + 0.06, open: p.back },
-                { ref: frontDoorRef, x: L / 2 - 0.06, open: p.front },
-              ].map((d, k) => (
-                <group key={k} ref={d.ref as unknown as React.Ref<THREE.Group>} position={[d.x, (H * (1 - d.open)) / 2, 0]} scale={[1, Math.max(0.001, 1 - d.open), 1]}>
-                  {Array.from({ length: Math.max(3, Math.round((W - 0.1) / 0.32)) }, (_, j) => {
-                    const n = Math.max(3, Math.round((W - 0.1) / 0.32));
-                    const z = -(W - 0.3) / 2 + ((W - 0.3) * j) / (n - 1);
-                    return (
-                      <mesh key={j} position={[0, 0, z]}>
-                        <boxGeometry args={[0.06, H, 0.06]} />
-                        <meshStandardMaterial color="#ffcc00" roughness={0.4} metalness={0.2} />
-                      </mesh>
-                    );
-                  })}
-                  <mesh position={[0, H / 2 - 0.05, 0]}>
-                    <boxGeometry args={[0.1, 0.1, W - 0.1]} />
-                    <meshStandardMaterial map={tex.hazard} roughness={0.45} />
-                  </mesh>
-                  <mesh position={[0, 0, 0]}>
-                    <boxGeometry args={[0.08, 0.08, W - 0.1]} />
-                    <meshStandardMaterial color="#1b1c20" roughness={0.5} />
-                  </mesh>
-                </group>
-              ))}
-              {/* Roof ring with a lit LED strip, a cross-beam the cables hang from, hazard edges on the floor, and the cabin's number. */}
-              {[-1, 1].map((e) => (
-                <mesh key={`led${e}`} position={[0, H - 0.02, e * (W / 2 - 0.12)]}>
-                  <boxGeometry args={[L + 0.1, 0.04, 0.04]} />
-                  <meshStandardMaterial color="#dff6ff" emissive="#9fe7ff" emissiveIntensity={2.2} toneMapped={false} />
-                </mesh>
-              ))}
-              {[-1, 1].map((x) => (
-                <mesh key={`beam${x}`} position={[x * (L / 2 - 0.3), H + 0.06, 0]} castShadow>
-                  <boxGeometry args={[0.14, 0.12, W + 0.2]} />
-                  <meshStandardMaterial {...steel} />
-                </mesh>
-              ))}
-              {[-1, 1].map((e) => (
-                <mesh key={`edge${e}`} position={[0, 0.006, e * (W / 2 - 0.2)]}>
-                  <boxGeometry args={[L, 0.012, 0.16]} />
-                  <meshStandardMaterial map={tex.hazard} roughness={0.5} />
-                </mesh>
-              ))}
-              <mesh position={[0, H * 0.62, (elevator.lat < 0 ? -1 : 1) * (W / 2 + 0.02)]} rotation-y={elevator.lat < 0 ? Math.PI : 0}>
-                <planeGeometry args={[0.7, 0.7]} />
-                <meshStandardMaterial map={numberTex(elevator.lat < 0 ? 1 : 2)} roughness={0.4} transparent />
-              </mesh>
-              {[-1, 1].map((e) =>
-                [-1, 1].map((g) => (
-                  <mesh key={`${e}${g}`} ref={(el) => void (cableRefs.current[(e + 1) + (g + 1) / 2] = el)} position={[e * (L / 2 - 0.3), H + (elevator.lift + 2 - p.h) / 2, g * (W / 2 - 0.3)]}>
-                    <cylinderGeometry args={[0.025, 0.025, 1, 8]} />
-                    <meshStandardMaterial {...dark} />
-                  </mesh>
-                )),
-              )}
-            </group>
-            {/* The holding bar on the track before the dock: a boom barrier hinged on its outer post. It swings
-                up to vertical while the cabin loads (lifted straight up, it looked as if the marbles rolled through it). */}
-            <group position={elevator.bar.pos} quaternion={elevator.bar.quat}>
-              <group ref={evBarRef} position={[0, 0, hingeZ]} rotation={[hingeSide * boomAngle(evBarOpen(t)), 0, 0]}>
-                <mesh position={[0, 0, -hingeZ]} castShadow>
-                  <boxGeometry args={elevator.bar.size} />
-                  <meshStandardMaterial map={barStripes(elevator.bar.size[2])} roughness={0.4} />
-                </mesh>
-              </group>
-              {/* The hinge post, with a counterweight box. */}
-              <mesh position={[0, 0.2, hingeZ + hingeSide * 0.18]} castShadow>
-                <boxGeometry args={[0.3, 1.4, 0.3]} />
-                <meshStandardMaterial {...dark} />
-              </mesh>
-              <mesh position={[0, 0.95, hingeZ + hingeSide * 0.18]}>
-                <boxGeometry args={[0.34, 0.12, 0.34]} />
-                <meshStandardMaterial map={tex.hazard} roughness={0.45} />
-              </mesh>
-            </group>
-          </group>
-  );
-}
-
 /**
  * One tower frame for all the cabins side by side: lattice columns only at the
  * outer corners (fore and aft of the cabins, outside the track), braces on the
@@ -777,6 +612,86 @@ function LiftTower({ elevators, groundY, tex }: { elevators: Elevator[]; groundY
           <meshStandardMaterial map={tex.lift} roughness={0.5} />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+/**
+ * One bay of the endless stair (src/gp/stair.js): the shaft (a front wall up to
+ * grid level, a back wall above the entrance, side walls) and its platforms,
+ * each a dark plate with a lit front edge, moving on the stair's clock.
+ */
+function StairBay({ race, t, elevator, tex }: { race: Race; t: number; elevator: Elevator; tex: { hazard: THREE.Texture } }) {
+  const view = useView(race);
+  const E = elevator as unknown as Parameters<typeof stairLoop>[0] & { stopAt?: number | null };
+  const loop = useMemo(() => stairLoop(E), [elevator]);
+  const frame = useMemo(() => {
+    const fwd = new THREE.Vector3(...elevator.fwd).normalize();
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    const yaw = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(fwd, new THREE.Vector3(0, 1, 0), right));
+    const plate = yaw.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -STAIR.tilt));
+    const c = new THREE.Vector3(...elevator.center);
+    const at = (x: number, y: number, z: number) => c.clone().addScaledVector(fwd, x).add(new THREE.Vector3(0, y, 0)).addScaledVector(right, z);
+    return { fwd, right, yaw, plate, at };
+  }, [elevator]);
+  const mesh = useRef<THREE.InstancedMesh | null>(null);
+  const edges = useRef<THREE.InstancedMesh | null>(null);
+  const m4 = useMemo(() => new THREE.Matrix4(), []);
+  const one = useMemo(() => new THREE.Vector3(1, 1, 1), []);
+  const place = (tt: number) => {
+    const s = stairTime(E, tt / race.fps);
+    for (let k = 0; k < loop.count; k++) {
+      const [x, y, z] = stairLocal(E, loop, k, s);
+      const p = frame.at(x, y - STAIR.plate / 2, z);
+      m4.compose(p, frame.plate, one);
+      mesh.current?.setMatrixAt(k, m4);
+      // The lit edge along the platform's front.
+      const e = frame.at(x + (elevator.length / 2 - 0.05) * Math.cos(STAIR.tilt), y - (elevator.length / 2 - 0.05) * Math.sin(STAIR.tilt), z);
+      m4.compose(e, frame.plate, one);
+      edges.current?.setMatrixAt(k, m4);
+    }
+    if (mesh.current) mesh.current.instanceMatrix.needsUpdate = true;
+    if (edges.current) edges.current.instanceMatrix.needsUpdate = true;
+  };
+  useEffect(() => place(t));
+  useEffect(() => subframe.subscribe((vf) => place(view.tAt(vf))), [race, elevator]);
+  const L = elevator.length;
+  const W = elevator.width;
+  const side = elevator.lat < 0 ? -1 : 1;
+  const night = isNight();
+  const wallMat = night ? { color: "#2b2e35", metalness: 0.8, roughness: 0.35 } : { color: "#dcdfe5", metalness: 0.6, roughness: 0.35 };
+  const frontTop = elevator.lift - elevator.slope * (L / 2) - 0.02;
+  return (
+    <group>
+      <instancedMesh ref={mesh} args={[undefined, undefined, loop.count]} castShadow receiveShadow frustumCulled={false}>
+        <boxGeometry args={[L - 0.06, STAIR.plate, W - 0.06]} />
+        <meshStandardMaterial color={night ? "#1d2027" : "#e9ebef"} metalness={0.6} roughness={0.4} />
+      </instancedMesh>
+      <instancedMesh ref={edges} args={[undefined, undefined, loop.count]} frustumCulled={false}>
+        <boxGeometry args={[0.08, STAIR.plate + 0.01, W - 0.1]} />
+        <meshStandardMaterial color="#ffcc00" emissive="#ffb300" emissiveIntensity={night ? 3 : 0.6} toneMapped={!night} />
+      </instancedMesh>
+      {/* The shaft as an open frame (its walls are physics only: solid, they hid the stair from
+          every camera): corner posts, a rail along the front at grid level and a lit lip at the entrance. */}
+      {[-1, 1].map((ex) =>
+        [-1, 1].map((ez) => {
+          const c = frame.at(ex * (L / 2 + 0.15), (loop.yb + loop.yt) / 2, ez * (W / 2 + 0.1));
+          return (
+            <mesh key={`p${ex}${ez}`} position={c} quaternion={frame.yaw} castShadow>
+              <boxGeometry args={[0.12, loop.yt - loop.yb + 1.2, 0.12]} />
+              <meshStandardMaterial {...wallMat} />
+            </mesh>
+          );
+        }),
+      )}
+      <mesh position={frame.at(L / 2 + 0.15, frontTop, 0)} quaternion={frame.yaw} castShadow>
+        <boxGeometry args={[0.14, 0.1, W + 0.3]} />
+        <meshStandardMaterial {...wallMat} />
+      </mesh>
+      <mesh position={frame.at(-L / 2 - 0.02, 1.1, 0)} quaternion={frame.yaw}>
+        <boxGeometry args={[0.32, 0.12, W + 0.22]} />
+        <meshStandardMaterial map={tex.hazard} roughness={0.5} />
+      </mesh>
     </group>
   );
 }

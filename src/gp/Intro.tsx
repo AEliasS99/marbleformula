@@ -47,7 +47,7 @@ const BLURBS: Record<string, { line: string; danger: number }> = {
   switch: { line: "Two half-width bars rise and sink in turn: take the open half or wait.", danger: 3 },
   crest: { line: "Humps at the apex of the bends: take them fast and you fly.", danger: 3 },
   pusher: { line: "A ram that sweeps across the track.", danger: 4 },
-  elevator: { line: "Two cabins carry the field back up for the next lap. First come, first served.", danger: 2 },
+  elevator: { line: "An endless stair carries the field back up for the next lap: roll on, ride up, roll off.", danger: 1 },
   dq: { line: "A drain by the wall at some machines: roll into it and you drop out of the race.", danger: 5 },
 };
 

@@ -199,7 +199,7 @@ for (const c of circuits) {
     const standings = (d.standings ?? []).slice(0, 5).map((s) => `${s.pos}. ${name(s.marble)} — ${s.points} pts`);
     const cons = (d.constructors ?? []).slice(0, 5).map((s) => `${s.pos}. ${TEAMS.find((t) => t.id === s.team)?.name} — ${s.points} pts`);
     const nice = (l) => l.toLowerCase().replace(/(^|\s)\S/g, (x) => x.toUpperCase()).replace(/^The /, "the ");
-    const obstacles = [...new Set(d.features.map((f) => f.label))].filter((l) => l !== "THE LIFT TOWER").map(nice);
+    const obstacles = [...new Set(d.features.map((f) => f.label))].filter((l) => l !== "THE LIFT TOWER" && l !== "THE STAIRWAY").map(nice);
     const description = [
       `Round ${round} of ${d.rounds} of the Marble Formula Championship 2027: the ${gp} at ${d.info.circuit}. Twenty marbles, ten teams, ${d.info.laps} laps, and a lift tower between every lap.`,
       ``,

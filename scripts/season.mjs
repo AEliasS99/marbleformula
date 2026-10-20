@@ -22,6 +22,7 @@ import { fanGust } from "../src/gp/obstacles/fan.js";
 import { CIRCUITS } from "../src/gp/circuits/index.js";
 import { TEAMS, teamOf } from "../src/gp/teams.js";
 import { introPlan, TEAM_FRAMES } from "../src/gp/intro-plan.js";
+import { STAIR, stairLocal, stairLoop } from "../src/gp/stair.js";
 import { BANK_PIVOT, buildTrackMesh, liftCleatPose, pointInFrame, pointOnTrack, surfaceHeight as surfaceHeightAt, TRACK, TRACK_DEPTH } from "../src/gp/trackMesh.js";
 
 // --- Season ------------------------------------------------------------------------
@@ -174,6 +175,8 @@ const DROP_HEIGHT = 1.1;
 const BUMP = { amp: 0.13, length: 1.6, count: 4 };
 // Crests at the bends' apexes: a mini kicker (run-up, lip, small drop): fast marbles take off in the bend.
 const VORTEX_SWIRL = { accel: 9, share: 0.9 };
+// Obstacles that get their own locked camera (the small ones are seen in passing: too many cuts otherwise).
+const CAM_FEATURES = ["vortex", "spinner", "hammer", "turntable", "rollers", "pusher", "jump", "drop", "lift", "fan", "bumpers", "pegs", "splitter"];
 const TUBES = { minCurv: 0.17, height: 1.7 };
 const LAUNCHES = { max: 2, gap: 12 };
 const FANS = { extra: 3, spacing: 60 };
@@ -706,7 +709,7 @@ export function buildCourse(round) {
       u: END,
     };
   });
-  features.push({ type: "elevator", u: END, label: "THE LIFT TOWER", span: [6, 0.5] });
+  features.push({ type: "elevator", u: END, label: "THE STAIRWAY", span: [6, 0.5] });
   return { props, L, H, loop, samples, sampleAt, frameAt, features, END, uFinish: r3(END - 1.4), elevators, xzAt, startShift: r3(startShift) };
 }
 
@@ -878,8 +881,9 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
   const inVortex = (p) => machines.vortex.inside(p);
   const vortexDamping = MARBLES.map(() => false);
 
-  // The lifts: per bay, a cabin (sloped floor, side walls) and two doors, all
-  // kinematic, plus a bar on the track that holds arrivals while the cabin is away.
+  // The endless stair (src/gp/stair.js): per bay a column of kinematic platforms
+  // rising continuously from below the dock to above the grid, and the shaft's
+  // static walls. No doors, no cabin, no waiting.
   const lifts = course.elevators.map((EV) => {
     const evFwd = new Vector3(...EV.fwd);
     const evRight = new Vector3(-EV.fwd[2], 0, EV.fwd[0]);
@@ -887,54 +891,42 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     const evYaw = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(evFwd, new Vector3(0, 1, 0), evRight));
     const evQuat = evYaw.clone().multiply(evTilt);
     const evCentre = new Vector3(...EV.center);
-    const evUp = new Vector3(0, 1, 0).applyQuaternion(evQuat); // the floor's normal
-    const q = rot([evQuat.x, evQuat.y, evQuat.z, evQuat.w]);
-    const cabinBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(evCentre.x, evCentre.y, evCentre.z).setRotation(q));
-    const cabinPart = (hx, hy, hz, x, y, z) =>
-      world.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz).setTranslation(x, y, z).setFriction(0.6).setRestitution(0.15).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK), cabinBody);
-    cabinPart(EV.length / 2 + 0.1, 0.06, EV.width / 2, 0, -0.06, 0); // floor
-    for (const e of [-1, 1]) cabinPart(EV.length / 2 + 0.1, EV.wall / 2, 0.25, 0, EV.wall / 2, e * (EV.width / 2 + 0.15)); // side walls, deep outward
-    const doorBody = (x) => {
-      const b = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(evCentre.x, evCentre.y, evCentre.z).setRotation(q));
-      // Deep outward (away from the riders): the pile cannot pop a marble through.
-      const out = Math.sign(x) * 0.25;
-      world.createCollider(RAPIER.ColliderDesc.cuboid(0.3, EV.wall / 2, EV.width / 2).setTranslation(x + out, EV.wall / 2, 0).setFriction(0.3).setRestitution(0.15).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK), b);
-      return b;
+    // The platforms tilt forward more than the floor, so riders roll off promptly at the top.
+    const plateQ = evYaw.clone().multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), -STAIR.tilt));
+    const q = rot([plateQ.x, plateQ.y, plateQ.z, plateQ.w]);
+    const yawQ = rot([evYaw.x, evYaw.y, evYaw.z, evYaw.w]);
+    const loop = stairLoop(EV);
+    const at = (x, y, z) => evCentre.clone().addScaledVector(evFwd, x).add(new Vector3(0, y, 0)).addScaledVector(evRight, z);
+    // Platforms: thin plates, their top at the loop point, tilted forward like the grid.
+    const plates = Array.from({ length: loop.count }, (_, k) => {
+      const [x, y, z] = stairLocal(EV, loop, k, 0);
+      const p = at(x, y, z);
+      const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(p.x, p.y, p.z).setRotation(q));
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(EV.length / 2 - 0.03, STAIR.plate / 2, EV.width / 2 - 0.03).setTranslation(0, -STAIR.plate / 2, 0).setFriction(0.6).setRestitution(0.1).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK),
+        body,
+      );
+      return body;
+    });
+    // The shaft: a wall in front up to grid level (riders roll out over its top), a wall behind
+    // above the entrance, the outer wall (open below and above for the platforms' return), and
+    // the wall between the bays (full height).
+    const side = EV.lat < 0 ? -1 : 1;
+    const wall = (x, y0, y1, z, hx, hz) => {
+      const c = at(x, (y0 + y1) / 2, z);
+      const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(c.x, c.y, c.z).setRotation(yawQ));
+      world.createCollider(RAPIER.ColliderDesc.cuboid(hx, (y1 - y0) / 2, hz).setFriction(0.05).setRestitution(0.1).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK), b);
     };
-    const backDoor = doorBody(-EV.length / 2 + 0.05);
-    const frontDoor = doorBody(EV.length / 2 - 0.05);
-    // The bar across this bay just before the cabin.
-    const barS = course.frameAt(course.END - 0.6);
-    const bar = { pos: pointInFrame(barS, EV.lat, 0.47), quat: quatArr2(frameQuat(barS)), size: [0.12, 0.9, EV.bayWidth - 0.12], lift: ELEVATOR.barLift, n: barS.n };
-    const barBody = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...bar.pos).setRotation(rot(bar.quat)));
-    world.createCollider(RAPIER.ColliderDesc.cuboid(0.3, bar.size[1] / 2, bar.size[2] / 2).setTranslation(0.3 - bar.size[0] / 2, 0, 0).setFriction(0.2).setRestitution(0.2).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK), barBody);
-    // Cycle state, in frames: loading at the bottom until quorum or timeout,
-    // then close, rise, open, unload, close, descend, open.
-    const ev = { state: "loading", since: 0, first: null, cycles: [], cabinY: [], doors: [] };
-    return { EV, evFwd, evRight, evQuat, evCentre, evUp, cabinBody, backDoor, frontDoor, bar, barBody, ev };
+    const frontTop = EV.lift - EV.slope * (EV.length / 2) - 0.02;
+    wall(EV.length / 2 + 0.15, loop.yb - 0.4, frontTop, 0, 0.15, EV.width / 2 + 0.1);
+    wall(-EV.length / 2 - 0.15, 1.1, loop.yt + 1.2, 0, 0.15, EV.width / 2 + 0.1);
+    wall(0, -1.1, EV.lift + 0.6, side * (EV.width / 2 + 0.1), EV.length / 2 + 0.3, 0.07);
+    wall(0, loop.yb - 0.4, loop.yt + 1.2, -side * (EV.width / 2 + 0.1), EV.length / 2 + 0.3, 0.07);
+    const ev = { cycles: [], cabinY: [], doors: [], rides: [] };
+    return { EV, evFwd, evRight, evQuat, evCentre, loop, plates, at, ev };
   });
-  const smooth = (x) => {
-    const c = Math.min(Math.max(x, 0), 1);
-    return c * c * (3 - 2 * c);
-  };
-  const evPoseT = (lift, tSec) => {
-    // Cabin height offset above the bottom dock, and the two doors' drop (0 = closed, 1 = fully down).
-    // Continuous in time: the substeps move the cabin smoothly (a per-frame step kicks the riders out).
-    const { ev, EV } = lift;
-    const t = tSec - ev.since / FPS;
-    switch (ev.state) {
-      case "loading": return { h: 0, back: 1, front: 0 };
-      case "closing": return { h: 0, back: 1 - smooth(t / ELEVATOR.close), front: 0 };
-      case "rising": return { h: EV.lift * smooth(t / ELEVATOR.rise), back: 0, front: 0 };
-      case "opening": return { h: EV.lift, back: 0, front: smooth(t / ELEVATOR.open) };
-      case "unloading": return { h: EV.lift, back: 0, front: 1 };
-      case "closingTop": return { h: EV.lift, back: 0, front: 1 - smooth(t / ELEVATOR.open) };
-      case "descending": return { h: EV.lift * (1 - smooth(t / ELEVATOR.descend)), back: 0, front: 0 };
-      case "openingBottom": return { h: 0, back: smooth(t / ELEVATOR.open), front: 0 };
-      default: return { h: 0, back: 1, front: 0 };
-    }
-  };
-  const evPose = (lift, f) => evPoseT(lift, f / FPS);
+  let stairStop = null; // the stairs stop when everyone still racing is on the last lap
+  const riding = MARBLES.map(() => null); // the bay a marble is riding up, and since when
   createMachines(PHYSICS_ORDER.beforeStatics);
   for (const o of obstacles.statics) {
     if (o.kind === "dq") continue; // a sensor in the bake loop, not a collider
@@ -1145,68 +1137,44 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
         return [r3(p.x), r3(p.y), r3(p.z), r3(q.x), r3(q.y), r3(q.z), r3(q.w), r3(lap[i] * L + u)];
       }),
     );
-    // The lifts: who is in each cabin, and each cycle's state changes.
+    // The stairs: who is riding in each bay; a marble starts its next lap at the top.
     {
       const racingIdx = MARBLES.map((_, i) => i).filter((i) => finishFrame[i] === null && dqFrame[i] === null);
-      const lastLapAll = racingIdx.every((i) => lap[i] === LAPS - 1);
-      for (const lift of lifts) {
-        const { EV, ev, evCentre, evFwd, evRight, evUp } = lift;
-        const pose = evPose(lift, f);
-        ev.cabinY.push(r3(pose.h));
-        ev.doors.push([r3(pose.back), r3(pose.front)]);
-        const lifted = evCentre.clone().add(new Vector3(0, pose.h, 0));
-        const inCabin = (i) => {
+      // The stairs stop when everyone still racing is on the last lap (nobody needs them any more).
+      if (stairStop === null && racingIdx.length && racingIdx.every((i) => lap[i] === LAPS - 1)) stairStop = step * DT;
+      for (const [bay, lift] of lifts.entries()) {
+        const { EV, ev, evCentre, evFwd, evRight } = lift;
+        let top = 0;
+        for (const i of MARBLES.keys()) {
+          if (dqFrame[i] !== null) continue;
           const p = bodies[i].translation();
-          const rel = new Vector3(p.x, p.y, p.z).sub(lifted);
-          const x = rel.dot(evFwd);
-          const z = rel.dot(evRight);
-          const y = rel.dot(evUp);
-          return Math.abs(x) < EV.length / 2 + 0.05 && Math.abs(z) < EV.width / 2 && y > -0.2 && y < EV.wall + 0.5;
-        };
-        const aboard = racingIdx.filter((i) => inCabin(i));
-        const t = (f - ev.since) / FPS;
-        const next = (state) => {
-          ev.state = state;
-          ev.since = f;
-        };
-        if (ev.state === "loading") {
-          // On the last lap the cabin stays docked, doors open: the finishers roll in and stop there.
-          if (!lastLapAll) {
-            if (aboard.length && ev.first === null) ev.first = f;
-            if (ev.first !== null && (aboard.length >= Math.ceil(ELEVATOR.need * racingIdx.length) || f - ev.first >= ELEVATOR.hold * FPS)) {
-              ev.cycles.push({ closeAt: f, riders: aboard.slice() });
-              next("closing");
-            }
+          const rel = new Vector3(p.x, p.y, p.z).sub(evCentre);
+          const inside = Math.abs(rel.dot(evFwd)) < EV.length / 2 + 0.1 && Math.abs(rel.dot(evRight)) < EV.width / 2 + 0.05 && rel.y > -STAIR.below - 0.5 && rel.y < EV.lift + 1;
+          if (!inside) continue;
+          // A finisher that rolls into a shaft is parked there (it must not ride up for a fourth lap).
+          if (finishFrame[i] !== null) {
+            if (bodies[i].isEnabled()) bodies[i].setEnabled(false);
+            continue;
           }
-        } else if (ev.state === "closing" && t >= ELEVATOR.close) {
-          ev.cycles.at(-1).riseAt = f;
-          next("rising");
-        } else if (ev.state === "rising" && t >= ELEVATOR.rise) {
-          ev.cycles.at(-1).topAt = f;
-          next("opening");
-        } else if (ev.state === "opening" && t >= ELEVATOR.open) {
-          // The riders start their next lap as the door drops.
-          for (const i of ev.cycles.at(-1).riders) {
+          if (rel.y > 0.4) top = Math.max(top, Math.min(EV.lift, rel.y - 0.35));
+          if (riding[i] === null && finishFrame[i] === null && rel.y < 1) riding[i] = { bay, start: f };
+          if (riding[i] && riding[i].bay === bay && rel.y > EV.lift - 0.5) {
+            ev.rides.push({ marble: i, start: riding[i].start, top: f });
+            riding[i] = null;
             lap[i]++;
             idx[i] = 0;
             lapStartFrame[i] = null;
             lapEndFrame[i] = null;
           }
-          ev.cycles.at(-1).openAt = f;
-          next("unloading");
-        } else if (ev.state === "unloading" && (t >= ELEVATOR.unload || (t > 1 && aboard.length === 0))) {
-          ev.cycles.at(-1).closeTopAt = f;
-          next("closingTop");
-        } else if (ev.state === "closingTop" && t >= ELEVATOR.open) {
-          ev.cycles.at(-1).descendAt = f;
-          next("descending");
-        } else if (ev.state === "descending" && t >= ELEVATOR.descend) {
-          ev.cycles.at(-1).bottomAt = f;
-          next("openingBottom");
-        } else if (ev.state === "openingBottom" && t >= ELEVATOR.open) {
-          ev.first = null;
-          next("loading");
         }
+        if (process.env.GP_STAIR && f % 30 === 0) {
+          const i = MARBLES.findIndex((m) => m.abbr === process.env.GP_STAIR);
+          const p = bodies[i].translation();
+          const rel = new Vector3(p.x, p.y, p.z).sub(evCentre);
+          if (Math.abs(rel.dot(evRight)) < 6 && Math.abs(rel.dot(evFwd)) < 8 && bay === 0) console.log(`f=${f} bay${bay} x=${rel.dot(evFwd).toFixed(2)} y=${rel.y.toFixed(2)} z=${rel.dot(evRight).toFixed(2)} lap=${lap[i]} riding=${JSON.stringify(riding[i])} stop=${stairStop}`);
+        }
+        ev.cabinY.push(r3(top));
+        ev.doors.push([0, 0]);
       }
     }
     if (process.env.GP_FALL) {
@@ -1255,20 +1223,13 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     for (let s = 0; s < SUBSTEPS; s++) {
       const t = (step + 1) * DT;
       gateBody.setNextKinematicRotation(gateRotation(t));
-      for (const lift of lifts) {
-        const { EV, ev, evCentre, evUp, cabinBody, backDoor, frontDoor, bar, barBody } = lift;
-        const pose = evPoseT(lift, t);
-        const c = evCentre.clone().add(new Vector3(0, pose.h, 0));
-        cabinBody.setNextKinematicTranslation({ x: c.x, y: c.y, z: c.z });
-        const drop = (k) => evUp.clone().multiplyScalar(-EV.wall * k);
-        const bd = c.clone().add(drop(pose.back));
-        const fd = c.clone().add(drop(pose.front));
-        backDoor.setNextKinematicTranslation({ x: bd.x, y: bd.y, z: bd.z });
-        frontDoor.setNextKinematicTranslation({ x: fd.x, y: fd.y, z: fd.z });
-        const barOpen = ev.state === "loading" ? 1 : ev.state === "closing" ? 1 - smooth((t - ev.since / FPS) / ELEVATOR.close) : ev.state === "openingBottom" ? smooth((t - ev.since / FPS) / ELEVATOR.open) : 0;
-        const bl = bar.lift * barOpen;
-        barBody.setNextKinematicTranslation({ x: bar.pos[0] + bar.n[0] * bl, y: bar.pos[1] + bar.n[1] * bl, z: bar.pos[2] + bar.n[2] * bl });
-      }
+      const st = stairStop === null ? t : Math.min(t, stairStop);
+      for (const lift of lifts)
+        lift.plates.forEach((body, k) => {
+          const [x, y, z] = stairLocal(lift.EV, lift.loop, k, st);
+          const p = lift.at(x, y, z);
+          body.setNextKinematicTranslation({ x: p.x, y: p.y, z: p.z });
+        });
       for (const m of Object.values(machines)) m.kinematics?.(t);
       for (const c of cleats) {
         const pose = liftCleatPose(c.lift, c.k, t, course.frameAt);
@@ -1454,7 +1415,21 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
   // --- TV director -------------------------------------------------------------------
   // The director treats a disqualified marble like a finished one: out of the pack from then on.
   const doneFrame = finishFrame.map((x, i) => x ?? dqFrame[i]);
-  const elevatorsData = lifts.map((l) => ({ ...l.EV, cycles: l.ev.cycles, cabinY: l.ev.cabinY, doors: l.ev.doors, bar: { pos: l.bar.pos.map(r3), quat: l.bar.quat, size: l.bar.size, lift: l.bar.lift } }));
+  // Rides merged into "cycles" (a run of riders in one bay), the shape the director and the overlay read.
+  const ridesToCycles = (rides) => {
+    const out = [];
+    for (const r of [...rides].sort((a, b) => a.start - b.start)) {
+      const last = out[out.length - 1];
+      // A group: riders who boarded within 2 s of the group's first (a caption, not the whole field).
+      if (last && r.start <= last.closeAt + sec(2)) {
+        last.riders.push(r.marble);
+        last.openAt = Math.max(last.openAt, r.top);
+        last.closeTopAt = last.openAt + sec(0.4);
+      } else out.push({ riders: [r.marble], closeAt: r.start, riseAt: r.start, topAt: r.top, openAt: r.top, closeTopAt: r.top + sec(0.4) });
+    }
+    return out;
+  };
+  const elevatorsData = lifts.map((l) => ({ ...l.EV, stair: true, stopAt: stairStop === null ? null : r3(stairStop), cycles: ridesToCycles(l.ev.rides), cabinY: l.ev.cabinY, doors: l.ev.doors }));
   const director = directRace({ world, course, frames, finishFrame: doneFrame, raceStart, winnerFrame, lastFrame, rand, highlights, elevators: elevatorsData });
   // Fail the bake, not a render an hour later: a NaN camera becomes null in JSON.
   const badCam = director.cams.findIndex((c) => c.slice(0, 7).some((x) => !Number.isFinite(x)));
@@ -2019,7 +1994,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       }
       if (es && !sh) {
         es.used = true;
-        sh = { kind: "elevator", cabin: es.cabin, label: "THE LIFT TOWER", feature: "elevator", start: f, end: es.end };
+        sh = { kind: "elevator", cabin: es.cabin, label: "THE STAIRWAY", feature: "elevator", start: f, end: es.end };
         // A ride in the other cabin that starts during this shot is covered by it: the shot runs to the later top.
         for (const o of elevatorShots)
           if (!o.used && o.start < sh.end - sec(1)) {
@@ -2027,20 +2002,23 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
             sh.end = Math.min(lastFrame + 1, Math.max(sh.end, o.end));
           }
       }
-      const fc = sh ? null : featureCams.find((c) => !c.used && f >= c.start - sec(1.5) && f < c.end - sec(1));
+      // Calmer cutting: an obstacle's camera takes over only once the current shot has run ~3.5 s
+      // (and only for the big obstacles: see CAM_FEATURES), so cuts never come every second or two.
+      const settled = shots.length === 0 || f - shots[shots.length - 1].start >= sec(3.5);
+      const fc = sh || !settled ? null : featureCams.find((c) => !c.used && CAM_FEATURES.includes(c.type) && f >= c.start - sec(1.5) && f < c.end - sec(1));
       if (fc) {
         fc.used = true;
         const nextRide = elevatorShots.find((c) => !c.used && c.start > f);
-        sh = { kind: "feature", cam: fc.cam, label: fc.label, feature: fc.type, start: f, end: nextRide ? Math.min(fc.end, Math.max(f + sec(1), nextRide.start)) : fc.end };
+        sh = { kind: "feature", cam: fc.cam, label: fc.label, feature: fc.type, start: f, end: Math.max(f + sec(3), nextRide ? Math.min(fc.end, Math.max(f + sec(2.5), nextRide.start)) : fc.end) };
       }
       // Don't start a long shot that would cut into the next obstacle's or the lift's camera.
       const nextFc = featureCams.find((c) => !c.used && c.start > f);
       const nextEs = elevatorShots.find((c) => !c.used && c.start > f);
-      const capAt = Math.min(nextFc ? Math.max(f + sec(1.2), nextFc.start - sec(0.2)) : Infinity, nextEs ? Math.max(f + sec(1.2), nextEs.start) : Infinity);
+      const capAt = Math.min(nextFc ? Math.max(f + sec(3.5), nextFc.start - sec(0.2)) : Infinity, nextEs ? Math.max(f + sec(3), nextEs.start) : Infinity);
       for (let tries = 0; !sh && tries < cycle.length; tries++) {
         const kind = cycle[ci % cycle.length];
         ci++;
-        const len = sec(kind === "onboard" ? 3 : kind === "top" ? 3.2 : 3.6 + rand() * 1.4);
+        const len = sec(kind === "onboard" ? 4.5 : kind === "top" ? 5 : 5.5 + rand() * 2.5);
         const cand = { kind, start: f, end: f + len, side: rand() < 0.5 ? 1 : -1, phase: rand() * Math.PI * 2 };
         if (kind === "onboard") {
           const ld = leader[f];
@@ -2057,9 +2035,9 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
           if (usable(kind, cand, f, Math.min(cand.end, lastFrame + 1))) sh = cand;
         }
       }
-      if (!sh) sh = { kind: "top", start: f, end: Math.min(f + sec(2.5), capAt) };
+      if (!sh) sh = { kind: "top", start: f, end: Math.min(f + sec(4), capAt) };
       // Don't run into the finish shot.
-      if (!finishUsed) sh.end = Math.min(sh.end, Math.max(f + sec(1.2), winnerFrame - sec(3.5)));
+      if (!finishUsed) sh.end = Math.min(sh.end, Math.max(f + sec(2), winnerFrame - sec(3.5)));
     }
     sh.end = Math.min(Math.max(sh.end, f + 1), lastFrame + 1);
     shots.push(sh);
@@ -2230,6 +2208,15 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       last.cabins.push({ cabin: r.cabin, riders: r.riders, start: r.start, end: r.end });
     } else raw.push({ kind: "lift", start: r.start, end: r.end, cabin: r.cabin, cabins: [{ cabin: r.cabin, riders: r.riders, start: r.start, end: r.end }], prio: 2 });
   }
+  // The stair runs without pause, so its rides merge into long stretches: show it in looks of
+  // at most 8 s, at least 12 s apart (a 30-second split screen was too much).
+  for (let k = raw.length - 1; k >= 0; k--) {
+    const r = raw[k];
+    if (r.kind !== "lift" || r.end - r.start <= sec(8)) continue;
+    const pieces = [];
+    for (let a = r.start; a < r.end - sec(2); a += sec(20)) pieces.push({ ...r, start: a, end: Math.min(r.end, a + sec(8)), cabins: r.cabins.filter((c) => c.end > a && c.start < a + sec(8)) });
+    raw.splice(k, 1, ...pieces);
+  }
   // Action away from P1: the director cut to an obstacle while P1 is well clear of it (15+ units ahead).
   for (const sh of shots) {
     if (sh.kind !== "feature" || sh.start < raceStart + sec(3) || sh.end - sh.start < sec(1.5)) continue;
@@ -2268,7 +2255,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   // Cameras: P1 on the left (overriding the main stream), the right half's own.
   for (const sp of splits) {
     const span = Array.from({ length: sp.end - sp.start }, (_, j) => sp.start + j);
-    const left = subjectCams(span.map(leaderKey), sp.start, sec(1.5), camForKey);
+    const left = subjectCams(span.map(leaderKey), sp.start, sec(2.5), camForKey);
     for (const f of span) cams[f] = [...arr(left.pos[f - sp.start]), ...arr(left.target[f - sp.start]), 52, "leader", p1[f]];
     if (sp.kind === "lift") {
       // The cabin P1 isn't in (the left half already shows P1's), or the one the split is about.
@@ -2276,7 +2263,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
         const lk = left.keys[j];
         return lk[0] === "c" ? `c${1 - Number(lk.slice(1))}` : `c${sp.cabin}`;
       });
-      const right = subjectCams(want, sp.start, sec(1.5), camForKey);
+      const right = subjectCams(want, sp.start, sec(2.5), camForKey);
       sp.cams = right.pos.map((p, k) => [...arr(p), ...arr(right.target[k]), r3(right.fov[k])]);
     } else if (sp.kind === "action") {
       sp.cams = [];
