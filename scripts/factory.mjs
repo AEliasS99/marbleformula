@@ -201,7 +201,7 @@ for (const c of circuits) {
     const nice = (l) => l.toLowerCase().replace(/(^|\s)\S/g, (x) => x.toUpperCase()).replace(/^The /, "the ");
     const obstacles = [...new Set(d.features.map((f) => f.label))].filter((l) => l !== "THE LIFT TOWER" && l !== "THE STAIRWAY").map(nice);
     const description = [
-      `Round ${round} of ${d.rounds} of the Marble Formula Championship 2027: the ${gp} at ${d.info.circuit}. Twenty marbles, ten teams, ${d.info.laps} laps, and a lift tower between every lap.`,
+      `Round ${round} of ${d.rounds} of the Marble Formula Championship 2027: the ${gp} at ${d.info.circuit}. Twenty marbles, ten teams, ${d.info.laps} laps, and an endless stair carrying them back up between laps.`,
       ``,
       `On the track: ${obstacles.join(", ")}.`,
       ``,
