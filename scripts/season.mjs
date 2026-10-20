@@ -186,8 +186,9 @@ const bayReserve = (L) => L - GRID_LENGTH - ELEVATOR.cabin - 18;
 const PLANNER_SKIP = ["crest", "booster", "tube", "switch", "regroup"];
 const FLIPPER = { length: 4.0, amp: (25 * Math.PI) / 180, period: 2.4 };
 const STAIR_SHOT_MAX = 7 * 60; // frames
+const NO_STAIR_SPLITS = true; // the stair is shown only from above, and only when P1 is riding it
 const FOCUS_HOLD = 5 * 60; // frames: the director follows a group at least this long
-const STAIR_CAM = { back: 11, above: 6, fov: 46 };
+const STAIR_CAM = { above: 16, fov: 46 };
 const CAM_FEATURES = ["vortex", "spinner", "hammer", "turntable", "rollers", "pusher", "jump", "drop", "lift", "fan", "bumpers", "pegs", "splitter"];
 const TUBES = { minCurv: 0.17, height: 1.7 };
 const LAUNCHES = { max: 2, gap: 12 };
@@ -1887,16 +1888,24 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     // Wide and steady at the line: zooming in on whoever leads made a mess of the last metres.
     finish: (f, sh) => ({ pos: sh.cam, target: focus[f], fov: Math.max(40, Math.min(50, fovFor(sh.cam, f))) }),
     // The run into the lift: one fixed wide camera over the bays, aimed between the bays and the pack.
-    approach: (f, sh) => ({ pos: sh.cam, target: v3(sh.aim).lerp(focus[f], 0.35), fov: 50 }),
+    approach: (f, sh) => {
+      // Aimed at the bays' entrance, never up the stair (it is never shown).
+      const t = v3(sh.aim).lerp(focus[f], 0.35);
+      t.y = Math.min(t.y, sh.aim[1]);
+      return { pos: sh.cam, target: t, fov: 50 };
+    },
     // The stair, from the front and far back: both bays whole in the frame, the camera only rising
     // slowly with the riders (a smoothed height); never from the side, never swinging between bays.
+    // The stair, only ever from straight above (bird's-eye), high enough to see both bays and the
+    // grid they lead to; it rises slowly with the riders. Never from the side.
     elevator: (f) => {
       const h = stairH[Math.max(0, Math.min(stairH.length - 1, f))];
       const fwd = v3(elevators[0].fwd);
       const c = elevators.reduce((acc, e) => acc.add(v3(e.center)), new Vector3()).multiplyScalar(1 / elevators.length);
       const y = c.y + Math.max(2.5, h + 1.0);
-      const pos = c.clone().addScaledVector(fwd, -STAIR_CAM.back).setY(y + STAIR_CAM.above);
-      return { pos, target: new Vector3(c.x, y, c.z), fov: STAIR_CAM.fov };
+      const target = new Vector3(c.x, y, c.z);
+      const pos = target.clone().add(new Vector3(0, STAIR_CAM.above, 0)).addScaledVector(fwd, -1.5);
+      return { pos, target, fov: STAIR_CAM.fov };
     },
     onboard: (f, sh) => {
       const i = sh.marble;
@@ -2089,7 +2098,8 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     } else {
       // An obstacle coming up: its locked camera takes over at the planned moment.
       // (Up to 1.5 s early, so two obstacles close together both get their shot.)
-      const es = elevatorShots.find((c) => !c.used && f >= c.start && f < c.end - sec(1));
+      // No full-screen stair shots: the race stays with the racing groups (see NO_STAIR_SPLITS).
+      const es = NO_STAIR_SPLITS ? null : elevatorShots.find((c) => !c.used && f >= c.start && f < c.end - sec(1));
       // The leader running into the lift bays: the wide approach camera until the lift's own shot.
       // Once per lap, following the real leader (P1): the director's focus can sit in the lift queue
       // for minutes, and the shot used to fire again and again (2 min of one view).
@@ -2290,14 +2300,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   };
   const camForKey = (key, f) => {
     // P1 riding the lift: the crane on its cabin (a chase camera would sit in the tower's frame).
-    if (key[0] === "c") {
-      // P1 on the stair: a closer frontal view of its own bay (the right half has the wide one).
-      const e = elevators[Number(key.slice(1))];
-      const h = e.cabinY[Math.min(f, e.cabinY.length - 1)] ?? 0;
-      const c = v3(e.center);
-      const y = c.y + Math.max(1.5, h + 0.5);
-      return { pos: c.clone().addScaledVector(v3(e.fwd), -7).setY(y + 1.5), target: new Vector3(c.x, y, c.z), fov: 40 };
-    }
+    if (key[0] === "c") return recipes.elevator(f); // P1 on the stair: the bird's-eye view
     const i = Number(key.slice(1));
     const p = posOf(f, i);
     const fr = frameAt(uLoc(f, i));
@@ -2350,7 +2353,8 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   const rides = elevators
     .flatMap((e, k) => e.cycles.filter((c) => c.riseAt !== undefined && c.openAt !== undefined).map((c) => ({ cabin: k, start: Math.max(0, c.closeAt - sec(0.6)), end: c.closeTopAt !== undefined ? c.closeTopAt + sec(0.4) : c.openAt + sec(2), riders: c.riders })))
     .sort((a, b) => a.start - b.start);
-  for (const r of rides) {
+  // The stair is never shown in a split screen (watching marbles climb from the side made people dizzy).
+  for (const r of NO_STAIR_SPLITS ? [] : rides) {
     const last = raw.length ? raw[raw.length - 1] : null;
     if (last && last.kind === "lift" && r.start <= last.end) {
       last.end = Math.max(last.end, r.end);
@@ -2379,6 +2383,10 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   }
   // Resolve overlaps by priority; nothing shorter than 1.5 s, nothing after the win.
   const taken = new Array(lastFrame + 2).fill(null);
+  // While P1 rides the stair there is no split (its left half would have to show the stair, which is
+  // never shown): those frames are blocked, and a replay waits until P1 is back on the track.
+  const blocked = { kind: "stair" };
+  for (let f = 0; f <= lastFrame; f++) if (cabinOf(p1[f], f) !== null) for (let g = Math.max(0, f - sec(0.5)); g <= Math.min(lastFrame, f + sec(0.5)); g++) taken[g] = blocked;
   for (const sp of [...raw].sort((a, b) => b.prio - a.prio || a.start - b.start)) {
     const a = Math.max(sp.start, raceStart + sec(2));
     const b = Math.min(sp.end, winnerFrame - sec(1), lastFrame + 1);
@@ -2400,7 +2408,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     }
     for (let f = sp.start; f < sp.end; f++) taken[f] = sp;
   }
-  const splits = [...new Set(taken.filter(Boolean))].sort((a, b) => a.start - b.start);
+  const splits = [...new Set(taken.filter((x) => x && x !== blocked))].sort((a, b) => a.start - b.start);
   // Cameras: P1 on the left (overriding the main stream), the right half's own.
   for (const sp of splits) {
     const span = Array.from({ length: sp.end - sp.start }, (_, j) => sp.start + j);
