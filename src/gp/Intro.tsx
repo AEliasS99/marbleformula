@@ -42,6 +42,7 @@ const BLURBS: Record<string, { line: string; danger: number }> = {
   rollers: { line: "Spinning rollers: a boost for some, a kick sideways for others.", danger: 3 },
   fan: { line: "Gusts of wind across the track.", danger: 3 },
   bumps: { line: "Bumps that make the marbles hop.", danger: 1 },
+  tube: { line: "A hooped tube round a hairpin: ride the wall flat out.", danger: 1 },
   booster: { line: "A speed pad: every marble on it is shot forward.", danger: 1 },
   switch: { line: "Two half-width bars rise and sink in turn: take the open half or wait.", danger: 3 },
   crest: { line: "Humps at the apex of the bends: take them fast and you fly.", danger: 3 },

@@ -5,7 +5,8 @@ import { frameQuat, pointOnTrack, quatArr, r3, rot, solid, TRACK } from "./kit.j
 // different speeds, so the field gets kicked apart. (A backward roller traps
 // marbles in the pocket between rollers.) Nearly flush: only the top touches,
 // so a slow marble is never pushed back.
-export const ROLLER = { radius: 0.3, proud: 0.03, spacing: 1.4, surfaces: [7, 4.5, 10] };
+// The slingshot: surfaces at 11, 8 and 15 u/s, so every marble that touches them is launched.
+export const ROLLER = { radius: 0.3, proud: 0.03, spacing: 1.4, surfaces: [11, 8, 15] };
 
 export function rollerQuat(r, t) {
   const spin = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), r.phase + r.omega * t);

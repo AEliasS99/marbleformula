@@ -7,7 +7,7 @@ export default {
   country: "Monaco",
   flag: ["#ce1126", "#ffffff"],
   scale: 0.12,
-  seed: 5,
+  seed: 6,
   start: "auto", // the line moves to the straightest stretch: the lift tower and the grid need one
   // Technical and twisty: the harbour straight (158–212) is the only long one,
   // so the machines stack there; the early climb gets a gate and a jump to

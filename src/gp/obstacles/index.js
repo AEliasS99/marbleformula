@@ -46,6 +46,9 @@ export const OBSTACLES = [
   regroup,
   switchGate,
   booster, // placed by the bake on the straights after the bends
+  // Placed by the bake on the tightest bends: high invisible guards and lit hoops, so the
+  // marbles can ride up the wall at full speed instead of braking.
+  shape("tube", "THE TUBE", { before: 0, after: 0, maxCurv: 9 }, { card: { difficulty: 1, chaos: 1, seconds: 1, summary: "A hooped tube round a hairpin: ride the wall flat out." } }),
   // Placed by the bake itself at the apex of the sharp bends (never in a layout): a short hump that
   // throws fast marbles into the air in the curve. Banked, guarded.
   shape("crest", "THE CREST", { before: 4, after: 5, maxCurv: 1 }, { card: { difficulty: 2, chaos: 3, seconds: 0.5, summary: "A hump at the apex of a bend: fast marbles take off sideways." } }),

@@ -8,7 +8,7 @@ import { CameraRig, Circuit, Confetti, Environment, Gantries, Gate, Marbles, Obs
 import { ViewContext } from "./view";
 import { quality } from "./quality";
 import { isNight } from "./look";
-import { Neon } from "./Neon";
+import { Hoops, Neon } from "./Neon";
 import { Boosters, Switches } from "./Boosts";
 
 // The circuit and everything on it, seen through one View (a clock and a camera).
@@ -34,6 +34,7 @@ export function Stage({ race, view, layout, frame, width, height }: { race: Race
           <Obstacles race={race} t={t} />
           <Machines race={race} t={t} />
           <Boosters race={race} t={t} />
+          <Hoops race={race} />
           <Switches race={race} t={t} />
           <Lifts race={race} t={t} />
           <Gantries race={race} frame={Math.round(t)} />

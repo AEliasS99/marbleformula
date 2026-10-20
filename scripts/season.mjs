@@ -172,6 +172,8 @@ const DROP_HEIGHT = 1.1;
 const BUMP = { amp: 0.13, length: 1.6, count: 4 };
 // Crests at the bends' apexes: a mini kicker (run-up, lip, small drop): fast marbles take off in the bend.
 const VORTEX_SWIRL = { accel: 9, share: 0.9 };
+const TUBES = { minCurv: 0.17, height: 1.7 };
+const LAUNCHES = { max: 2, gap: 12 };
 const FANS = { extra: 3, spacing: 60 };
 const BOOSTERS = { spacing: 22, max: Number(process.env.GP_BOOSTERS ?? 8) };
 const CREST = { runup: 2.5, runupSlope: Math.tan((14 * Math.PI) / 180), ramp: 1.2, lip: 0.22, drop: 0.25, minCurv: 0.035, maxCurv: 0.16, spacing: 18, max: 8 };
@@ -472,6 +474,53 @@ export function buildCourse(round) {
     for (const u of crests) features.push({ type: "crest", u: r3(u), label: "THE CREST", span: [4, 5] });
     features.sort((a, b) => a.u - b.u);
   }
+  // Tubes round the tightest bends (TUBES): high guards and hoops, banking kept.
+  {
+    const runs = [];
+    let a = null;
+    for (let k = Math.round(GRID_LENGTH / SAMPLE) + 40; k < m; k++) {
+      const u = us[k];
+      const tight = Math.abs(curv[k]) > TUBES.minCurv && u < END - 20;
+      if (tight && a === null) a = u;
+      if ((!tight || k === m - 1) && a !== null) {
+        if (u - a >= 2) runs.push([a - 2, u + 2]);
+        a = null;
+      }
+    }
+    for (const [u0, u1] of runs) {
+      if (features.some((g) => u1 + 2 > g.u - g.span[0] && u0 - 2 < g.u + g.span[1])) continue;
+      features.push({ type: "tube", u: r3(u0), label: "THE TUBE", span: [0, r3(u1 - u0)] });
+    }
+    features.sort((a, b) => a.u - b.u);
+  }
+  // Launches: a booster, then a kicker (BIG AIR), wherever a long enough straight is free (LAUNCHES).
+  {
+    const jump = featureRule("jump");
+    const boost = featureRule("booster");
+    const { clear } = placementRules(curv);
+    let added = 0;
+    for (let u = 40; u <= L - 30 && added < LAUNCHES.max; u += 1) {
+      const ub = u - LAUNCHES.gap;
+      if (!clear(u, jump) || !clear(ub, boost)) continue;
+      if (features.some((g) => u + jump.after + 4 > g.u - g.span[0] && ub - boost.before - 4 < g.u + g.span[1])) continue;
+      features.push({ type: "booster", u: r3(ub), label: "BOOSTER", span: [boost.before, boost.after] });
+      features.push({ type: "jump", u: r3(u), label: jump.label, span: [jump.before, jump.after] });
+      features.sort((a, b) => a.u - b.u);
+      added++;
+      u += 40;
+    }
+  }
+  // Slingshot rollers on every circuit that has none.
+  if (!features.some((g) => g.type === "rollers")) {
+    const rule = featureRule("rollers");
+    const { clear } = placementRules(curv);
+    for (let u = 40; u <= L - 30; u += 1) {
+      if (!clear(u, rule) || features.some((g) => u + rule.after + 4 > g.u - g.span[0] && u - rule.before - 4 < g.u + g.span[1])) continue;
+      features.push({ type: "rollers", u: r3(u), label: rule.label, span: [rule.before, rule.after] });
+      features.sort((a, b) => a.u - b.u);
+      break;
+    }
+  }
   // Fans: a few more wherever a straight is free (FANS), spread over the lap.
   {
     const rule = featureRule("fan");
@@ -580,7 +629,7 @@ export function buildCourse(round) {
     // bank running into one left a ridge that stopped the pack) or on the run into the lift bays.
     const u = us[k];
     if (u < 2 || u > L || u > END - 18) return 0;
-    if (features.some((g) => g.type !== "crest" && g.type !== "booster" && u > g.u - g.span[0] - 3 && u < g.u + g.span[1] + 3)) return 0;
+    if (features.some((g) => g.type !== "crest" && g.type !== "booster" && g.type !== "tube" && u > g.u - g.span[0] - 3 && u < g.u + g.span[1] + 3)) return 0;
     return s / c;
   });
   const maxStep = BANK_RATE * SAMPLE;
@@ -694,7 +743,7 @@ function buildObstacles(course, sync = {}) {
   // that follow the floor (over the kicker, the drop and the landing), so a
   // marble that drifts sideways in the air stays on the track.
   for (const f of features) {
-    const zone = GUARD_ZONES[f.type];
+    const zone = f.type === "tube" ? [-1, f.span[1] + 1, TUBES.height] : GUARD_ZONES[f.type];
     if (!zone) continue;
     const height = zone[2] ?? GUARD.height;
     for (let u = f.u + zone[0]; u < f.u + zone[1]; u += GUARD.segment) {

@@ -8,7 +8,7 @@ export const TRACK_WIDTH = 4.2; // six marbles abreast
 export const MIN_RADIUS = 3.1; // centreline; keeps the inside edge from folding over
 export const MIN_SEPARATION = 6.0; // between unrelated parts of the track (width + barriers)
 export const BRIDGE_CLEARANCE = 2.2; // parts this far apart vertically may overlap (Suzuka)
-export const SLOPE = (6.5 * Math.PI) / 180; // steady descent between drops: gravity is the only engine
+export const SLOPE = (8 * Math.PI) / 180; // steady descent between drops: gravity is the only engine (6.5° felt slow)
 
 const SPACING = 1.0;
 

@@ -49,3 +49,36 @@ export function Neon({ race }: { race: Race }) {
     </mesh>
   );
 }
+
+/**
+ * The tubes on the tight bends: lit arches over the track every 1.2 units (the
+ * marbles ride up the walls there, held in by high invisible guards).
+ */
+export function Hoops({ race }: { race: Race }) {
+  const geo = useMemo(() => {
+    const samples = race.data.samples as unknown as Sample[];
+    const u0 = samples[0].u;
+    const at = (u: number) => samples[Math.max(0, Math.min(samples.length - 1, Math.round((u - u0) / 0.5)))];
+    const tubes = (race.data.features as { type: string; u: number; span: number[] }[]).filter((f) => f.type === "tube");
+    const parts: THREE.BufferGeometry[] = [];
+    for (const f of tubes)
+      for (let u = f.u; u <= f.u + f.span[1]; u += 1.2) {
+        const s = at(u);
+        const W = (s.w ?? TRACK.width / 2) + TRACK.wall;
+        const g = new THREE.TorusGeometry(W, 0.035, 8, 40, Math.PI);
+        // The arch stands in the cross-section plane: x across the track, y up, centred on the wall tops.
+        const basis = new THREE.Matrix4().makeBasis(new THREE.Vector3(...s.r), new THREE.Vector3(...s.n), new THREE.Vector3(...s.t));
+        g.applyMatrix4(basis);
+        const c = new THREE.Vector3(...s.p).addScaledVector(new THREE.Vector3(...s.n), TRACK_DEPTH);
+        g.translate(c.x, c.y, c.z);
+        parts.push(g);
+      }
+    return parts.length ? mergeGeometries(parts) : null;
+  }, [race]);
+  if (!geo) return null;
+  return (
+    <mesh geometry={geo}>
+      <meshStandardMaterial color="#dfe8ff" emissive="#7fe9ff" emissiveIntensity={3.5} metalness={0.6} roughness={0.3} toneMapped={false} />
+    </mesh>
+  );
+}
