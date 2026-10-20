@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useThree } from "@react-three/fiber";
-import { MeshReflectorMaterial } from "@react-three/drei";
 import { continueRender, delayRender } from "remotion";
 import * as THREE from "three";
 import { useView } from "./view";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
-import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import skyExr from "@pmndrs/assets/hdri/sky.exr.js";
-import { subframe } from "./subframe";
+import { useSubframe } from "./subframe";
 import { drawFlag, FLAGS } from "./flags";
 import { buildTrackMesh, floorVRange, pointInFrame, pointOnTrack, TRACK, TRACK_DEPTH, troughProfile } from "./trackMesh.js";
-import { fovFor, type Layout, type Race, type Vec3 } from "./race";
+import { lensFov, type Layout, type Race, type Vec3 } from "./race";
 import { spinnerParts } from "./rotor.js";
 import { turntableParts } from "./obstacles/turntable.js";
 import { asphaltMaps, floorMaps, grassMaps, plasticMaps } from "./surfaces";
@@ -53,12 +51,12 @@ function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D)
 
 export function CameraRig({ race, layout, frame }: { race: Race; layout: Layout; frame: number }) {
   const view = useView(race);
+  const sub = useSubframe();
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const set = (vf: number) => {
     const shot = view.shotAt(vf);
     // Narrower frames (a portrait video, a half of a split screen) widen the lens so about as much of the scene fits.
-    const k = Math.min(1.9, Math.max(1, Math.sqrt(16 / 9 / Math.max(0.3, camera.aspect))));
-    camera.fov = layout === "landscape" || camera.aspect < 0.9 ? (2 * Math.atan(Math.tan((shot.fov * Math.PI) / 360) * k) * 180) / Math.PI : fovFor(shot.fov, "landscape");
+    camera.fov = lensFov(shot.fov, camera.aspect, layout);
     camera.near = 0.05;
     camera.far = 1500;
     camera.updateProjectionMatrix();
@@ -66,8 +64,17 @@ export function CameraRig({ race, layout, frame }: { race: Race; layout: Layout;
     camera.lookAt(...shot.target);
   };
   set(frame);
-  useEffect(() => subframe.subscribe(set), [race, layout, camera]);
+  useEffect(() => sub.subscribe(set), [sub, view, layout, camera]);
   return null;
+}
+
+/** Frees the geometries and materials of a scene built only to be baked (the studio for the environment map). */
+export function disposeScene(scene: THREE.Scene) {
+  scene.traverse((o) => {
+    const m = o as THREE.Mesh;
+    m.geometry?.dispose();
+    for (const mat of Array.isArray(m.material) ? m.material : m.material ? [m.material] : []) mat.dispose();
+  });
 }
 
 /**
@@ -128,7 +135,9 @@ export function Environment() {
     // Tone mapping happens once, at the end of the effect chain (src/gp/Effects.tsx).
     gl.toneMapping = THREE.NoToneMapping;
     const pmrem = new THREE.PMREMGenerator(gl);
-    scene.environment = pmrem.fromScene(studioScene(), 0, 0.1, 200, { size: 512 }).texture;
+    const studio = studioScene();
+    scene.environment = pmrem.fromScene(studio, 0, 0.1, 200, { size: 512 }).texture;
+    disposeScene(studio);
     scene.environmentIntensity = 0.55;
     if (isNight()) {
       // The dark studio: its softboxes are what the metal and the marbles reflect.
@@ -180,11 +189,9 @@ export function Environment() {
  * Key light: a soft spotlight high above the action that follows the camera
  * target. It pools light where the marbles are and falls off into shade
  * around them, so the frame has a lit subject instead of even, flat light.
- * An overhead area light adds long soft highlights on glossy surfaces.
  */
 export function Sun({ target }: { target: Vec3 }) {
   const sun = useMemo(() => {
-    RectAreaLightUniformsLib.init();
     // Late-afternoon sun, low and warm: long shadows from posts, guards and marbles.
     const l = isNight() ? new THREE.DirectionalLight("#dfe8ff", 2.2) : new THREE.DirectionalLight("#ffd9a6", 3.2);
     l.castShadow = true;
@@ -523,25 +530,13 @@ export function Circuit({ race }: { race: Race }) {
 
     const xs = samples.map((s) => s.p[0]);
     const zs = samples.map((s) => s.p[2]);
-    // Imperfection maps. Track UVs are (units along / 4, 0..1 across), so repeat to ~1 tile per unit.
-    const plasticBase = plasticMaps();
-    const plastic = { normal: plasticBase.normal.clone(), roughness: plasticBase.roughness.clone() };
-    for (const t of [plastic.normal, plastic.roughness]) {
-      t.repeat.set(3, 6); // fine grain: it should show only in the highlights
-      t.needsUpdate = true;
-    }
-    const asphaltBase = asphaltMaps();
-    const asphalt = { normal: asphaltBase.normal.clone(), roughness: asphaltBase.roughness.clone() };
-    for (const t of [asphalt.normal, asphalt.roughness]) {
-      t.repeat.set(1, 4);
-      t.needsUpdate = true;
-    }
-    const grassBase = isNight() ? floorMaps("#1c1e23") : grassMaps();
-    const floor = { color: grassBase.color.clone(), roughness: grassBase.roughness.clone(), normal: grassBase.normal.clone() };
-    for (const t of [floor.color, floor.roughness, floor.normal]) {
-      t.repeat.set(70, 70);
-      t.needsUpdate = true;
-    }
+    // Imperfection maps (fresh textures for this canvas). Track UVs are (units along / 4, 0..1 across), so repeat to ~1 tile per unit.
+    const plastic = plasticMaps();
+    for (const t of [plastic.normal, plastic.roughness]) t.repeat.set(3, 6); // fine grain: it should show only in the highlights
+    const asphalt = asphaltMaps();
+    for (const t of [asphalt.normal, asphalt.roughness]) t.repeat.set(1, 4);
+    const floor = isNight() ? floorMaps("#1c1e23") : grassMaps();
+    for (const t of [floor.color, floor.roughness, floor.normal]) t.repeat.set(70, 70);
     return {
       plastic,
       asphalt,
@@ -653,25 +648,25 @@ export function Circuit({ race }: { race: Race }) {
 }
 
 const chrome = { color: "#eceef3", metalness: 1, roughness: 0.07 } as const;
-const BOLT = { geometry: null as THREE.BufferGeometry | null, material: new THREE.MeshStandardMaterial({ color: "#c9ccd2", metalness: 1, roughness: 0.3 }) };
+// three.js objects live per canvas (created in a component's useMemo, freed on
+// unmount), never at module level: a geometry, material or texture that a
+// renderer has drawn keeps that renderer reachable through its dispose
+// listeners, so a module-level one kept every dead canvas's renderer alive.
+type Bolt = { geometry: THREE.BufferGeometry; material: THREE.Material };
 /** A ring of bolts, in the local frame of the obstacle (y up). */
-function BoltRing({ count, radius, y, phase = 0 }: { count: number; radius: number; y: number; phase?: number }) {
-  BOLT.geometry ??= boltGeometry();
+function BoltRing({ bolt, count, radius, y, phase = 0 }: { bolt: Bolt; count: number; radius: number; y: number; phase?: number }) {
   return (
     <>
       {Array.from({ length: count }, (_, k) => {
         const a = phase + (k / count) * Math.PI * 2;
-        return <mesh key={k} geometry={BOLT.geometry!} material={BOLT.material} position={[Math.cos(a) * radius, y, Math.sin(a) * radius]} rotation-y={a * 1.7} castShadow />;
+        return <mesh key={k} geometry={bolt.geometry} material={bolt.material} position={[Math.cos(a) * radius, y, Math.sin(a) * radius]} rotation-y={a * 1.7} castShadow />;
       })}
     </>
   );
 }
-const scoreCache = new Map<number, THREE.Texture>();
-/** Pinball-style score caps on the bumpers. */
-function scoreTex(i: number) {
-  const hit = scoreCache.get(i % 3);
-  if (hit) return hit;
-  const t = canvasTexture(256, 256, (g) => {
+/** Pinball-style score caps on the bumpers: "100", "250" or "500". */
+function scoreTexture(i: number) {
+  return canvasTexture(256, 256, (g) => {
     g.clearRect(0, 0, 256, 256);
     g.fillStyle = "#15161b";
     g.beginPath();
@@ -683,8 +678,6 @@ function scoreTex(i: number) {
     g.textBaseline = "middle";
     g.fillText(["100", "250", "500"][i % 3], 128, 134);
   });
-  scoreCache.set(i % 3, t);
-  return t;
 }
 
 /** An amber warning beacon on a short post: every machine carries one. */
@@ -799,6 +792,7 @@ function chevronTexture() {
  */
 export function Obstacles({ race, t }: { race: Race; t: number }) {
   const view = useView(race);
+  const sub = useSubframe();
   const statics = race.data.obstacles as unknown as {
     kind: string;
     shape: string;
@@ -820,6 +814,23 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
   }[];
   const chev = useMemo(() => chevronTexture(), []);
   const dqTex = useMemo(() => dqTexture(), []);
+  // Shared by every bolt and bumper cap on this canvas.
+  const shared = useMemo(
+    () => ({
+      bolt: { geometry: boltGeometry(), material: new THREE.MeshStandardMaterial({ color: "#c9ccd2", metalness: 1, roughness: 0.3 }) },
+      scores: statics.some((o) => o.kind === "bumper") ? [0, 1, 2].map(scoreTexture) : [],
+    }),
+    [race],
+  );
+  useEffect(
+    () => () => {
+      shared.bolt.geometry.dispose();
+      shared.bolt.material.dispose();
+      shared.scores.forEach((tx) => tx.dispose());
+    },
+    [shared],
+  );
+  const bolt = shared.bolt;
   const sec = t / race.fps;
   const W = TRACK.width / 2 + TRACK.wall;
   const turntables = (race.data.turntables ?? []) as unknown as { pos: Vec3; quat: Quat; radius: number; thickness: number; speed: number; phase: number; hub?: number; hubHeight?: number; ribs?: number }[];
@@ -861,14 +872,14 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
     );
   useEffect(
     () =>
-      subframe.subscribe((vf) => {
+      sub.subscribe((vf) => {
         const s = view.tAt(vf) / race.fps;
         spinners.forEach((sp, i) => spinRefs.current[i]?.quaternion.copy(spinQuat(sp, s)));
         swings.forEach((sw, i) => swingRefs.current[i]?.quaternion.copy(swingQuat(sw, s)));
         turntables.forEach((tt, i) => ttRefs.current[i]?.quaternion.copy(ttQuat(tt, s)));
         pushers.forEach((p, i) => applyPusher(p, i, s));
       }),
-    [race],
+    [sub, view, race],
   );
   return (
     <>
@@ -940,7 +951,7 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
                     <cylinderGeometry args={[0.07, 0.07, o.size![1] + 0.16, 20]} />
                     <meshStandardMaterial {...chrome} />
                   </mesh>
-                  <BoltRing count={2} radius={0.0001} y={o.size![1] / 2 + 0.02} phase={0} />
+                  <BoltRing bolt={bolt} count={2} radius={0.0001} y={o.size![1] / 2 + 0.02} phase={0} />
                 </>
               )}
               <mesh position={[0, o.size![1] / 2 + 0.01, 0]}>
@@ -976,10 +987,10 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
               </mesh>
               <mesh position={[0, h / 2 + 0.006, 0]} rotation-x={-Math.PI / 2}>
                 <circleGeometry args={[r * 0.6, 48]} />
-                <meshStandardMaterial map={scoreTex(i)} transparent roughness={0.3} emissive="#ffffff" emissiveMap={scoreTex(i)} emissiveIntensity={0.6} />
+                <meshStandardMaterial map={shared.scores[i % 3]} transparent roughness={0.3} emissive="#ffffff" emissiveMap={shared.scores[i % 3]} emissiveIntensity={0.6} />
               </mesh>
               <Flange radius={r + 0.09} y={-h / 2 + 0.13} />
-              <BoltRing count={6} radius={r + 0.055} y={-h / 2 + 0.142} phase={0.3} />
+              <BoltRing bolt={bolt} count={6} radius={r + 0.055} y={-h / 2 + 0.142} phase={0.3} />
             </group>
           );
         }
@@ -1005,7 +1016,7 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
               <meshStandardMaterial color="#15161b" roughness={0.6} />
             </mesh>
             <Flange radius={r + 0.08} y={-h / 2 + 0.13} />
-            <BoltRing count={3} radius={r + 0.05} y={-h / 2 + 0.142} phase={i} />
+            <BoltRing bolt={bolt} count={3} radius={r + 0.05} y={-h / 2 + 0.142} phase={i} />
           </group>
         );
       })}
@@ -1043,7 +1054,7 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
               <sphereGeometry args={[0.16, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
               <meshStandardMaterial {...chrome} />
             </mesh>
-            <BoltRing count={6} radius={0.2} y={sp.size[1] / 2 + 0.06} phase={0.4} />
+            <BoltRing bolt={bolt} count={6} radius={0.2} y={sp.size[1] / 2 + 0.06} phase={0.4} />
           </group>
         );
       })}
@@ -1051,7 +1062,7 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
       {spinners.map((sp, i) => (
         <group key={`sb${i}`} position={sp.pos} quaternion={sp.quat}>
           <Flange radius={0.36} y={-sp.size[1] / 2 + 0.01} />
-          <BoltRing count={6} radius={0.3} y={-sp.size[1] / 2 + 0.02} phase={0.2} />
+          <BoltRing bolt={bolt} count={6} radius={0.3} y={-sp.size[1] / 2 + 0.02} phase={0.2} />
         </group>
       ))}
 
@@ -1090,7 +1101,7 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
                 <meshStandardMaterial {...chrome} />
               </mesh>
             )}
-            <BoltRing count={6} radius={0.3} y={tt.thickness / 2 + 0.002} phase={0.1} />
+            <BoltRing bolt={bolt} count={6} radius={0.3} y={tt.thickness / 2 + 0.002} phase={0.1} />
           </group>
           {/* Fixed surround ring, flush with the floor. */}
           <group position={tt.pos} quaternion={tt.quat}>
@@ -1137,7 +1148,7 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
                   <circleGeometry args={[0.035, 16]} />
                   <meshStandardMaterial color="#ff3030" emissive="#ff1010" emissiveIntensity={5} toneMapped={false} />
                 </mesh>
-                <BoltRing count={4} radius={0.55} y={0.43} phase={0.78} />
+                <BoltRing bolt={bolt} count={4} radius={0.55} y={0.43} phase={0.78} />
                 <Beacon y={0.5} />
               </group>
             </group>
@@ -1256,6 +1267,8 @@ export function Gantries({ race, frame }: { race: Race; frame: number }) {
   const H = TRACK_DEPTH + 1.3;
   const lit = race.timeline.lights.filter((lf) => frame >= lf).length;
   const out = frame >= race.timeline.raceStart;
+  const banner = useMemo(() => finishBanner(), []);
+  useEffect(() => () => banner.dispose(), [banner]);
 
   const arch = (u: number, children: React.ReactNode) => {
     const s = at(u);
@@ -1311,17 +1324,16 @@ export function Gantries({ race, frame }: { race: Race; frame: number }) {
         race.L,
         <mesh position={[0, H, -0.15]} rotation-y={Math.PI /* face the approaching marbles */}>
           <planeGeometry args={[2 * W + 0.4, 0.3]} />
-          <meshStandardMaterial map={finishBanner()} roughness={0.6} side={THREE.DoubleSide} />
+          <meshStandardMaterial map={banner} roughness={0.6} side={THREE.DoubleSide} />
         </mesh>,
       )}
     </>
   );
 }
 
-let banner: THREE.Texture | null = null;
+/** The chequered FINISH banner on the finish arch. */
 function finishBanner() {
-  if (banner) return banner;
-  banner = canvasTexture(512, 64, (g) => {
+  return canvasTexture(512, 64, (g) => {
     for (let x = 0; x < 64; x++)
       for (let y = 0; y < 8; y++) {
         g.fillStyle = (x + y) % 2 ? "#111" : "#fafafa";
@@ -1335,7 +1347,6 @@ function finishBanner() {
     g.textBaseline = "middle";
     g.fillText("FINISH", 256, 34);
   });
-  return banner;
 }
 
 /**
@@ -1344,6 +1355,7 @@ function finishBanner() {
  */
 export function Gate({ race, t }: { race: Race; t: number }) {
   const view = useView(race);
+  const sub = useSubframe();
   const gate = race.data.gate as unknown as { hinge: Vec3; quat: Quat; height: number; lightsOut: number; swing: number; time: number };
   const { geometry, faceTex } = useMemo(() => {
     const startHalf = (race.data.samples[0] as unknown as Sample).w ?? TRACK.width / 2;
@@ -1391,12 +1403,41 @@ export function Gate({ race, t }: { race: Race; t: number }) {
 
   const angleAt = (s: number) => gate.swing * (1 - (1 - Math.min(Math.max((s - gate.lightsOut) / gate.time, 0), 1)) ** 3);
   const swingAt = (s: number) => new THREE.Quaternion(...gate.quat).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angleAt(s)));
+  const W = ((race.data.samples[0] as unknown as Sample).w ?? TRACK.width / 2) + TRACK.wall;
+  /** Post e's piston at flap angle a: from its foot on the post to the flap's side. */
+  const pistonAt = (e: number, a: number) => {
+    const base = new THREE.Vector3(-0.35, -0.75, e * (W + 0.25));
+    const dir = new THREE.Vector3(Math.sin(a) * 1.0, -Math.cos(a) * 1.0, e * (W - 0.02)).sub(base);
+    const len = dir.length();
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    return { base, q, len, body: Math.min(0.62, len * 0.6) };
+  };
+  // The pistons stretch by scaling unit-height cylinders, moved like the flap on every sub-frame.
+  const pistonRefs = useRef([-1, 1].map(() => ({ group: null as THREE.Group | null, body: null as THREE.Mesh | null, rod: null as THREE.Mesh | null, tip: null as THREE.Mesh | null })));
+  const placePistons = (a: number) =>
+    [-1, 1].forEach((e, i) => {
+      const p = pistonAt(e, a);
+      const r = pistonRefs.current[i];
+      r.group?.quaternion.copy(p.q);
+      r.body?.scale.set(1, p.body, 1);
+      r.body?.position.set(0, p.body / 2, 0);
+      r.rod?.scale.set(1, p.len - p.body, 1);
+      r.rod?.position.set(0, p.body + (p.len - p.body) / 2, 0);
+      r.tip?.position.set(0, p.len, 0);
+    });
   const sec = t / race.fps;
   const angle = angleAt(sec);
   const swing = swingAt(sec);
   const flapRef = useRef<THREE.Group>(null);
-  useEffect(() => subframe.subscribe((vf) => flapRef.current?.quaternion.copy(swingAt(view.tAt(vf) / race.fps))), [race, gate]);
-  const W = ((race.data.samples[0] as unknown as Sample).w ?? TRACK.width / 2) + TRACK.wall;
+  useEffect(
+    () =>
+      sub.subscribe((vf) => {
+        const s = view.tAt(vf) / race.fps;
+        flapRef.current?.quaternion.copy(swingAt(s));
+        placePistons(angleAt(s));
+      }),
+    [sub, view, race, gate],
+  );
   return (
     <>
       <group position={gate.hinge} quaternion={gate.quat}>
@@ -1420,29 +1461,27 @@ export function Gate({ race, t }: { race: Race; t: number }) {
       </group>
       {/* Pneumatic pistons: from each post to the flap's side, stretching as it opens. */}
       <group position={gate.hinge} quaternion={gate.quat}>
-        {[-1, 1].map((e) => {
-          const base = new THREE.Vector3(-0.35, -0.75, e * (W + 0.25));
-          const attach = new THREE.Vector3(Math.sin(angle) * 1.0, -Math.cos(angle) * 1.0, e * (W - 0.02));
-          const dir = attach.clone().sub(base);
-          const len = dir.length();
-          const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-          const body = Math.min(0.62, len * 0.6);
+        {[-1, 1].map((e, i) => {
+          const { base, q, len, body } = pistonAt(e, angle);
+          const r = pistonRefs.current[i];
           return (
-            <group key={e} position={base} quaternion={q}>
-              <mesh position={[0, body / 2, 0]} castShadow>
-                <cylinderGeometry args={[0.045, 0.045, body, 24]} />
+            <group key={e} ref={(el) => void (r.group = el)} position={base} quaternion={q}>
+              <mesh ref={(el) => void (r.body = el)} position={[0, body / 2, 0]} scale={[1, body, 1]} castShadow>
+                <cylinderGeometry args={[0.045, 0.045, 1, 24]} />
                 <meshStandardMaterial color="#1c1d22" roughness={0.35} metalness={0.4} />
               </mesh>
-              <mesh position={[0, body + (len - body) / 2, 0]} castShadow>
-                <cylinderGeometry args={[0.018, 0.018, len - body, 16]} />
+              <mesh ref={(el) => void (r.rod = el)} position={[0, body + (len - body) / 2, 0]} scale={[1, len - body, 1]} castShadow>
+                <cylinderGeometry args={[0.018, 0.018, 1, 16]} />
                 <meshStandardMaterial {...chrome} />
               </mesh>
-              {[0, len].map((y) => (
-                <mesh key={y} position={[0, y, 0]} rotation-x={Math.PI / 2}>
-                  <cylinderGeometry args={[0.04, 0.04, 0.05, 20]} />
-                  <meshStandardMaterial {...chrome} />
-                </mesh>
-              ))}
+              <mesh key="foot" position={[0, 0, 0]} rotation-x={Math.PI / 2}>
+                <cylinderGeometry args={[0.04, 0.04, 0.05, 20]} />
+                <meshStandardMaterial {...chrome} />
+              </mesh>
+              <mesh key="tip" ref={(el) => void (r.tip = el)} position={[0, len, 0]} rotation-x={Math.PI / 2}>
+                <cylinderGeometry args={[0.04, 0.04, 0.05, 20]} />
+                <meshStandardMaterial {...chrome} />
+              </mesh>
             </group>
           );
         })}
@@ -1569,11 +1608,21 @@ function bakedTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) 
 
 export function Marbles({ race, t }: { race: Race; t: number }) {
   const view = useView(race);
+  const sub = useSubframe();
   const tex = useMemo(() => race.marbles.map((m) => marbleTextures(m.name, (m as { flag?: string }).flag ?? "", (m as { color?: string }).color)), [race]);
+  // The largest textures on a canvas (two 1024×512 maps per marble): freed with it, not whenever it is collected.
+  useEffect(
+    () => () =>
+      tex.forEach((t) => {
+        t.map.dispose();
+        t.mr.dispose();
+      }),
+    [tex],
+  );
   const refs = useRef<(THREE.Mesh | null)[]>([]);
   useEffect(
     () =>
-      subframe.subscribe((vf) => {
+      sub.subscribe((vf) => {
         const tt = view.tAt(vf);
         race.marbles.forEach((_, i) => {
           const m = refs.current[i];
@@ -1585,7 +1634,7 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
           m.visible = drained ? drained.visible : !race.dqBy(i, tt);
         });
       }),
-    [race],
+    [sub, view, race],
   );
   return (
     <>
@@ -1615,6 +1664,7 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
 /** Confetti over the finish line when the winner crosses; closed-form, so any frame is direct. */
 export function Confetti({ race, t }: { race: Race; t: number }) {
   const view = useView(race);
+  const sub = useSubframe();
   const { mesh, pieces, origin } = useMemo(() => {
     const samples = race.data.samples as unknown as Sample[];
     const uF = (race.data.info as { finish?: number }).finish ?? race.L;
@@ -1658,6 +1708,6 @@ export function Confetti({ race, t }: { race: Race; t: number }) {
     mesh.instanceMatrix.needsUpdate = true;
   };
   update(t);
-  useEffect(() => subframe.subscribe((vf) => update(view.tAt(vf))), [race, mesh]);
+  useEffect(() => sub.subscribe((vf) => update(view.tAt(vf))), [sub, view, race, mesh]);
   return <primitive object={mesh} />;
 }

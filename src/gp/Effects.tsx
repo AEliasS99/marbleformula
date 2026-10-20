@@ -7,6 +7,7 @@ import {
   BrightnessContrastEffect,
   DepthOfFieldEffect,
   EffectComposer,
+  EffectMaterial,
   EffectPass,
   NoiseEffect,
   Pass,
@@ -16,8 +17,8 @@ import {
   VignetteEffect,
 } from "postprocessing";
 import { N8AOPostPass } from "n8ao";
-import type { Layout, Race } from "./race";
-import { subframe } from "./subframe";
+import type { Race } from "./race";
+import { useSubframe } from "./subframe";
 import { useView } from "./view";
 import { isNight } from "./look";
 import { quality } from "./quality";
@@ -32,8 +33,23 @@ import { quality } from "./quality";
 // wrapper's lifecycle doesn't line up with how Remotion advances frames, and
 // rendered nothing): we size it to the drawing buffer and render it ourselves.
 
-/** Sub-frames per video frame, and the shutter as a fraction of the frame interval. */
+/**
+ * Sub-frames per video frame, and the shutter as a fraction of the frame interval.
+ * The shutter must stay under 1: every sub-frame then lies within half a frame of
+ * its video frame, which is how src/gp/race.ts tells which frame a sample belongs to.
+ */
 export const MOTION_BLUR = { samples: 3, shutter: 0.35 }; // samples: the default; see src/gp/quality.ts
+
+/**
+ * The film grain's clock for one sub-frame: a deterministic function of the
+ * frame (the wall clock made every render of a frame different), different for
+ * every sub-frame, and kept small (the grain shader multiplies its texture
+ * coordinates by it, and large values lose float precision).
+ */
+const grainTime = (frame: number, k: number, samples: number) => {
+  const n = Math.round(frame) * samples + k;
+  return 1 + ((((n * 0.6180339887498949) % 1) + 1) % 1) * 63;
+};
 
 /**
  * Final pass: adds each sub-frame into a float accumulation buffer with weight
@@ -105,6 +121,8 @@ class AccumulatePass extends Pass {
  * Remotion renders a frame by calling R3F's advance() from an effect that runs
  * before the composer has its size and passes. The first frame a tab renders
  * (and every still) would come out blank, so render once more on mount.
+ * This only works because <Effects> is the last child of <Stage> (see there):
+ * its effect then runs after every sibling's, once the whole scene is in place.
  */
 function RenderOnceComposerIsReady() {
   const advance = useThree((s) => s.advance);
@@ -114,8 +132,7 @@ function RenderOnceComposerIsReady() {
   return null;
 }
 
-export function Effects({ race, layout, frame }: { race: Race; layout: Layout; frame: number }) {
-  void layout;
+export function Effects({ race, frame }: { race: Race; frame: number }) {
   return (
     <>
       <EffectChain race={race} frame={frame} />
@@ -126,6 +143,7 @@ export function Effects({ race, layout, frame }: { race: Race; layout: Layout; f
 
 function EffectChain({ race, frame }: { race: Race; frame: number }) {
   const view = useView(race);
+  const sub = useSubframe();
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
@@ -157,13 +175,17 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     const vignette = new VignetteEffect({ offset: 0.32, darkness: 0.42 });
     const noise = new NoiseEffect({ premultiply: true, blendFunction: BlendFunction.SOFT_LIGHT });
     noise.blendMode.opacity.value = 0.025;
-    composer.addPass(new EffectPass(camera, dof));
+    const focus = new EffectPass(camera, dof);
+    composer.addPass(focus);
     // No saturation boost: on the painted marbles' pure reds and yellows it pushed channels
     // out of range and they rendered as white blotches.
-    composer.addPass(new EffectPass(camera, bloom, tone, grade, vignette, noise));
+    const finish = new EffectPass(camera, bloom, tone, grade, vignette, noise);
+    composer.addPass(finish);
     const accumulate = new AccumulatePass();
     composer.addPass(accumulate);
-    return { composer, dof, ao, accumulate };
+    // The effect passes' shader clock (only the grain reads it), set per sub-frame below.
+    const clocks = [focus, finish].map((p) => p.fullscreenMaterial as EffectMaterial);
+    return { composer, dof, ao, accumulate, clocks };
   }, [gl, scene, camera]);
 
   useEffect(() => () => chain.composer.dispose(), [chain]);
@@ -179,11 +201,13 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     chain.accumulate.weight = 1 / samples;
     for (let k = 0; k < samples; k++) {
       const vf = frame + shutter * ((k + 0.5) / samples - 0.5);
-      subframe.apply(vf);
+      sub.apply(vf);
       const shot = view.shotAt(vf);
       chain.dof.target = new THREE.Vector3(...shot.target);
       chain.accumulate.flush = k === samples - 1;
-      chain.composer.render();
+      for (const m of chain.clocks) m.time = grainTime(frame, k, samples);
+      // A zero time step: the passes' clocks stay where we set them (the composer would otherwise advance them by wall-clock time).
+      chain.composer.render(0);
     }
   }, 1);
 

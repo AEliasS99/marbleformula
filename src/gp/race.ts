@@ -25,7 +25,17 @@ export type Split = {
 };
 export type IntroCard = { type: string; u: number; label: string; count: number; from: number; to: number };
 export type IntroPlan = { scenes: { id: string; frames: number; at: number }[]; total: number; highlight: number | null; coldFrom?: number; L: number; cards: IntroCard[] };
-export type Highlight = { f: number; marble: number; label: string; feature: string; from: number; to: number; speed: number; frames: number; at: number };
+/** A highlight (or a drain blooper): replayed in slow motion in a split screen from the live frame `insert`. */
+export type Highlight = { f: number; marble: number; label: string; feature: string; from: number; to: number; speed: number; frames: number; insert: number; dq?: boolean };
+
+/**
+ * A camera move faster than this (world units between two consecutive frames)
+ * is a cut, not a move: in the split screens' P1 camera the leader can change,
+ * and the camera then jumps to the new one.
+ */
+const CUT_JUMP = 1.5;
+const jump = (A: ArrayLike<unknown>, B: ArrayLike<unknown>) =>
+  Math.hypot((A[0] as number) - (B[0] as number), (A[1] as number) - (B[1] as number), (A[2] as number) - (B[2] as number));
 
 export { rounds, season };
 
@@ -49,22 +59,38 @@ function build(data: RoundData) {
   const N = marbles.length;
   const L = data.info.length;
 
-  const segments = timeline.segments as { kind: string; at: number; from: number; to: number; speed?: number; frames?: number; highlight?: number }[];
+  // The live race as video segments (the bake writes a single one: highlights
+  // replay in a split screen beside the race, they no longer interrupt it).
+  const segments = timeline.segments as { kind: string; at: number; from: number; to: number }[];
   const highlights = timeline.highlights as unknown as Highlight[];
-  /** Maps a video frame to a section and a (possibly fractional) simulation frame; `highlight` during a mid-race replay. */
-  const simAt = (videoFrame: number): { section: Section; t: number; highlight: number | null } => {
+  /** Maps a video frame to a section and a (possibly fractional) simulation frame. */
+  const simAt = (videoFrame: number): { section: Section; t: number } => {
     const { replay, results, standings } = timeline;
     if (videoFrame < replay.at) {
       let seg = segments[0];
       for (const s of segments) if (videoFrame >= s.at) seg = s;
-      if (seg.kind === "replay") return { section: "replay", t: Math.min(seg.to, seg.from + (videoFrame - seg.at) * seg.speed!), highlight: seg.highlight! };
-      return { section: "race", t: Math.min(seg.to - 1, seg.from + (videoFrame - seg.at)), highlight: null };
+      return { section: "race", t: Math.min(seg.to - 1, seg.from + (videoFrame - seg.at)) };
     }
-    if (videoFrame < results.at) return { section: "replay", t: replay.from + (videoFrame - replay.at) * replay.speed, highlight: null };
-    if (videoFrame < standings.at) return { section: "results", t: lastFrame, highlight: null };
+    if (videoFrame < results.at) return { section: "replay", t: replay.from + (videoFrame - replay.at) * replay.speed };
+    if (videoFrame < standings.at) return { section: "results", t: lastFrame };
     const cons = (timeline as unknown as { constructors?: { at: number } }).constructors;
-    if (cons && videoFrame >= cons.at) return { section: "constructors", t: lastFrame, highlight: null };
-    return { section: "standings", t: lastFrame, highlight: null };
+    if (cons && videoFrame >= cons.at) return { section: "constructors", t: lastFrame };
+    return { section: "standings", t: lastFrame };
+  };
+
+  // Motion blur samples a video frame at fractional moments around it (always
+  // within half a frame: see MOTION_BLUR in src/gp/Effects.tsx), so the video
+  // frame a sample belongs to is the nearest integer.
+  /** The section a video frame shows, for sub-frame clamping (the cards behind the results are one continuous drone shot). */
+  const sectionKey = (vf: number) => {
+    if (vf < 0) return "intro"; // the intro is its own composition part (src/gp/Intro.tsx)
+    const s = simAt(vf).section;
+    return s === "standings" || s === "constructors" ? "results" : s;
+  };
+  /** A sub-frame sample never reaches across a section boundary (intro / race / replay / results): there it takes its own video frame. */
+  const clampSample = (vf: number) => {
+    const F = Math.round(vf);
+    return vf === F || sectionKey(vf) === sectionKey(F) ? vf : F;
   };
 
   const qa = new THREE.Quaternion();
@@ -220,6 +246,36 @@ function build(data: RoundData) {
   // Cameras: the race comes from the baked director; replay and the result
   // cards are framed here.
   const cams = data.cams as (number | string | null)[][];
+  const splits = ((data as unknown as { splits?: Split[] }).splits ?? []) as Split[];
+
+  // Where the race camera cuts: between frames f and f + 1 when the director's
+  // shot changes, the camera's kind changes, a split screen starts or ends (its
+  // left half follows P1 with a camera of its own), or, inside a split's P1
+  // camera, the leader changes and the camera jumps. Motion blur never blends
+  // across a cut (it would double-expose the first frame of every shot).
+  const raceCut = new Uint8Array(cams.length);
+  {
+    const shotIx = new Int32Array(cams.length);
+    for (let f = 0; f < cams.length; f++) {
+      const i = shots.findIndex((s) => f >= s.start && f < s.end);
+      shotIx[f] = i < 0 ? shots.length - 1 : i; // as shotInfo
+    }
+    const edges = new Set(splits.flatMap((sp) => [sp.start, sp.end]));
+    const inSplit = new Uint8Array(cams.length);
+    for (const sp of splits) for (let f = Math.max(0, sp.start); f < Math.min(cams.length, sp.end); f++) inSplit[f] = 1;
+    for (let f = 0; f + 1 < cams.length; f++) {
+      const A = cams[f];
+      const B = cams[f + 1];
+      const leader = A[7] === "leader" || B[7] === "leader" || inSplit[f] || inSplit[f + 1];
+      raceCut[f] = shotIx[f] !== shotIx[f + 1] || A[7] !== B[7] || edges.has(f + 1) || (leader && jump(A, B) > CUT_JUMP) ? 1 : 0;
+    }
+  }
+  /** Cuts in a list of camera rows that has no shot list (a split's own camera, a highlight's replay camera): only jumps. */
+  const jumpCuts = (rows: ArrayLike<unknown>[]) => {
+    const out = new Uint8Array(rows.length);
+    for (let k = 0; k + 1 < rows.length; k++) out[k] = jump(rows[k], rows[k + 1]) > CUT_JUMP ? 1 : 0;
+    return out;
+  };
   const winnerPath: Vec3[] = [];
   for (let f = 0; f <= lastFrame; f++) {
     const acc: Vec3 = [0, 0, 0];
@@ -234,28 +290,32 @@ function build(data: RoundData) {
     }
     winnerPath.push(acc.map((v) => v / n) as Vec3);
   }
-  /** Two baked camera rows blended (only within one shot; cuts stay hard). */
-  const blendCams = (A: (number | string | null)[], B: (number | string | null)[], a: number, sameShot: boolean): Shot => {
-    const k = sameShot ? a : 0;
+  /** Two baked camera rows blended. */
+  const blendCams = (A: (number | string | null)[], B: (number | string | null)[], k: number): Shot => {
     const mix = (i: number) => (A[i] as number) + ((B[i] as number) - (A[i] as number)) * k;
     return { pos: [mix(0), mix(1), mix(2)], target: [mix(3), mix(4), mix(5)], fov: mix(6), kind: A[7] as string, marble: A[8] as number | null };
   };
+  /**
+   * The camera at row position x (fractional, for motion blur) of baked camera
+   * rows. Within a shot it blends the two rows around x; across a cut it takes
+   * the row on the side of the video frame being rendered (whose own position
+   * is xFrame), so all of that frame's sub-frames see the same shot.
+   */
+  const camAt = (rows: (number | string | null)[][], cuts: Uint8Array, x: number, xFrame: number): Shot => {
+    const xc = Math.max(0, Math.min(rows.length - 1.001, x));
+    const k = Math.max(0, Math.floor(xc));
+    const next = Math.min(rows.length - 1, k + 1);
+    if (cuts[k]) {
+      const side = Math.min(next, Math.max(k, Math.round(xFrame)));
+      return blendCams(rows[side], rows[side], 0);
+    }
+    return blendCams(rows[k], rows[next], xc - k);
+  };
   /** Camera for a video frame; fractional frames interpolate, for motion blur. */
   const shotAt = (videoFrame: number): Shot => {
-    const { section, t, highlight } = simAt(videoFrame);
-    if (section === "replay" && highlight !== null) {
-      const h = highlights[highlight];
-      const hc = (data.highlightCams as number[][][])[highlight];
-      const x = Math.max(0, Math.min(hc.length - 1.001, t - h.from));
-      const k = Math.floor(x);
-      const s = blendCams(hc[k], hc[k + 1], x - k, true);
-      return { ...s, kind: "highlight", marble: h.marble };
-    }
-    if (section === "race") {
-      const x = Math.max(0, Math.min(cams.length - 1.001, t));
-      const f0 = Math.floor(x);
-      return blendCams(cams[f0], cams[f0 + 1], x - f0, shotInfo(f0) === shotInfo(f0 + 1));
-    }
+    const vf = clampSample(videoFrame);
+    const { section, t } = simAt(vf);
+    if (section === "race") return camAt(cams, raceCut, t, simAt(Math.round(vf)).t);
     if (section === "replay") {
       const f0 = Math.floor(t);
       const a = t - f0;
@@ -265,7 +325,7 @@ function build(data: RoundData) {
       return { pos: data.replayCam as Vec3, target, fov: 30, kind: "replay", marble: winner };
     }
     // Slow drone orbit of the whole circuit behind the result cards.
-    const k = (videoFrame - timeline.results.at) / (timeline.total - timeline.results.at);
+    const k = (vf - timeline.results.at) / (timeline.total - timeline.results.at);
     const c = data.heli.center as Vec3;
     const e = data.heli.extent;
     const a = 0.8 + k * 0.9;
@@ -285,39 +345,42 @@ function build(data: RoundData) {
     marbles[order[1]].finishFrame !== null ? (marbles[order[1]].finishFrame! - winnerFrame) / fps : null;
 
   // --- Split screen --------------------------------------------------------------
-  const splits = ((data as unknown as { splits?: Split[] }).splits ?? []) as Split[];
   /** The split showing at a video frame (live race only), if any. */
   const splitAt = (videoFrame: number): Split | null => {
     const { section, t } = simAt(videoFrame);
     if (section !== "race") return null;
     return splits.find((sp) => t >= sp.start && t < sp.end) ?? null;
   };
-  const mainView: View = { tAt: (vf) => simAt(vf).t, shotAt: (vf) => shotAt(vf) };
+  const mainView: View = { tAt: (vf) => simAt(clampSample(vf)).t, shotAt };
   /** The right half of a split: a replay runs its own slow clock in the past; the lift and the action are live. */
-  const splitView = (sp: Split): View => {
-    const live = (vf: number) => simAt(vf).t;
-    if (sp.kind === "replay" && sp.highlight !== undefined) {
+  const makeSplitView = (sp: Split): View => {
+    const live = (vf: number) => simAt(clampSample(vf)).t;
+    const hc = sp.kind === "replay" && sp.highlight !== undefined ? (data.highlightCams as number[][][])[sp.highlight] : undefined;
+    if (sp.kind === "replay" && sp.highlight !== undefined && highlights[sp.highlight] && hc?.length) {
       const h = highlights[sp.highlight];
-      const hc = (data.highlightCams as number[][][])[sp.highlight];
+      const cuts = jumpCuts(hc);
       const tAt = (vf: number) => Math.min(h.to, h.from + (live(vf) - sp.start) * h.speed);
       return {
         tAt,
-        shotAt: (vf) => {
-          const x = Math.max(0, Math.min(hc.length - 1.001, tAt(vf) - h.from));
-          const k = Math.floor(x);
-          return { ...blendCams(hc[k], hc[k + 1], x - k, true), kind: "highlight", marble: h.marble };
-        },
+        shotAt: (vf) => ({ ...camAt(hc, cuts, tAt(vf) - h.from, tAt(Math.round(vf)) - h.from), kind: "highlight", marble: h.marble }),
       };
     }
     const cs = sp.cams ?? [];
+    // No camera of its own (an older bake): show the race's camera rather than nothing.
+    if (!cs.length) return { tAt: live, shotAt };
+    const cuts = jumpCuts(cs);
     return {
       tAt: live,
-      shotAt: (vf) => {
-        const x = Math.max(0, Math.min(cs.length - 1.001, live(vf) - sp.start));
-        const k = Math.floor(x);
-        return { ...blendCams(cs[k], cs[k + 1] ?? cs[k], x - k, true), kind: sp.kind, marble: null };
-      },
+      shotAt: (vf) => ({ ...camAt(cs, cuts, live(vf) - sp.start, live(Math.round(vf)) - sp.start), kind: sp.kind, marble: null }),
     };
+  };
+  // One View per split for the race's lifetime: the right half's canvas and
+  // everything in it that subscribes to its view keep the same object.
+  const splitViews = new Map<Split, View>();
+  const splitView = (sp: Split): View => {
+    let v = splitViews.get(sp);
+    if (!v) splitViews.set(sp, (v = makeSplitView(sp)));
+    return v;
   };
   /** P1 at a simulation frame (the left half of every split follows it). */
   const leaderAt = (f: number) => ranking(Math.max(0, Math.min(lastFrame, Math.round(f))))[0];
@@ -363,13 +426,21 @@ function build(data: RoundData) {
     sec,
     events,
     highlights,
-    segments,
   };
 }
 
-/** Portrait frames are narrow: widen the vertical FOV so roughly the same scene fits. */
-export const fovFor = (fov: number, layout: Layout) =>
-  layout === "landscape" ? fov : (2 * Math.atan(Math.tan((fov * Math.PI) / 360) * 1.9) * 180) / Math.PI;
+/**
+ * The lens for a canvas of a given aspect (width / height): narrower frames (a
+ * portrait video, a landscape half of a split screen) widen the vertical FOV so
+ * about as much of the scene fits; the near-square halves of a portrait split
+ * keep the director's lens. The camera rig (src/gp/Scene.tsx) and every overlay
+ * that projects onto the picture use this, so labels land on what they label.
+ */
+export function lensFov(fov: number, aspect: number, layout: Layout) {
+  if (layout !== "landscape" && aspect >= 0.9) return fov;
+  const k = Math.min(1.9, Math.max(1, Math.sqrt(16 / 9 / Math.max(0.3, aspect))));
+  return (2 * Math.atan(Math.tan((fov * Math.PI) / 360) * k) * 180) / Math.PI;
+}
 
 /** Projects a world point to pixels for overlays. */
 export function project(shot: Shot, fov: number, p: Vec3, width: number, height: number) {

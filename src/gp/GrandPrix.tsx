@@ -32,8 +32,8 @@ export const GrandPrix = ({ id, layout, clean = false }: { id: string; layout: L
   if (frame < 0)
     return (
       <AbsoluteFill style={{ backgroundColor: "#111216" }}>
-        <Intro race={race} layout={layout} frame={video} width={width} height={height} />
         {audio}
+        <Intro race={race} layout={layout} frame={video} width={width} height={height} />
       </AbsoluteFill>
     );
   const { section, t } = race.simAt(frame);
@@ -42,23 +42,26 @@ export const GrandPrix = ({ id, layout, clean = false }: { id: string; layout: L
   const side = layout === "landscape";
   const half = side ? { width: width / 2, height } : { width, height: height / 2 };
   const gap = 4; // a thin dark seam between the halves
+  // The pane each canvas shows through: the canvas is half the picture, the pane a seam narrower.
+  const pane = { width: half.width - (side ? gap / 2 : 0), height: half.height - (side ? 0 : gap / 2) };
+  const main = split ? half : { width, height };
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#111216" }}>
-      {split ? (
-        <>
-          <div style={{ position: "absolute", left: 0, top: 0, width: half.width - (side ? gap / 2 : 0), height: half.height - (side ? 0 : gap / 2), overflow: "hidden" }}>
-            <Stage race={race} view={race.mainView} layout={layout} frame={frame} width={half.width} height={half.height} />
-          </div>
-          <div style={{ position: "absolute", left: side ? half.width + gap / 2 : 0, top: side ? 0 : half.height + gap / 2, width: half.width - (side ? gap / 2 : 0), height: half.height - (side ? 0 : gap / 2), overflow: "hidden" }}>
-            <Stage race={race} view={race.splitView(split)} layout={layout} frame={frame} width={half.width} height={half.height} />
-          </div>
-        </>
-      ) : (
-        <Stage race={race} view={race.mainView} layout={layout} frame={frame} width={width} height={height} />
+      {audio}
+      {/* The main canvas (the whole picture, or the left/top half of a split) is always this same element
+          in this same place: a split only resizes it. Remounting it rebuilt the whole WebGL scene (and its
+          GPU memory) at every split's start and end. Only the right half's canvas comes and goes. */}
+      <div style={{ position: "absolute", left: 0, top: 0, width: split ? pane.width : width, height: split ? pane.height : height, overflow: "hidden" }}>
+        <Stage race={race} view={race.mainView} layout={layout} frame={frame} width={main.width} height={main.height} />
+      </div>
+      {split && (
+        <div style={{ position: "absolute", left: side ? half.width + gap / 2 : 0, top: side ? 0 : half.height + gap / 2, width: pane.width, height: pane.height, overflow: "hidden" }}>
+          {/* Keyed per split: back-to-back splits each get a fresh canvas and their own view (camera and clock). */}
+          <Stage key={`${split.kind}-${split.start}`} race={race} view={race.splitView(split)} layout={layout} frame={frame} width={half.width} height={half.height} />
+        </div>
       )}
       {!clean && <Overlay race={race} frame={frame} t={t} section={section} shot={shot} layout={layout} width={width} height={height} split={split} />}
-      {audio}
     </AbsoluteFill>
   );
 };

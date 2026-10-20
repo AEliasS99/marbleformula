@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { subframe } from "./subframe";
+import { useSubframe } from "./subframe";
 import * as THREE from "three";
 import { useView } from "./view";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -9,8 +9,8 @@ import { isNight } from "./look";
 
 // The small things that make the track read as a real object: rounded rims,
 // joints every few units with a collar and hex bolts, saddle clamps where the
-// pillars hold the trough, bolted base plates on the floor, and acrylic tunnels
-// with LED rings. Render-only; built from the same samples as the physics.
+// pillars hold the trough, and bolted base plates on the floor. Render-only;
+// built from the same samples as the physics.
 
 type Sample = { u: number; p: Vec3; t: Vec3; r: Vec3; n: Vec3; curv: number; w?: number; gap?: boolean };
 type Profile = { inner: [number, number, number][]; outer: [number, number][] };
@@ -119,31 +119,10 @@ function outward(points: [number, number][], i: number, d: number): [number, num
   return [points[i][0] + (ty / l) * d, points[i][1] + (-tx / l) * d];
 }
 
-/** Tunnel spans: the two longest stretches with no obstacles, away from the start and finish. */
-export function tunnelSpans(race: Race) {
-  const feats = (race.data.features as unknown as { u: number; span: [number, number] }[]).map((f) => [f.u - f.span[0], f.u + f.span[1]]);
-  const edges = [[-1e9, 18], ...feats, [race.L - 22, 1e9]].sort((a, b) => a[0] - b[0]);
-  const gaps: [number, number][] = [];
-  for (let i = 0; i < edges.length - 1; i++) {
-    const a = edges[i][1] + 3;
-    const b = edges[i + 1][0] - 3;
-    if (b - a > 10) gaps.push([a, b]);
-  }
-  return gaps
-    .sort((x, y) => y[1] - y[0] - (x[1] - x[0]))
-    .slice(0, 2)
-    .map(([a, b]) => {
-      const len = Math.min(16, b - a);
-      const mid = (a + b) / 2;
-      return [mid - len / 2, mid + len / 2] as [number, number];
-    })
-    .sort((x, y) => x[0] - y[0]);
-}
-
 export function TrackDetails({ race }: { race: Race }) {
   const built = useMemo(() => {
     const samples = race.data.samples as unknown as Sample[];
-    const { inner, outer } = troughProfile(18) as Profile;
+    const { outer } = troughProfile(18) as Profile;
     const uStart = samples[0].u;
     const uEnd = samples[samples.length - 1].u;
     const W = TRACK.wall;
@@ -303,38 +282,6 @@ function canvasStripes() {
   return t;
 }
 
-/**
- * A seamless studio cyclorama around the whole circuit: floor, a long cove
- * and a wall, all one surface. Wide shots end in a real studio, not in fog.
- */
-export function Cyclorama({ race, color }: { race: Race; color: string }) {
-  const geo = useMemo(() => {
-    const samples = race.data.samples as unknown as Sample[];
-    const xs = samples.map((s) => s.p[0]);
-    const zs = samples.map((s) => s.p[2]);
-    const extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs));
-    const R0 = extent * 0.95 + 40;
-    const cove = 35;
-    const wall = 160;
-    // Starts at the cove: inside it, the textured studio floor is the floor.
-    const pts: THREE.Vector2[] = [];
-    for (let k = 0; k <= 24; k++) {
-      const a = (k / 24) * (Math.PI / 2);
-      pts.push(new THREE.Vector2(R0 + Math.sin(a) * cove, cove - Math.cos(a) * cove));
-    }
-    pts.push(new THREE.Vector2(R0 + cove, wall));
-    const g = new THREE.LatheGeometry(pts, 160);
-    const minY = Math.min(...samples.map((s) => s.p[1]));
-    g.translate((Math.min(...xs) + Math.max(...xs)) / 2, minY - 1.4, (Math.min(...zs) + Math.max(...zs)) / 2);
-    return g;
-  }, [race]);
-  return (
-    <mesh geometry={geo} receiveShadow>
-      <meshStandardMaterial color={color} roughness={0.92} side={THREE.BackSide} />
-    </mesh>
-  );
-}
-
 /** Timing gate at the finish: emitter boxes on both rims and a faint red beam across. */
 export function TimingGate({ race }: { race: Race }) {
   const samples = race.data.samples as unknown as Sample[];
@@ -438,65 +385,6 @@ export function Decals({ race }: { race: Race }) {
   );
 }
 
-/** Clear acrylic tunnels with LED rings, over the two longest obstacle-free stretches. */
-export function Tunnels({ race }: { race: Race }) {
-  const built = useMemo(() => {
-    const samples = race.data.samples as unknown as Sample[];
-    const R = HALF + TRACK.wall + 0.08;
-    const arc = (r: number, lift = 0): [number, number][] =>
-      Array.from({ length: 41 }, (_, k) => {
-        const a = (k / 40) * Math.PI;
-        return [Math.cos(a) * r, TRACK_DEPTH - 0.04 + lift + Math.sin(a) * r * 0.78];
-      });
-    const shells: THREE.BufferGeometry[] = [];
-    const rings: THREE.BufferGeometry[] = [];
-    const portals: THREE.BufferGeometry[] = [];
-    for (const [a, b] of tunnelSpans(race)) {
-      shells.push(sweep(samples, arc(R), a, b, 0.2));
-      for (let u = a + 0.8; u < b - 0.5; u += 1.3) {
-        // A thin LED strip on the inside of the tube.
-        const tubeRing = arc(R - 0.03);
-        rings.push(sweep(samples, tubeRing, u - 0.025, u + 0.025, 0.025));
-      }
-      for (const u of [a, b]) portals.push(sweep(samples, [...arc(R + 0.07), ...arc(R - 0.04).reverse()], u - 0.09, u + 0.09, 0.06, true));
-    }
-    return {
-      shell: shells.length ? mergeGeometries(shells)! : null,
-      rings: rings.length ? mergeGeometries(rings)! : null,
-      portals: portals.length ? mergeGeometries(portals)! : null,
-    };
-  }, [race]);
-  if (!built.shell) return null;
-  return (
-    <>
-      <mesh geometry={built.shell} renderOrder={5}>
-        {/* Real transmission: refracts and tints what's behind it, reflects the studio. */}
-        <meshPhysicalMaterial
-          color="#eef5ff"
-          transmission={1}
-          thickness={0.06}
-          ior={1.49}
-          roughness={0.03}
-          metalness={0}
-          clearcoat={1}
-          clearcoatRoughness={0.02}
-          specularIntensity={1}
-          envMapIntensity={1.8}
-          attenuationColor="#dbe9ff"
-          attenuationDistance={2}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      <mesh geometry={built.rings!}>
-        <meshStandardMaterial color="#ffffff" emissive="#e6efff" emissiveIntensity={14} roughness={0.3} side={THREE.DoubleSide} toneMapped={false} />
-      </mesh>
-      <mesh geometry={built.portals!} castShadow receiveShadow>
-        <meshStandardMaterial color="#e3e6ec" metalness={1} roughness={0.14} side={THREE.DoubleSide} />
-      </mesh>
-    </>
-  );
-}
-
 type Lift = { u0: number; len: number; lead: number; speed: number; spacing: number; count: number; half: number };
 
 /** A spur gear: a disc with square-ish teeth, as an extruded shape lying in XY. */
@@ -526,6 +414,7 @@ function gearGeometry(r: number, teeth: number, depth: number) {
  */
 export function Lifts({ race, t }: { race: Race; t: number }) {
   const view = useView(race);
+  const sub = useSubframe();
   const lifts = (race.data.lifts ?? []) as unknown as Lift[];
   const samples = race.data.samples as unknown as Sample[];
   const built = useMemo(() => {
@@ -553,11 +442,6 @@ export function Lifts({ race, t }: { race: Race; t: number }) {
       belt,
       gear: gearGeometry(0.42, 18, 0.08),
       parts: lifts.map((lift) => {
-        const flat = (w: number): [number, number][] => [
-          [-(lift.half - 0.02), 0.012],
-          [lift.half - 0.02, 0.012],
-        ];
-        void flat;
         const beltGeo = sweep(samples, [[-(lift.half - 0.02), 0.03], [lift.half - 0.02, 0.03]], lift.u0 - lift.lead - 0.3, lift.u0 + lift.len + 0.3, 0.1);
         return { beltGeo };
       }),
@@ -573,7 +457,7 @@ export function Lifts({ race, t }: { race: Race; t: number }) {
   const gearRefs = useRef<(THREE.Mesh | null)[]>([]);
   useEffect(
     () =>
-      subframe.subscribe((vf) => {
+      sub.subscribe((vf) => {
         const s = view.tAt(vf) / race.fps;
         built.belt.offset.set(-((lifts[0]?.speed ?? 0) * s), 0);
         lifts.forEach((lift, li) => {
@@ -590,7 +474,7 @@ export function Lifts({ race, t }: { race: Race; t: number }) {
           });
         });
       }),
-    [race, built],
+    [sub, view, race, built],
   );
   return (
     <>

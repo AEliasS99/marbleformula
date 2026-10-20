@@ -53,8 +53,8 @@ function dataTexture(size: number, rgba: Uint8Array, srgb = false) {
   return t;
 }
 
-/** Normal map from a height field (central differences). */
-export function normalMapFrom(height: Float32Array, size: number, strength: number) {
+/** Normal map pixels (RGBA) from a height field (central differences). */
+function normalPixels(height: Float32Array, size: number, strength: number) {
   const rgba = new Uint8Array(size * size * 4);
   const h = (x: number, y: number) => height[((y + size) % size) * size + ((x + size) % size)];
   for (let y = 0; y < size; y++)
@@ -68,22 +68,25 @@ export function normalMapFrom(height: Float32Array, size: number, strength: numb
       rgba[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
       rgba[i + 3] = 255;
     }
-  return dataTexture(size, rgba);
+  return rgba;
 }
 
+// The maps take a while to compute, so their pixels are computed once per page.
+// Only the pixels: each canvas gets textures of its own (a texture a renderer has
+// drawn with keeps that renderer alive, so none may outlive its canvas).
 const cache = new Map<string, unknown>();
 function once<T>(key: string, make: () => T): T {
   if (!cache.has(key)) cache.set(key, make());
   return cache.get(key) as T;
 }
 
-/** Moulded plastic: fine orange peel (normal) and gentle roughness drift. */
+/** Moulded plastic: fine orange peel (normal) and gentle roughness drift. New textures on every call. */
 export function plasticMaps() {
-  return once("plastic", () => {
+  const px = once("plastic", () => {
     const size = 512;
     const peel = noiseField(size, 64, 3, 1);
     const drift = noiseField(size, 4, 4, 2);
-    const normal = normalMapFrom(peel, size, 3.2);
+    const normal = normalPixels(peel, size, 3.2);
     const rough = new Uint8Array(size * size * 4);
     for (let i = 0; i < size * size; i++) {
       // Roughness lives in G: 0.24–0.42, with faint wipe marks.
@@ -93,13 +96,14 @@ export function plasticMaps() {
       rough[i * 4 + 2] = 255;
       rough[i * 4 + 3] = 255;
     }
-    return { normal, roughness: dataTexture(size, rough) };
+    return { size, normal, rough };
   });
+  return { normal: dataTexture(px.size, px.normal), roughness: dataTexture(px.size, px.rough) };
 }
 
-/** Polished concrete for the studio floor: colour variation and a little sheen variation. */
+/** Polished concrete for the studio floor: colour variation and a little sheen variation. New textures on every call. */
 export function floorMaps(base: string) {
-  return once(`floor${base}`, () => {
+  const px = once(`floor${base}`, () => {
     const size = 512;
     const low = noiseField(size, 6, 5, 3);
     const grain = noiseField(size, 128, 2, 4);
@@ -115,10 +119,16 @@ export function floorMaps(base: string) {
       rough[i * 4 + 1] = (0.55 + low[i] * 0.35) * 255;
       rough[i * 4 + 3] = 255;
     }
-    const color = dataTexture(size, col);
-    color.colorSpace = THREE.LinearSRGBColorSpace;
-    return { color, roughness: dataTexture(size, rough), normal: normalMapFrom(grain, size, 1.2) };
+    return { size, col, rough, normal: normalPixels(grain, size, 1.2) };
   });
+  return colorMaps(px);
+}
+
+/** A colour map (linear: its pixels are already linear), a roughness map and a normal map. */
+function colorMaps(px: { size: number; col: Uint8Array; rough: Uint8Array; normal: Uint8Array }) {
+  const color = dataTexture(px.size, px.col);
+  color.colorSpace = THREE.LinearSRGBColorSpace;
+  return { color, roughness: dataTexture(px.size, px.rough), normal: dataTexture(px.size, px.normal) };
 }
 
 /**
@@ -152,9 +162,9 @@ export function wearChrome(g: CanvasRenderingContext2D, w: number, h: number, se
   g.restore();
 }
 
-/** Asphalt: fine aggregate grain (normal), near-constant roughness. */
+/** Asphalt: fine aggregate grain (normal), near-constant roughness. New textures on every call. */
 export function asphaltMaps() {
-  return once("asphalt", () => {
+  const px = once("asphalt", () => {
     const size = 1024;
     const grain = noiseField(size, 256, 2, 5);
     const fine = noiseField(size, 512, 1, 6);
@@ -165,13 +175,14 @@ export function asphaltMaps() {
       rough[i * 4 + 1] = (0.78 + (grain[i] - 0.5) * 0.2) * 255;
       rough[i * 4 + 3] = 255;
     }
-    return { normal: normalMapFrom(h, size, 2.6), roughness: dataTexture(size, rough) };
+    return { size, normal: normalPixels(h, size, 2.6), rough };
   });
+  return { normal: dataTexture(px.size, px.normal), roughness: dataTexture(px.size, px.rough) };
 }
 
-/** Mown grass: green with broad tonal patches, mowing stripes and fine blade grain. */
+/** Mown grass: green with broad tonal patches, mowing stripes and fine blade grain. New textures on every call. */
 export function grassMaps() {
-  return once("grass", () => {
+  const px = once("grass", () => {
     const size = 1024;
     const patches = noiseField(size, 3, 5, 7);
     const blades = noiseField(size, 256, 2, 8);
@@ -194,8 +205,7 @@ export function grassMaps() {
         rough[i * 4 + 1] = 230;
         rough[i * 4 + 3] = 255;
       }
-    const color = dataTexture(size, col);
-    color.colorSpace = THREE.LinearSRGBColorSpace;
-    return { color, roughness: dataTexture(size, rough), normal: normalMapFrom(blades, size, 1.6) };
+    return { size, col, rough, normal: normalPixels(blades, size, 1.6) };
   });
+  return colorMaps(px);
 }

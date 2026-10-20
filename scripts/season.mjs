@@ -92,7 +92,8 @@ const LAPS = 3;
 // Two cabins side by side: the track widens into two bays over its last
 // `funnel` units (a divider between them), each bay with its own bar and
 // cabin, so one cabin is loading while the other is away.
-const ELEVATOR = { cabin: 4.2, width: 4.4, wall: 2.4, need: 0.34, hold: 2.5, close: 0.45, rise: 4.0, open: 0.4, unload: 2.5, descend: 2.4, barLift: 1.7, funnel: 8, bays: 2 };
+// The stair bays' geometry (the name is historical: the cabins' timing fields are gone with them).
+const ELEVATOR = { cabin: 4.2, width: 4.4, wall: 2.4, funnel: 8, bays: 2 };
 const SAMPLE = 0.5; // centreline sample spacing
 // Gravity is scaled up from 9.81: at real gravity a 0.7-unit marble behaves like
 // a 70 cm ball (slow, floaty bounces). Stronger gravity makes it look and move
@@ -178,7 +179,13 @@ const VORTEX_SWIRL = { accel: 9, share: 0.9 };
 // Obstacles that get their own locked camera (the small ones are seen in passing: too many cuts otherwise).
 // Long enough that its tip sweeps to within 0.4 of each wall: whichever side it closes, the marbles go to the other bay.
 const FIN_CHANNEL = 2.2;
+const EVERYWHERE_GUARD = 1.0; // height of the invisible guard along the whole lap
+/** The last u any obstacle may reach: after it come the guide fins, the distributor flap and the stair bays. */
+const bayReserve = (L) => L - GRID_LENGTH - ELEVATOR.cabin - 18;
+/** Feature types the planner never picks (placed by the bake itself, or retired). */
+const PLANNER_SKIP = ["crest", "booster", "tube", "switch", "regroup"];
 const FLIPPER = { length: 4.0, amp: (25 * Math.PI) / 180, period: 2.4 };
+const STAIR_SHOT_MAX = 7 * 60; // frames
 const STAIR_CAM = { back: 11, above: 6, fov: 46 };
 const CAM_FEATURES = ["vortex", "spinner", "hammer", "turntable", "rollers", "pusher", "jump", "drop", "lift", "fan", "bumpers", "pegs", "splitter"];
 const TUBES = { minCurv: 0.17, height: 1.7 };
@@ -229,7 +236,7 @@ function placeLayout(layout, curv, L, id) {
   const { clear } = placementRules(curv);
   const features = [];
   const overlaps = (u, f) => features.some((g) => !(u + f.after + 4 < g.u - g.span[0] || u - f.before - 4 > g.u + g.span[1]));
-  const legal = (u, f) => u >= 12 + START.funnel && u <= L - 18 && clear(u, f) && !overlaps(u, f);
+  const legal = (u, f) => u >= 12 + START.funnel && u + f.after <= bayReserve(L) && clear(u, f) && !overlaps(u, f);
   const errors = [];
   let cursor = 12 + START.funnel;
   for (const [k, entry] of layout.entries()) {
@@ -238,7 +245,7 @@ function placeLayout(layout, curv, L, id) {
     let u = at;
     if (u === undefined || u === null) {
       u = null;
-      for (let x = Math.ceil(cursor); x <= L - 18; x += 1)
+      for (let x = Math.ceil(cursor); x + f.after <= bayReserve(L); x += 1)
         if (legal(x, f)) {
           u = x;
           break;
@@ -251,7 +258,7 @@ function placeLayout(layout, curv, L, id) {
       const near = [];
       for (let d = 1; d < 80 && near.length < 2; d += 1)
         for (const x of [Math.round(u) - d, Math.round(u) + d]) if (near.length < 2 && legal(x, f)) near.push(x);
-      const why = u < 12 + START.funnel || u > L - 18 ? "outside the lap's usable part" : !clear(u, f) ? `the track is not straight enough from ${(u - f.before).toFixed(0)} to ${(u + f.after).toFixed(0)}` : "too close to another obstacle";
+      const why = u < 12 + START.funnel || u + f.after > bayReserve(L) ? "outside the lap's usable part (the last stretch is the stair bays' run-in)" : !clear(u, f) ? `the track is not straight enough from ${(u - f.before).toFixed(0)} to ${(u + f.after).toFixed(0)}` : "too close to another obstacle";
       errors.push(`#${k + 1} ${type} at u=${u}: ${why}${near.length ? `; legal nearby: ${near.join(", ")}` : ""}`);
       continue;
     }
@@ -278,7 +285,9 @@ function planFeatures(us, curv, L, rand) {
   };
   const queue = [];
   const refill = () => {
-    const types = Object.keys(FEATURES).filter((t) => !FEATURES[t].once);
+    // Only real obstacles: the bake places crests, boosters and tubes itself, and the switch and the
+    // regroup gate are retired (the planner gave zero-length tubes and old gates).
+    const types = Object.keys(FEATURES).filter((t) => !FEATURES[t].once && !PLANNER_SKIP.includes(t));
     for (let i = types.length - 1; i > 0; i--) {
       const j = Math.floor(rand() * (i + 1));
       [types[i], types[j]] = [types[j], types[i]];
@@ -301,7 +310,7 @@ function planFeatures(us, curv, L, rand) {
     const target = 12 + START.funnel + ((j + 0.5) / MIN_JUMPS) * (L - 30 - START.funnel);
     let best = null;
     for (let x = target - 30; x <= target + 30; x += 1) {
-      if (x < 12 + START.funnel || x > L - 18) continue;
+      if (x < 12 + START.funnel || x + FEATURES.jump.after > bayReserve(L)) continue;
       if (clear(x, FEATURES.jump) && !overlaps(x, FEATURES.jump) && (best === null || Math.abs(x - target) < Math.abs(best - target))) best = x;
     }
     if (best !== null) features.push({ type: "jump", u: r3(best), label: FEATURES.jump.label, span: [FEATURES.jump.before, FEATURES.jump.after] });
@@ -311,29 +320,19 @@ function planFeatures(us, curv, L, rand) {
   for (const [j, type] of ALWAYS.entries()) {
     const target = 12 + START.funnel + ((j + 0.7) / 5.4) * (L - 30 - START.funnel);
     let best = null;
-    for (let x = 12 + START.funnel; x <= L - 18; x += 1) {
+    for (let x = 12 + START.funnel; x + FEATURES[type].after <= bayReserve(L); x += 1) {
       if (clear(x, FEATURES[type]) && !overlaps(x, FEATURES[type]) && (best === null || Math.abs(x - target) < Math.abs(best - target))) best = x;
     }
     if (best !== null) features.push({ type, u: r3(best), label: FEATURES[type].label, span: [FEATURES[type].before, FEATURES[type].after] });
   }
-  // Regroup gates, spread over the lap, wherever there is room.
-  for (let j = 0; j < REGROUP.count; j++) {
-    const target = 12 + START.funnel + ((j + 0.75) / (REGROUP.count + 0.5)) * (L - 30 - START.funnel);
-    let best = null;
-    for (let x = target - 70; x <= target + 70; x += 1) {
-      if (x < 12 + START.funnel || x > L - 18) continue;
-      if (clear(x, FEATURES.regroup) && !overlaps(x, FEATURES.regroup) && (best === null || Math.abs(x - target) < Math.abs(best - target))) best = x;
-    }
-    if (best !== null) features.push({ type: "regroup", u: r3(best), label: FEATURES.regroup.label, span: [FEATURES.regroup.before, FEATURES.regroup.after] });
-  }
   // The cycling obstacles start a little later than the machines may: the
   // twenty marbles leave the funnel as one block and need room to string out.
   let u = 30 + START.funnel;
-  while (u < L - 18) {
+  while (u < bayReserve(L)) {
     if (!queue.length) refill();
     // Try the next type in the queue, then the others, at this spot.
     const order = [...queue.slice(0, 3)];
-    const type = order.find((t) => clear(u, FEATURES[t]) && !overlaps(u, FEATURES[t]));
+    const type = order.find((t) => u + FEATURES[t].after <= bayReserve(L) && clear(u, FEATURES[t]) && !overlaps(u, FEATURES[t]));
     if (!type) {
       u += 1;
       continue;
@@ -435,6 +434,9 @@ export function buildCourse(round) {
   const us = [];
   const END = r3(L - GRID_LENGTH - ELEVATOR.cabin); // where the track ends and the cabin docks
   for (let u = -GRID_LENGTH; u <= END + 1e-6; u += SAMPLE) us.push(r3(u));
+  // The trough must reach the dock exactly: stopping up to half a sample short left a gap at the
+  // stair's entrance where marbles wedged and were knocked backwards out of the shaft.
+  if (us[us.length - 1] < END - 1e-3) us.push(END);
   const m = us.length;
   const XZ = us.map(xzAt);
   const up = new Vector3(0, 1, 0);
@@ -475,7 +477,7 @@ export function buildCourse(round) {
     const crests = [];
     for (const p of peaks) {
       if (crests.length >= CREST.max) break;
-      if (p.u < 30 || p.u > L - 26) continue;
+      if (p.u < 30 || p.u + 5 > bayReserve(L)) continue;
       if (features.some((g) => p.u + 5 + 4 > g.u - g.span[0] && p.u - 4 - 4 < g.u + g.span[1])) continue;
       if (crests.some((q) => Math.abs(q - p.u) < CREST.spacing)) continue;
       crests.push(p.u);
@@ -508,7 +510,7 @@ export function buildCourse(round) {
     const boost = featureRule("booster");
     const { clear } = placementRules(curv);
     let added = 0;
-    for (let u = 40; u <= L - 30 && added < LAUNCHES.max; u += 1) {
+    for (let u = 40; u + jump.after <= bayReserve(L) && added < LAUNCHES.max; u += 1) {
       const ub = u - LAUNCHES.gap;
       if (!clear(u, jump) || !clear(ub, boost)) continue;
       if (features.some((g) => u + jump.after + 4 > g.u - g.span[0] && ub - boost.before - 4 < g.u + g.span[1])) continue;
@@ -523,7 +525,7 @@ export function buildCourse(round) {
   if (!features.some((g) => g.type === "rollers")) {
     const rule = featureRule("rollers");
     const { clear } = placementRules(curv);
-    for (let u = 40; u <= L - 30; u += 1) {
+    for (let u = 40; u + rule.after <= bayReserve(L); u += 1) {
       if (!clear(u, rule) || features.some((g) => u + rule.after + 4 > g.u - g.span[0] && u - rule.before - 4 < g.u + g.span[1])) continue;
       features.push({ type: "rollers", u: r3(u), label: rule.label, span: [rule.before, rule.after] });
       features.sort((a, b) => a.u - b.u);
@@ -535,7 +537,7 @@ export function buildCourse(round) {
     const rule = featureRule("fan");
     const { clear } = placementRules(curv);
     let added = 0;
-    for (let u = 30; u <= L - 30 && added < FANS.extra; u += 1) {
+    for (let u = 30; u + rule.after <= bayReserve(L) && added < FANS.extra; u += 1) {
       if (!clear(u, rule)) continue;
       if (features.some((g) => u + rule.after + 6 > g.u - g.span[0] && u - rule.before - 6 < g.u + g.span[1])) continue;
       if (features.some((g) => g.type === "fan" && Math.abs(g.u - u) < FANS.spacing)) continue;
@@ -556,7 +558,7 @@ export function buildCourse(round) {
       return false;
     };
     const placed = [];
-    for (let u = 26; u <= L - 30 && placed.length < BOOSTERS.max; u += 1) {
+    for (let u = 26; u + 5 <= bayReserve(L) && placed.length < BOOSTERS.max; u += 1) {
       if (!bendBefore(u) || !straight(u - 1, u + 6)) continue;
       if (placed.some((q) => Math.abs(q - u) < BOOSTERS.spacing)) continue;
       if (features.some((g) => u + 6 + 3 > g.u - g.span[0] && u - 1 - 3 < g.u + g.span[1])) continue;
@@ -625,6 +627,7 @@ export function buildCourse(round) {
   // drop face).
   const tangent = tPlan.map((t) => new Vector3(t.x, -tanS, t.z).normalize());
   const bankRaw = curv.map((c) => -Math.sign(c) * Math.min(MAX_BANK, Math.atan((DESIGN_SPEED ** 2 * Math.abs(c)) / GRAVITY)));
+  const flat = us.map((u) => u < 2 || u > L || u > END - 18 || features.some((g) => g.type !== "crest" && g.type !== "booster" && g.type !== "tube" && u > g.u - g.span[0] - 3 && u < g.u + g.span[1] + 3));
   const bank = bankRaw.map((_, k) => {
     let s = 0;
     let c = 0;
@@ -642,8 +645,10 @@ export function buildCourse(round) {
     return s / c;
   });
   const maxStep = BANK_RATE * SAMPLE;
-  for (let k = 1; k < m; k++) bank[k] = Math.max(bank[k - 1] - maxStep, Math.min(bank[k - 1] + maxStep, bank[k]));
-  for (let k = m - 2; k >= 0; k--) bank[k] = Math.max(bank[k + 1] - maxStep, Math.min(bank[k + 1] + maxStep, bank[k]));
+  // Rate-limit the twist both ways, holding the flat zones at 0 in both passes (so the ramps happen
+  // outside them: clamping alone smeared up to 12° back into a drop's lip).
+  for (let k = 1; k < m; k++) bank[k] = flat[k] ? 0 : Math.max(bank[k - 1] - maxStep, Math.min(bank[k - 1] + maxStep, bank[k]));
+  for (let k = m - 2; k >= 0; k--) bank[k] = flat[k] ? 0 : Math.max(bank[k + 1] - maxStep, Math.min(bank[k + 1] + maxStep, bank[k]));
   // Smooth the plan-view tangent over ±3 samples: the Catmull-Rom centreline
   // still has a faint per-sample wobble, which the stripes and the physics
   // would otherwise follow as tiny ridges.
@@ -751,12 +756,16 @@ function buildObstacles(course, sync = {}) {
   // Clear guard panels along both walls over every jump, in short segments
   // that follow the floor (over the kicker, the drop and the landing), so a
   // marble that drifts sideways in the air stays on the track.
-  for (const f of features) {
-    const zone = f.type === "tube" ? [-1, f.span[1] + 1, TUBES.height] : GUARD_ZONES[f.type];
+  // Plus a low guard along every wall of the lap (physics only, never drawn): a marble knocked up in
+  // a pile-up between obstacles must not leave the track (a lost marble is a broken video).
+  const zones = features.map((f) => ({ f, zone: f.type === "tube" ? [-1, f.span[1] + 1, TUBES.height] : GUARD_ZONES[f.type] }));
+  zones.push({ f: { u: 1 }, zone: [0, course.END - 1, EVERYWHERE_GUARD] });
+  for (const { f, zone } of zones) {
     if (!zone) continue;
     const height = zone[2] ?? GUARD.height;
     for (let u = f.u + zone[0]; u < f.u + zone[1]; u += GUARD.segment) {
       const s = frameAt(u + GUARD.segment / 2);
+      if (course.samples.some((q) => q.gap && Math.abs(q.u - (u + GUARD.segment / 2)) < 1.5)) continue; // the vortex bowl: open
       const W2 = s.w ?? TRACK.width / 2;
       for (const side of [-1, 1]) {
         statics.push({
@@ -864,12 +873,18 @@ export async function runRound(round, seed, opts) {
       dqReach = gaps.length >= k ? (gaps[k - 1] + (gaps[k] ?? gaps[k - 1] + 0.02)) / 2 : DQ.reach;
     }
   }
-  return runRoundOnce(round, seed, { ...opts, sync, dqReach });
+  // The final race runs with the second pass's machine timing, not the one the reach was calibrated
+  // on, so the count can drift (target 1 gave 4): cap it there.
+  const dqMax = round.dq?.target !== undefined ? Math.max(1, Math.round(round.dq.target)) + 1 : Infinity;
+  return runRoundOnce(round, seed, { ...opts, sync, dqReach, dqMax });
 }
 
-async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach }) {
-  const dqCrossing = round.dq?.target !== undefined; // calibrated pads: a crossing test with a tuned reach
-  const rand = mulberry32(seed * 1000 + round.id.length);
+async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach, dqMax = Infinity }) {
+  // Always the crossing test (a fixed ±0.045 window missed most crossings at race speed); circuits with
+  // `dq: { target }` also get a calibrated reach.
+  const dqCrossing = true;
+  // Each circuit its own stream (seeded by its id's hash: by its length, Monaco and Suzuka shared one).
+  const rand = mulberry32((seed * 1000 + hashString(round.id)) >>> 0);
   const course = buildCourse(round);
   const { L, samples, sampleAt } = course;
   if (process.env.GP_FEATURES) console.log(course.features.map((f) => `${f.type}@${f.u.toFixed(0)}`).join("  "));
@@ -949,10 +964,23 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     };
     const frontTop = EV.lift - EV.slope * (EV.length / 2) - 0.02;
     wall(EV.length / 2 + 0.15, loop.yb - 0.4, frontTop, 0, 0.15, EV.width / 2 + 0.1);
-    wall(-EV.length / 2 - 0.15, 1.1, loop.yt + 1.2, 0, 0.15, EV.width / 2 + 0.1);
+    // The entrance: the opening under the back wall is sized from where the trough actually ends
+    // (on Spa it arrives 0.5 above the dock, and a fixed 1.1 left a gap narrower than a marble).
+    const endP = course.samples[course.samples.length - 1].p;
+    const entryFloor = endP[1] - EV.center[1];
+    wall(-EV.length / 2 - 0.15, Math.max(1.1, entryFloor + 1.6), loop.yt + 1.2, 0, 0.15, EV.width / 2 + 0.1);
+    // ...and below the entrance, down past the lowest platform: the shaft was open behind and under
+    // the trough's end, and marbles fell out of it into the void (6 a race on Monaco).
+    wall(-EV.length / 2 - 0.15, loop.yb - 0.6, Math.min(-0.12, entryFloor - 0.12), 0, 0.15, EV.width / 2 + 0.1);
+    // A catch floor under the shaft (below the platforms' path), so nothing can ever leave it downward.
+    {
+      const c = at(0, loop.yb - 0.45, 0);
+      const b = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(c.x, c.y, c.z).setRotation(yawQ));
+      world.createCollider(RAPIER.ColliderDesc.cuboid(EV.length / 2 + 0.3, 0.1, EV.width / 2 + 0.2).setFriction(0.3).setRestitution(0.1).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min).setCollisionGroups(GROUP_TRACK), b);
+    }
     wall(0, -1.1, EV.lift + 0.6, side * (EV.width / 2 + 0.1), EV.length / 2 + 0.3, 0.07);
     wall(0, loop.yb - 0.4, loop.yt + 1.2, -side * (EV.width / 2 + 0.1), EV.length / 2 + 0.3, 0.07);
-    const ev = { cycles: [], cabinY: [], doors: [], rides: [] };
+    const ev = { cycles: [], cabinY: [], rides: [] };
     return { EV, evFwd, evRight, evQuat, evCentre, loop, plates, at, ev };
   });
   // The distributor: a flap hinged on the bays' divider nose, swinging ±FLIPPER.amp, so the
@@ -974,6 +1002,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     return { rec, body, quatAt };
   })();
   let stairStop = null; // the stairs stop when everyone still racing is on the last lap
+  let shaftBusy = false; // a racing marble was inside a shaft last frame
   const riding = MARBLES.map(() => null); // the bay a marble is riding up, and since when
   createMachines(PHYSICS_ORDER.beforeStatics);
   for (const o of obstacles.statics) {
@@ -1169,6 +1198,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
               const gap = w - lat * z.side;
               dqGaps.push(gap);
               if (gap >= dqReach) continue;
+              if (dqEvents.length >= dqMax) continue;
             } else {
               if (Math.abs(u - z.u) > DQ.len / 2) continue; // u is lap-local here
               if (!(lat * z.side > w - DQ.reach && up < 0.6)) continue;
@@ -1188,8 +1218,10 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     // The stairs: who is riding in each bay; a marble starts its next lap at the top.
     {
       const racingIdx = MARBLES.map((_, i) => i).filter((i) => finishFrame[i] === null && dqFrame[i] === null);
-      // The stairs stop when everyone still racing is on the last lap (nobody needs them any more).
-      if (stairStop === null && racingIdx.length && racingIdx.every((i) => lap[i] === LAPS - 1)) stairStop = step * DT;
+      // The stairs stop when everyone still racing is on the last lap (nobody needs them any more)
+      // and both shafts are empty: stopping with a rider still below the exit trapped it for good.
+      if (stairStop === null && !shaftBusy && racingIdx.length && racingIdx.every((i) => lap[i] === LAPS - 1)) stairStop = step * DT;
+      shaftBusy = false;
       for (const [bay, lift] of lifts.entries()) {
         const { EV, ev, evCentre, evFwd, evRight } = lift;
         let top = 0;
@@ -1199,11 +1231,18 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
           const rel = new Vector3(p.x, p.y, p.z).sub(evCentre);
           const inside = Math.abs(rel.dot(evFwd)) < EV.length / 2 + 0.1 && Math.abs(rel.dot(evRight)) < EV.width / 2 + 0.05 && rel.y > -STAIR.below - 0.5 && rel.y < EV.lift + 1;
           if (!inside) continue;
-          // A finisher that rolls into a shaft is parked there (it must not ride up for a fourth lap).
+          // A finisher that rolls into a shaft is parked there (it must not ride up for a fourth lap):
+          // it becomes a fixed obstacle where it stands, so later finishers stop against it instead
+          // of passing through (a disabled body let them overlap).
           if (finishFrame[i] !== null) {
-            if (bodies[i].isEnabled()) bodies[i].setEnabled(false);
+            if (!bodies[i].isKinematic()) {
+              bodies[i].setLinvel({ x: 0, y: 0, z: 0 }, true);
+              bodies[i].setAngvel({ x: 0, y: 0, z: 0 }, true);
+              bodies[i].setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+            }
             continue;
           }
+          shaftBusy = true;
           if (rel.y > 0.4) top = Math.max(top, Math.min(EV.lift, rel.y - 0.35));
           if (riding[i] === null && finishFrame[i] === null && rel.y < 1) riding[i] = { bay, start: f };
           if (riding[i] && riding[i].bay === bay && rel.y > EV.lift - 0.5) {
@@ -1222,7 +1261,6 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
           if (Math.abs(rel.dot(evRight)) < 6 && Math.abs(rel.dot(evFwd)) < 8 && bay === 0) console.log(`f=${f} bay${bay} x=${rel.dot(evFwd).toFixed(2)} y=${rel.y.toFixed(2)} z=${rel.dot(evRight).toFixed(2)} lap=${lap[i]} riding=${JSON.stringify(riding[i])} stop=${stairStop}`);
         }
         ev.cabinY.push(r3(top));
-        ev.doors.push([0, 0]);
       }
     }
     if (process.env.GP_FALL) {
@@ -1237,7 +1275,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
         fellReported.add(i);
         console.log(`FELL ${MARBLES[i].abbr} at frame ${f} (${(f / FPS).toFixed(2)}s) u=${m[7].toFixed(2)} y=${m[1].toFixed(2)} floor=${floor.toFixed(2)}`);
         const win = +(process.env.GP_FALLWIN ?? 1); // seconds of history to print
-        for (let g = Math.max(0, f - FPS * win); g <= f; g += 3 * win) {
+        for (let g = Math.max(0, Math.round(f - FPS * win)); g <= f; g += Math.max(1, Math.round(3 * win))) {
           const q = frames[g][i];
           // True nearest sample (not the progress index, which lags in the air).
           let best = 0;
@@ -1367,7 +1405,11 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
   // Unfinished marbles are classified where they are when the top ten are home;
   // a DNF is one that is actually stuck (no progress over the last three seconds).
   // (Only when the race ran out of time: once the top ten are home, a marble waiting at a gate is merely classified.)
-  const stuck = (i) => allDone === null && finishFrame[i] === null && dqFrame[i] === null && frames[lastFrame][i][7] - frames[Math.max(0, lastFrame - 3 * FPS)][i][7] < 2;
+  // A marble far below every part of the track has fallen out of the world: always a DNF (it used to
+  // count as "classified", so a bake with lost marbles passed as good).
+  const trackBottom = Math.min(...course.samples.map((s) => s.p[1]));
+  const lost = (i) => dqFrame[i] === null && frames[lastFrame][i][1] < trackBottom - 5;
+  const stuck = (i) => lost(i) || (allDone === null && finishFrame[i] === null && dqFrame[i] === null && frames[lastFrame][i][7] - frames[Math.max(0, lastFrame - 3 * FPS)][i][7] < 2);
   const dnf = MARBLES.filter((_, i) => stuck(i)).map((m) => m.name);
   const classified = MARBLES.filter((_, i) => finishFrame[i] === null && dqFrame[i] === null && !stuck(i)).length;
   const dqNames = MARBLES.filter((_, i) => dqFrame[i] !== null).map((m) => m.abbr);
@@ -1478,11 +1520,23 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
     }
     return out;
   };
-  const elevatorsData = lifts.map((l) => ({ ...l.EV, stair: true, stopAt: stairStop === null ? null : r3(stairStop), cycles: ridesToCycles(l.ev.rides), cabinY: l.ev.cabinY, doors: l.ev.doors }));
+  const elevatorsData = lifts.map((l) => ({ ...l.EV, stair: true, stopAt: stairStop === null ? null : r3(stairStop), cycles: ridesToCycles(l.ev.rides), cabinY: l.ev.cabinY }));
   const director = directRace({ world, course, frames, finishFrame: doneFrame, raceStart, winnerFrame, lastFrame, rand, highlights, elevators: elevatorsData });
   // Fail the bake, not a render an hour later: a NaN camera becomes null in JSON.
-  const badCam = director.cams.findIndex((c) => c.slice(0, 7).some((x) => !Number.isFinite(x)));
+  // Fail the bake on any non-finite camera, not just the main ones (a NaN becomes null in JSON and the
+  // renderer puts that camera at the world origin).
+  const finite = (row, n = 7) => row.slice(0, n).every((x) => Number.isFinite(x));
+  const badCam = director.cams.findIndex((c) => !finite(c));
   if (badCam >= 0) throw new Error(`${round.id}: camera is not finite at frame ${badCam} (${director.cams[badCam][7]})`);
+  director.highlightCams.forEach((hc, k) => {
+    const bad = hc.findIndex((c) => !finite(c));
+    if (bad >= 0) throw new Error(`${round.id}: replay camera ${k} is not finite at row ${bad}`);
+  });
+  director.splits.forEach((sp, k) => {
+    const bad = (sp.cams ?? []).findIndex((c) => !finite(c));
+    if (bad >= 0) throw new Error(`${round.id}: split ${k} (${sp.kind}) camera is not finite at row ${bad}`);
+  });
+  if (![...director.replayCam, ...director.heli.center, director.heli.extent].every((x) => Number.isFinite(x))) throw new Error(`${round.id}: replay/drone camera is not finite`);
 
   // --- Overtakes ---------------------------------------------------------------------
   const events = dqEvents.map(({ zone, ...e }) => e);
@@ -1697,8 +1751,21 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     }
     return out;
   };
-  const focus = gauss(rawFocus, sec(0.35));
-  const focusU = gauss(rawU, sec(0.35));
+  // Focus switches: frames where the followed group jumps far (another group takes over). Smoothing
+  // across one flew every following camera across the circuit in ~1.4 s; instead the focus is smoothed
+  // between switches, and shots are cut there (below).
+  const focusSwitches = [];
+  for (let f = 1; f <= lastFrame; f++) if (Math.abs(rawU[f] - rawU[f - 1]) > 10 || rawFocus[f].distanceTo(rawFocus[f - 1]) > 10) focusSwitches.push(f);
+  let focus = rawFocus;
+  let focusU = rawU;
+  {
+    let a = 0;
+    for (const b of [...focusSwitches, lastFrame + 1]) {
+      focus = gauss(focus, sec(0.35), a, b);
+      focusU = gauss(focusU, sec(0.35), a, b);
+      a = b;
+    }
+  }
 
   // The venue buildings (grandstands, pits) aren't in the collider: the
   // director asks src/gp/venue.js where they stand, so no camera sits inside
@@ -1935,7 +2002,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       e.cycles
         .filter((c) => c.riseAt !== undefined && c.openAt !== undefined)
         // From just before the doors close to just after the riders have rolled out (the top door closing again).
-        .map((c) => ({ kind: "elevator", cabin: k, start: Math.max(0, c.closeAt - sec(0.6)), end: Math.min(lastFrame + 1, c.closeTopAt !== undefined ? c.closeTopAt + sec(0.4) : c.openAt + sec(2.4)), used: false })),
+        .map((c) => ({ kind: "elevator", cabin: k, riders: c.riders, start: Math.max(0, c.closeAt - sec(0.6)), end: Math.min(lastFrame + 1, c.closeTopAt !== undefined ? c.closeTopAt + sec(0.4) : c.openAt + sec(2.4)), used: false })),
     )
     .sort((a, b) => a.start - b.start);
   const fs = frameAt(course.uFinish);
@@ -2027,15 +2094,17 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
         if (!finishUsed && winnerFrame - sec(3.5) > f) end = Math.min(end, winnerFrame - sec(3.5));
         if (end > f + sec(0.8)) sh = { kind: "approach", cam: approach.cam, aim: arr(approach.aim), start: f, end: Math.min(end, lastFrame + 1) };
       }
+      // The stair runs without pause: a full-screen stair shot only for the race leader's ride, at most
+      // STAIR_SHOT_MAX long; the rides it overlaps are covered by it but never stretch it (one shot once
+      // absorbed every back-marker's ride and ran for 160 s). The other rides are seen in the splits.
       if (es && !sh) {
         es.used = true;
-        sh = { kind: "elevator", cabin: es.cabin, label: "THE STAIRWAY", feature: "elevator", start: f, end: es.end };
-        // A ride in the other cabin that starts during this shot is covered by it: the shot runs to the later top.
-        for (const o of elevatorShots)
-          if (!o.used && o.start < sh.end - sec(1)) {
-            o.used = true;
-            sh.end = Math.min(lastFrame + 1, Math.max(sh.end, o.end));
-          }
+        let top = -1;
+        for (let i = 0; i < N; i++) if (!finished(i, f) && (top < 0 || uOf(f, i) > uOf(f, top))) top = i;
+        if (es.riders?.includes(top)) {
+          sh = { kind: "elevator", cabin: es.cabin, label: "THE STAIRWAY", feature: "elevator", start: f, end: Math.min(es.end, f + STAIR_SHOT_MAX) };
+          for (const o of elevatorShots) if (!o.used && o.start < sh.end) o.used = true;
+        }
       }
       // Calmer cutting: an obstacle's camera takes over only once the current shot has run ~3.5 s
       // (and only for the big obstacles: see CAM_FEATURES), so cuts never come every second or two.
@@ -2089,6 +2158,16 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     const a = -0.5 + k * 0.6;
     return center.clone().add(new Vector3(Math.sin(a) * extent * 0.62, extent * 0.55, Math.cos(a) * extent * 0.62));
   };
+  // A shot that follows the focus is cut where the focus switches group (see focusSwitches).
+  const FOLLOWING = ["chase", "lead", "side", "top", "orbit", "wide", "feature", "finish", "approach"];
+  for (let k = 0; k < shots.length; k++) {
+    const sh = shots[k];
+    if (!FOLLOWING.includes(sh.kind)) continue;
+    const at = focusSwitches.find((x) => x > sh.start && x < sh.end);
+    if (at === undefined) continue;
+    shots.splice(k + 1, 0, { ...sh, start: at });
+    sh.end = at;
+  }
   // Behind the grid, looking past the marbles to the start gantry.
   const gridPos = v3(pointInFrame(frameAt(-11.5), 0, 4.6));
   const gridTarget = v3(pointOnTrack(frameAt(0.5), 0, 0.4));
@@ -2124,7 +2203,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     // A drained marble is moved out of the world on its DQ frame: frame it where it last was.
     const until = (g) => (h.dq ? Math.min(g, h.f - 1) : g);
     const hit = posOf(until(h.f), h.marble);
-    const u = uOf(until(h.f), h.marble);
+    const u = uLoc(until(h.f), h.marble); // lap-local: on laps 2 and 3 the total progress put the camera at the track's end
     const fr = frameAt(u + 0.8);
     let best = null;
     for (const side of [1, -1])
@@ -2298,14 +2377,11 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   for (const sp of splits) {
     const span = Array.from({ length: sp.end - sp.start }, (_, j) => sp.start + j);
     const left = subjectCams(span.map(leaderKey), sp.start, sec(2.5), camForKey);
-    for (const f of span) cams[f] = [...arr(left.pos[f - sp.start]), ...arr(left.target[f - sp.start]), 52, "leader", p1[f]];
+    for (const f of span) cams[f] = [...arr(left.pos[f - sp.start]), ...arr(left.target[f - sp.start]), r3(left.fov[f - sp.start]), "leader", p1[f]];
     if (sp.kind === "lift") {
       // The cabin P1 isn't in (the left half already shows P1's), or the one the split is about.
-      const want = span.map((f, j) => {
-        const lk = left.keys[j];
-        return lk[0] === "c" ? `c${1 - Number(lk.slice(1))}` : `c${sp.cabin}`;
-      });
-      const right = subjectCams(want.map(() => "stair"), sp.start, sec(2.5), (_, f) => recipes.elevator(f));
+      // The right half: the wide frontal view of the stair (the left half has P1, closer, when it rides).
+      const right = subjectCams(span.map(() => "stair"), sp.start, sec(2.5), (_, f) => recipes.elevator(f));
       sp.cams = right.pos.map((p, k) => [...arr(p), ...arr(right.target[k]), r3(right.fov[k])]);
     } else if (sp.kind === "action") {
       sp.cams = [];

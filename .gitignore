@@ -6,3 +6,6 @@ out
 src/gp/races/*.json
 src/gp/races/index.ts
 public/gp/*.wav
+# Temp files of scripts/factory.mjs restoring a season's data (renamed into place at once)
+src/gp/races/*.factory-tmp
+public/gp/*.factory-tmp

@@ -17,7 +17,7 @@ export default {
   type: "spinner",
   label: "THE WHIRLWIND",
   place: { before: 2, after: 3, maxCurv: 0.035, always: true },
-  guard: [-2, 4, 2.0], // it flings what it catches
+  guard: [-4, 6, 3.0], // the fast rotor flings marbles high, backwards as well as forwards
   dq: false, // it flings marbles at the walls: a pad there would disqualify half the field
   restitution: 0.35,
   collection: "spinners",

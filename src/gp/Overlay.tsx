@@ -1,5 +1,5 @@
 import { AbsoluteFill, interpolate, spring } from "remotion";
-import { fovFor, project, type Highlight, type Layout, type Race, type Section, type Shot, type Split, type Vec3 } from "./race";
+import { lensFov, project, type Highlight, type Layout, type Race, type Section, type Shot, type Split, type Vec3 } from "./race";
 import { flagDataUrl } from "./flags";
 import { TEAMS, teamOf } from "./teams.js";
 
@@ -51,10 +51,9 @@ export function Overlay(p: OverlayProps) {
   const { race, frame, section } = p;
   const s = Math.min(p.width, p.height) / 1080;
   const tl = race.timeline;
-  const f = Math.round(p.t);
+  // The simulation frame the graphics read (clamped: every per-frame table below is indexed by it).
+  const f = Math.max(0, Math.min(race.lastFrame, Math.round(p.t)));
   const live = section === "race";
-  const highlight = race.simAt(frame).highlight;
-  const inHighlight = highlight !== null;
   const fps = race.fps;
   const towerIn = spring({ frame: frame - tl.lights[2], fps, config: { damping: 18 } });
   const towerOut = interpolate(frame, [tl.replay.at - race.sec(0.3), tl.replay.at], [1, 0], clamp);
@@ -63,23 +62,21 @@ export function Overlay(p: OverlayProps) {
     <AbsoluteFill style={{ fontFamily: font, color: ink }}>
       {live && !race.intro && frame < tl.lights[2] && <IntroCard {...p} s={s} />}
       {live && frame >= tl.lights[0] - race.sec(0.3) && frame < tl.raceStart + race.sec(1) && <StartLights race={race} frame={frame} s={s} />}
-      {(section === "race" || (section === "replay" && !inHighlight)) && (
+      {(section === "race" || section === "replay") && (
         <div style={{ opacity: towerIn * towerOut, transform: `translateX(${(1 - towerIn) * -80 * s}px)` }}>
           <TimingTower race={race} f={f} s={p.layout === "portrait" ? s * 0.92 : s} />
         </div>
       )}
-      {live && frame >= tl.raceStart && <Minimap {...p} s={s} />}
+      {live && frame >= tl.raceStart && <Minimap {...p} s={s} f={f} />}
       {live && !p.split && <ShotCaption {...p} s={s} f={f} />}
       {live && p.split && <SplitGraphics race={race} split={p.split} f={f} frame={frame} s={s} layout={p.layout} width={p.width} height={p.height} />}
       {live && <Toasts race={race} f={f} s={s} layout={p.layout} />}
-      {live && <RegroupChip race={race} f={f} s={s} layout={p.layout} />}
       {live && <FinishBanner race={race} f={f} s={s} layout={p.layout} />}
-      {section === "replay" && !inHighlight && <ReplayGraphics race={race} frame={frame} s={s} />}
-      {inHighlight && <HighlightGraphics race={race} frame={frame} s={s} highlight={race.highlights[highlight!]} />}
+      {section === "replay" && <ReplayGraphics race={race} frame={frame} s={s} />}
       {section === "results" && <Results race={race} frame={frame} s={s} layout={p.layout} />}
       {section === "standings" && <Standings race={race} frame={frame} s={s} layout={p.layout} />}
       {section === "constructors" && <Constructors race={race} frame={frame} s={s} layout={p.layout} />}
-      {[...race.segments.filter((sg) => sg.kind === "replay").flatMap((sg) => [sg.at, sg.at + (sg.frames ?? 0)]), tl.replay.at, tl.results.at, tl.standings.at].map((at) => (
+      {[tl.replay.at, tl.results.at, tl.standings.at].map((at) => (
         <Flash key={at} race={race} frame={frame} at={at} />
       ))}
     </AbsoluteFill>
@@ -277,10 +274,10 @@ const Chequer = ({ s }: { s: number }) => (
   <span style={{ width: 18 * s, height: 14 * s, backgroundImage: "conic-gradient(#fff 25%, #111 0 50%, #fff 0 75%, #111 0)", backgroundSize: `${7 * s}px ${7 * s}px`, borderRadius: 2 * s, boxShadow: "0 0 0 1px #111" }} />
 );
 
-function Minimap({ race, t, s, layout, frame }: OverlayProps & { s: number }) {
+function Minimap({ race, t, s, f, layout, frame }: OverlayProps & { s: number; f: number }) {
   const size = (layout === "portrait" ? 300 : 270) * s;
   const { d, map } = outlinePath(race.data.outline, size, 18 * s);
-  const order = race.ranking(Math.round(t));
+  const order = race.ranking(f);
   const inn = spring({ frame: frame - race.timeline.raceStart, fps: race.fps, config: { damping: 18 } });
   const out = interpolate(frame, [race.timeline.replay.at - race.sec(0.3), race.timeline.replay.at], [1, 0], clamp);
   const features = race.data.features as { u: number; type: string }[];
@@ -299,7 +296,7 @@ function Minimap({ race, t, s, layout, frame }: OverlayProps & { s: number }) {
         return <rect x={x - 6 * s} y={y - 6 * s} width={12 * s} height={12 * s} fill={ink} />;
       })()}
       {[...order].reverse().map((i) => {
-        if (race.dqBy(i, Math.round(t))) return null;
+        if (race.dqBy(i, f)) return null;
         const { pos } = race.marblePose(i, t);
         const [x, y] = map(pos[0], pos[2]);
         const lead = i === order[0];
@@ -343,7 +340,7 @@ function ShotCaption({ race, shot, t, f, s, width, height, layout }: OverlayProp
           .slice(0, 3)
           .map((i, n) => {
             const { pos } = race.marblePose(i, t);
-            const pt = project(shot, fovFor(shot.fov, layout), [pos[0], pos[1] + 0.55, pos[2]], width, height);
+            const pt = project(shot, lensFov(shot.fov, width / height, layout), [pos[0], pos[1] + 0.55, pos[2]], width, height);
             if (!pt.visible) return null;
             return (
               <div key={i} style={{ position: "absolute", left: pt.x, top: pt.y - 40 * s, transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 6 * s, padding: `${3 * s}px ${10 * s}px`, background: card, borderRadius: 9 * s, boxShadow: shadow, fontSize: 19 * s, fontWeight: 900, whiteSpace: "nowrap" }}>
@@ -414,13 +411,13 @@ function SplitGraphics({ race, split, f, frame, s, layout, width, height }: { ra
               <span style={{ width: 14 * s, height: 14 * s, borderRadius: 7 * s, background: "#e8414a", opacity: blink ? 1 : 0.3 }} />
               REPLAY <span style={{ color: "#5b606e" }}>{h.speed}×</span>
             </Chip>
-            <Chip s={s} bg={(h as { dq?: boolean }).dq ? "#e8414a" : yellow} color={(h as { dq?: boolean }).dq ? "white" : ink} size={26}>
+            <Chip s={s} bg={h.dq ? "#e8414a" : yellow} color={h.dq ? "white" : ink} size={26}>
               <MarbleDot s={s} color={m.color} flag={flagOf(m)} size={26} />
               {h.label}
             </Chip>
           </>,
         )}
-        {(h as { dq?: boolean }).dq && <DqExplainer race={race} split={split} h={h} pane={panes[1]} frame={frame} s={s} opacity={k * out} />}
+        {h.dq && <DqExplainer race={race} split={split} h={h} pane={panes[1]} frame={frame} s={s} layout={layout} opacity={k * out} />}
       </>
     );
   } else if (split.kind === "lift") {
@@ -508,34 +505,6 @@ function Toasts({ race, f, s, layout }: { race: Race; f: number; s: number; layo
   );
 }
 
-/** While a regroup gate holds the leaders: who has arrived, and the gate going green. */
-function RegroupChip({ race, f, s, layout }: { race: Race; f: number; s: number; layout: Layout }) {
-  // Every pass of a gate (one per lap): from its first arrival to just after it opens, as the bake recorded them.
-  type Gate = { u: number; pos: [number, number, number]; firstFrame: number | null; openFrame: number | null; opens?: number[]; firsts?: (number | null)[] };
-  const gates = ((race.data as unknown as { regroups?: Gate[] }).regroups ?? []).flatMap((g) => {
-    const passes = (g.opens ?? []).map((openFrame, k) => ({ openFrame, firstFrame: g.firsts?.[k] ?? openFrame - race.sec(7) }));
-    if (g.openFrame !== null) passes.push({ openFrame: g.openFrame, firstFrame: g.firstFrame ?? g.openFrame - race.sec(7) });
-    return passes.map((p) => ({ ...p, u: g.u, pos: g.pos }));
-  });
-  // Only while the camera is actually at the gate: its target within a few units of the bar.
-  const target = race.shotAt(f).target;
-  const g = gates.find((x) => f >= x.firstFrame && f < x.openFrame + race.sec(1.2) && Math.hypot(target[0] - x.pos[0], target[1] - x.pos[1], target[2] - x.pos[2]) < 9);
-  if (!g) return null;
-  const racing = race.marbles.filter((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f));
-  const here = race.marbles.filter((_, i) => !race.finishedBy(i, f) && !race.dqBy(i, f) && race.uOf(i, f) >= g.u - 1.6 && race.uOf(i, f) < g.u + 2).length;
-  const open = f >= g.openFrame! + race.sec(0.3); // the bar takes half a second to lift
-  const k = spring({ frame: f - g.firstFrame, fps: race.fps, config: { damping: 16 } });
-  const out = interpolate(f, [g.openFrame! + race.sec(0.8), g.openFrame! + race.sec(1.2)], [1, 0], clamp);
-  return (
-    <div style={{ position: "absolute", left: 0, right: 0, bottom: (layout === "portrait" ? 640 : 130) * s, display: "flex", justifyContent: "center", opacity: k * out, transform: `translateY(${(1 - k) * 30 * s}px)` }}>
-      <Chip s={s} bg={card} size={34}>
-        <span style={{ background: open ? "#2fb35a" : "#e8414a", color: "white", padding: `${2 * s}px ${10 * s}px`, borderRadius: 8 * s, fontSize: 20 * s }}>{open ? "GATE OPEN" : "REGROUP"}</span>
-        {open ? "GO!" : `${here} / ${racing.length} at the gate`}
-      </Chip>
-    </div>
-  );
-}
-
 function FinishBanner({ race, f, s, layout }: { race: Race; f: number; s: number; layout: Layout }) {
   if (f < race.winnerFrame) return null;
   const k = spring({ frame: f - race.winnerFrame, fps: race.fps, config: { damping: 13 } });
@@ -550,31 +519,6 @@ function FinishBanner({ race, f, s, layout }: { race: Race; f: number; s: number
         </div>
       </div>
     </AbsoluteFill>
-  );
-}
-
-/** Mid-race instant replay: REPLAY badge, and the obstacle and marble it features. */
-function HighlightGraphics({ race, frame, s, highlight }: { race: Race; frame: number; s: number; highlight: Highlight }) {
-  const local = frame - highlight.at;
-  const k = spring({ frame: local - race.sec(0.2), fps: race.fps, config: { damping: 16 } });
-  const blink = Math.floor(frame / race.sec(0.5)) % 2 === 0;
-  const m = race.marbles[highlight.marble];
-  return (
-    <>
-      <div style={{ position: "absolute", top: 40 * s, right: 40 * s }}>
-        <Chip s={s} bg={card} size={30}>
-          <span style={{ width: 16 * s, height: 16 * s, borderRadius: 8 * s, background: "#e8414a", opacity: blink ? 1 : 0.3 }} />
-          REPLAY <span style={{ color: "#5b606e" }}>{highlight.speed}×</span>
-        </Chip>
-      </div>
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 70 * s, display: "flex", justifyContent: "center", opacity: k, transform: `translateY(${(1 - k) * 40 * s}px)` }}>
-        <Chip s={s} bg={card} size={40}>
-          <span style={{ background: yellow, padding: `${2 * s}px ${10 * s}px`, borderRadius: 8 * s, fontSize: 22 * s }}>{highlight.feature.toUpperCase()}</span>
-          <MarbleDot s={s} color={m.color} flag={flagOf(m)} size={34} />
-          {highlight.label}
-        </Chip>
-      </div>
-    </>
   );
 }
 
@@ -741,17 +685,15 @@ function featureName(race: Race, type?: string) {
  * Why a marble is out, on its replay: a pulsing red ring on the pad it rolled
  * over (projected into the replay's half), and the rule in one line.
  */
-function DqExplainer({ race, split, h, pane, frame, s, opacity }: { race: Race; split: Split; h: Highlight; pane: { x: number; y: number; w: number; h: number }; frame: number; s: number; opacity: number }) {
+function DqExplainer({ race, split, h, pane, frame, s, layout, opacity }: { race: Race; split: Split; h: Highlight; pane: { x: number; y: number; w: number; h: number }; frame: number; s: number; layout: Layout; opacity: number }) {
   const view = race.splitView(split);
   const shot = view.shotAt(frame);
   const t = view.tAt(frame);
   const pads = (race.data.obstacles as unknown as { kind: string; pos: Vec3 }[]).filter((o) => o.kind === "dq");
   const at = race.marblePose(h.marble, Math.min(t, h.f)).pos;
   const pad = pads.reduce<{ kind: string; pos: Vec3 } | null>((b, o) => (b === null || dist(o.pos, at) < dist(b.pos, at) ? o : b), null);
-  const aspect = pane.w / pane.h;
-  const kf = Math.min(1.9, Math.max(1, Math.sqrt(16 / 9 / Math.max(0.3, aspect))));
-  const fov = (2 * Math.atan(Math.tan((shot.fov * Math.PI) / 360) * kf) * 180) / Math.PI;
-  const pt = pad ? project(shot, fov, pad.pos, pane.w, pane.h) : null;
+  // The pane is the right half's canvas: the same lens as its camera rig.
+  const pt = pad ? project(shot, lensFov(shot.fov, pane.w / pane.h, layout), pad.pos, pane.w, pane.h) : null;
   const pulse = 0.5 + 0.5 * Math.sin((frame / race.fps) * Math.PI * 3);
   const touched = t >= h.f;
   return (

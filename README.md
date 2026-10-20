@@ -155,16 +155,27 @@ One command makes a whole season, unattended, and resumes where it stopped after
 
 ```bash
 npm run factory -- --season 2                       # sweep, bake, render, metadata, thumbnails
-nohup scripts/factory-loop.sh 2 > out/factory/loop.log 2>&1 &   # season after season, nonstop
+npm run factory -- --season 2 --only metadata       # one step: sweep|bake|render|metadata|thumbs
+nohup scripts/factory-loop.sh 3 > out/factory/loop.log 2>&1 &   # season after season, nonstop
+npm run factory:stop                                # stops the loop, the factory and every render
 ```
 
-- **Sweep:** season N tries seeds (N−1)·100+1 … +8 on every circuit in parallel and picks per circuit the closest finish with nobody stuck and one or two drains.
-- **Bake:** `scripts/season.mjs` with those seeds (`GP_SEEDS`); the season's data is kept in `out/factory/s<N>/data`.
-- **Render:** per round the 4K video (`GP-<id>-4k`, dpr 1) and the vertical Short (`GP-<id>-short`: the final lap to the results), each checked for garbled frames and rendered again once if needed, then encoded for upload. It stops when less than 12 GB is free.
-- **Metadata:** `youtube.json` / `youtube.md` per round: a spoiler-free title, a description with chapters, the results below a spoiler line, tags, and the Short's title and description.
-- **Thumbnails:** a clean 1080p still of the pack in the first lap, graded, with the Grand Prix name (`scripts/thumbnail.py`).
+- **Sweep** (`sweep:<id>`, circuits in parallel): season N tries seeds (N−1)·100+1 … +8 per circuit and picks the closest finish with nobody stuck and one or two drains. No usable seed: the next 8 seeds, up to three ranges, then the season gives up.
+- **Bake:** `scripts/season.mjs` with those seeds (`GP_SEEDS`), then — at once, under the shared lock — every artefact (round JSONs, `season.json`, `index.ts`, the race and intro WAVs) is copied to `out/factory/s<N>/data` and the Remotion bundle is built from exactly that. The bake's summary must match each sweep pick (winner, margin, stuck marbles); a mismatch re-sweeps that circuit once, then fails. Metadata and thumbnails read only `data/`; a missing bundle is rebuilt from it.
+- **Render:** per round the 4K video (`GP-<id>-4k`, dpr 1) and the vertical Short (`GP-<id>-short`, with `{"season":N}` for its title chip), each checked for garbled frames (`scripts/check-frames.py`) and rendered again once; still garbled, the video is kept but flagged `needsReview` in `youtube.json`/`youtube.md` and in the log. Then encoded for upload. Each render gets its own `TMPDIR` under `out/factory/s<N>/tmp/`, deleted afterwards. It stops when less than 12 GB is free.
+- **Metadata:** `youtube.json` / `youtube.md` per round: a spoiler-free title with the season (`Monaco Grand Prix — Marble Formula Championship 2027 · Season 2 · Round 1 | PHOTO FINISH 🏁`, shortened to "MFC" if over 100 characters), a description with chapters, the results below a spoiler line, deduplicated tags, and the Short's title and description.
+- **Thumbnails:** a clean 1080p still of the pack in the first lap, graded, with the Grand Prix name and the season and round (`scripts/thumbnail.py`; it fails if the Avenir font is missing).
 
 Output: `out/factory/s<N>/<round>/{video.mp4, short.mp4, youtube.md, youtube.json, thumb.jpg}`. About 9 hours and 7 GB per season on an M1 Pro.
+
+**Safety rails.**
+
+- *One factory per season:* `out/factory/s<N>/lock` holds its PID; a second start exits (code 4). A lock whose process is gone is taken over, and the children it left behind are killed.
+- *Shared folders:* the bake writes `src/gp/races` and `public/gp`, which the bundle snapshots. `out/factory/shared.lock` is held around bake + copy + bundle, and `npm run season` (and `scripts/render-round.sh`'s bundle) take it too, waiting if the factory is baking. Don't run `node scripts/season.mjs` directly while a factory may bake; seed sweeps (`--round`) are safe either way.
+- *Stopping:* every child runs in its own process group with a timeout (sweep 30 min, bake 30, bundle 10, 4K render 4 h, Short 1 h, encode 1 h, frame check 30 min, still 10 min). SIGINT/SIGTERM or a crash kills them all and releases the locks; stopping the loop (`npm run factory:stop`, or `kill $(cat out/factory/loop.pid)`) stops the factory and its renders. A factory run by hand: Ctrl-C, or `kill <PID in its lock file>`.
+- *State:* `state.json` is written atomically (temp file, fsync, rename) and the previous copy kept as `state.json.bak`, used if `state.json` is unreadable.
+- *Dependencies:* the bake records the seeds' hash and the data's hash. New seeds, damaged data or `--only bake` mean a re-bake, which clears the bundle, renders, metadata and thumbnails of the season — when that would throw away finished videos the factory refuses unless `--force` is given. `--only render` redoes finished renders only with `--force` too.
+- *Failures:* counted in `state.json` (reset when a step completes). The loop waits 10 min, 20, 40, 80 between tries; at the fifth failure in a row, or at once for a permanent error (no usable seed, a re-bake that needs `--force`), the factory writes `out/factory/s<N>/FAILED` and the loop moves on to the next season (and skips FAILED seasons from then on). Fix it and run that season by hand to retry.
 
 ### Pitfalls found the hard way
 

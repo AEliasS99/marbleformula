@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { useView } from "./view";
 import { STAIR, stairLocal, stairLoop, stairTime } from "./stair.js";
 import { isNight } from "./look";
-import { subframe } from "./subframe";
+import { useSubframe } from "./subframe";
 import { TRACK } from "./trackMesh.js";
 import { agitatorArm, agitatorQuat, vortexFrame, vortexGeometry, vortexY } from "./vortex.js";
 import type { Race, Quat, Vec3 } from "./race";
@@ -48,7 +48,6 @@ type Elevator = {
   bar?: { pos: Vec3; quat: Quat; size: Vec3; lift: number };
   stopAt?: number | null;
 };
-type Regroup = { u: number; pos: Vec3; quat: Quat; size: Vec3; lift: number; time: number; firstFrame: number | null; openFrame: number | null; lifts?: number[] };
 
 const chrome = { color: "#eceef3", metalness: 1, roughness: 0.07 } as const;
 const steel = { color: "#dfe2e8", metalness: 1, roughness: 0.25 } as const;
@@ -96,75 +95,6 @@ const hazardTex = (repeat: [number, number] = [24, 1]) =>
     },
     repeat,
   );
-/** Barrier stripes for a bar `length` long (on the faces whose u runs along it): one red/white pair every 0.5 units. */
-const stripeCache = new Map<string, THREE.Texture>();
-function barStripes(length: number, height = 0) {
-  const key = `${length.toFixed(2)}x${height.toFixed(2)}`;
-  const hit = stripeCache.get(key);
-  if (hit) return hit;
-  const t = canvasTexture(256, 128, (g) => {
-    g.fillStyle = "#f4f4f2";
-    g.fillRect(0, 0, 256, 128);
-    g.fillStyle = "#d8232a";
-    for (let x = -128; x < 256; x += 128) {
-      g.beginPath();
-      g.moveTo(x, 128);
-      g.lineTo(x + 64, 128);
-      g.lineTo(x + 128, 0);
-      g.lineTo(x + 64, 0);
-      g.closePath();
-      g.fill();
-    }
-    g.fillStyle = "#1b1c20";
-    g.fillRect(0, 0, 256, 10);
-    g.fillRect(0, 118, 256, 10);
-    for (let i = 0; i < 400; i++) {
-      g.fillStyle = `rgba(0,0,0,${Math.random() * 0.08})`;
-      g.fillRect(Math.random() * 256, Math.random() * 128, 2, 2);
-    }
-  });
-  t.wrapS = THREE.RepeatWrapping;
-  t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(Math.max(1, Math.round(length / 0.5)), height > 0 ? Math.max(1, Math.round(height / 0.25)) : 1); // a panel (height > 0) tiles the bands up its face too
-  t.needsUpdate = true;
-  stripeCache.set(key, t);
-  return t;
-}
-
-const numberCache = new Map<number, THREE.Texture>();
-/** A cabin's number on a yellow roundel. */
-function numberTex(n: number) {
-  const hit = numberCache.get(n);
-  if (hit) return hit;
-  const t = canvasTexture(256, 256, (g) => {
-    g.clearRect(0, 0, 256, 256);
-    g.fillStyle = "#ffcc00";
-    g.beginPath();
-    g.arc(128, 128, 120, 0, Math.PI * 2);
-    g.fill();
-    g.lineWidth = 10;
-    g.strokeStyle = "#1b1c20";
-    g.stroke();
-    g.fillStyle = "#1b1c20";
-    g.font = "900 170px 'Avenir Next', system-ui, sans-serif";
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    g.fillText(String(n), 128, 140);
-  });
-  numberCache.set(n, t);
-  return t;
-}
-
-const signTex = (text: string) =>
-  canvasTexture(1024, 128, (g) => {
-    g.fillStyle = "#111216";
-    g.fillRect(0, 0, 1024, 128);
-    g.fillStyle = "#ffcc00";
-    g.font = "900 84px 'Avenir Next', system-ui, sans-serif";
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    g.fillText(text, 512, 68);
-  });
 const knurlTex = () =>
   canvasTexture(
     256,
@@ -180,35 +110,21 @@ const knurlTex = () =>
 
 export function Machines({ race, t }: { race: Race; t: number }) {
   const view = useView(race);
-  const data = race.data as unknown as { vortices?: Vortex[]; rollers?: Roller[]; fans?: Fan[]; regroups?: Regroup[]; samples: { p: Vec3; n: Vec3 }[] };
-  const regroups = data.regroups ?? [];
+  const sub = useSubframe();
+  const data = race.data as unknown as { vortices?: Vortex[]; rollers?: Roller[]; fans?: Fan[]; samples: { p: Vec3; n: Vec3 }[] };
   const elevators = (data as unknown as { elevators?: Elevator[] }).elevators ?? [];
-
-  const regroupRefs = useRef<(THREE.Group | null)[]>([]);
-  const lampRefs = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
-  /** The bar's lift along the track normal at simulation frame t. */
-  const barLift = (g: Regroup, t: number) => {
-    // The bake's per-frame curve (it opens and closes once per lap); interpolated between frames.
-    if (g.lifts && g.lifts.length) {
-      const f = Math.max(0, Math.min(g.lifts.length - 1, Math.floor(t)));
-      const f1 = Math.min(g.lifts.length - 1, f + 1);
-      const a = Math.min(1, Math.max(0, t - f));
-      return g.lift * (g.lifts[f] + (g.lifts[f1] - g.lifts[f]) * a);
-    }
-    if (g.openFrame === null) return 0;
-    const k = Math.max(0, Math.min(1, (t - g.openFrame) / (g.time * race.fps)));
-    return g.lift * k * k * (3 - 2 * k);
-  };
-  const barPos = (g: Regroup, t: number): Vec3 => {
-    const q = new THREE.Quaternion(...g.quat);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q).multiplyScalar(barLift(g, t));
-    return [g.pos[0] + up.x, g.pos[1] + up.y, g.pos[2] + up.z];
-  };
   const vortices = data.vortices ?? [];
   const rollers = data.rollers ?? [];
   const fans = data.fans ?? [];
   const groundY = useMemo(() => Math.min(...data.samples.map((s) => s.p[1])) - 1.4, [data]);
-  const tex = useMemo(() => ({ hazard: hazardTex(), bar: hazardTex([1, 1]), hazardV: hazardTex([1, 6]), knurl: knurlTex(), sign: signTex("REGROUP"), lift: signTex("STAIRWAY") }), []);
+  const tex = useMemo(() => ({ hazard: hazardTex(), knurl: knurlTex() }), []);
+  useEffect(
+    () => () => {
+      tex.hazard.dispose();
+      tex.knurl.dispose();
+    },
+    [tex],
+  );
   const bowls = useMemo(
     () =>
       vortices.map((v) => {
@@ -235,20 +151,16 @@ export function Machines({ race, t }: { race: Race; t: number }) {
   const bladeAngle = (fan: Fan, s: number) => fan.phase * 3 + s * 14; // fast, a blur in the render
   useEffect(
     () =>
-      subframe.subscribe((vf) => {
+      sub.subscribe((vf) => {
         const s = view.tAt(vf) / race.fps;
         rollers.forEach((r, i) => rollerRefs.current[i]?.quaternion.copy(rollerQuat(r, s)));
-        regroups.forEach((g, i) => {
-          regroupRefs.current[i]?.position.set(...barPos(g, view.tAt(vf)));
-          void lampRefs; // the signal follows React's per-frame render (it changes once per lap)
-        });
         vortices.forEach((v, i) => agitatorRefs.current[i]?.quaternion.set(...(agitatorQuat(v, s) as Quat)));
         fans.forEach((fan, i) => {
           const g = bladeRefs.current[i];
           if (g) g.rotation.z = bladeAngle(fan, s);
         });
       }),
-    [race],
+    [sub, view, race],
   );
   const sec = t / race.fps;
   const W2 = TRACK.width / 2;
@@ -359,99 +271,6 @@ export function Machines({ race, t }: { race: Race; t: number }) {
         <StairBay key={`e${i}`} race={race} t={t} elevator={e} tex={tex} />
       ))}
 
-      {regroups.map((g, i) => {
-        const open = barLift(g, t) > g.lift * 0.5;
-        const span = 2 * (W2 + 0.16);
-        return (
-          <group key={`g${i}`}>
-            {/* The bar: striped barrier with rubber skirt and chrome end caps that run in the posts' guides. */}
-            <group ref={(el) => void (regroupRefs.current[i] = el)} position={barPos(g, t)} quaternion={g.quat}>
-              <mesh castShadow receiveShadow>
-                <boxGeometry args={g.size} />
-                <meshStandardMaterial map={barStripes(g.size[2])} roughness={0.4} />
-              </mesh>
-              <mesh position={[0, -g.size[1] / 2 + 0.05, 0]}>
-                <boxGeometry args={[g.size[0] + 0.04, 0.1, g.size[2]]} />
-                <meshStandardMaterial color="#1b1c20" roughness={0.9} />
-              </mesh>
-              {[-1, 1].map((e) => (
-                <mesh key={e} position={[0, 0, e * (g.size[2] / 2 + 0.1)]}>
-                  <boxGeometry args={[0.2, g.size[1] + 0.06, 0.2]} />
-                  <meshStandardMaterial {...chrome} />
-                </mesh>
-              ))}
-            </group>
-            {/* The frame: two steel posts with chrome guide rails and hazard strips, a truss across the top
-                carrying the lit REGROUP board, and a three-light signal on each post. */}
-            <group position={g.pos} quaternion={g.quat}>
-              {[-1, 1].map((e) => (
-                <group key={e} position={[0, 0, e * (W2 + 0.3)]}>
-                  <mesh position={[0, g.lift / 2 + 0.55, 0]} castShadow>
-                    <boxGeometry args={[0.34, g.lift + 2.0, 0.3]} />
-                    <meshStandardMaterial {...steel} />
-                  </mesh>
-                  {[-1, 1].map((x) => (
-                    <mesh key={x} position={[x * 0.13, g.lift / 2 + 0.55, -e * 0.16]}>
-                      <boxGeometry args={[0.04, g.lift + 2.0, 0.04]} />
-                      <meshStandardMaterial {...chrome} />
-                    </mesh>
-                  ))}
-                  <mesh position={[0, g.lift / 2 + 0.2, -e * 0.155]}>
-                    <boxGeometry args={[0.18, g.lift + 0.8, 0.01]} />
-                    <meshStandardMaterial map={tex.hazardV} roughness={0.5} />
-                  </mesh>
-                  {/* Signal: red, amber, green, stacked; the live one glows. */}
-                  <group position={[0, g.lift + 1.15, -e * 0.17]}>
-                    <mesh>
-                      <boxGeometry args={[0.24, 0.62, 0.08]} />
-                      <meshStandardMaterial {...dark} />
-                    </mesh>
-                    {(["#ff3344", "#ffb000", "#4cff6a"] as const).map((c, k) => {
-                      const lit = (k === 0 && !open) || (k === 2 && open);
-                      return (
-                        <mesh key={c} position={[0, 0.19 - k * 0.19, -e * 0.045]} rotation-y={e > 0 ? Math.PI : 0}>
-                          <circleGeometry args={[0.07, 24]} />
-                          <meshStandardMaterial
-                            ref={k === 0 ? (el) => void (lampRefs.current[i] = el) : undefined}
-                            color={lit ? c : "#2a2c30"}
-                            emissive={lit ? c : "#000000"}
-                            emissiveIntensity={lit ? 3 : 0}
-                            toneMapped={false}
-                          />
-                        </mesh>
-                      );
-                    })}
-                  </group>
-                </group>
-              ))}
-              {/* Truss and board. */}
-              <mesh position={[0, g.lift + 1.65, 0]} castShadow>
-                <boxGeometry args={[0.3, 0.12, span + 0.5]} />
-                <meshStandardMaterial {...steel} />
-              </mesh>
-              <mesh position={[0, g.lift + 2.05, 0]}>
-                <boxGeometry args={[0.3, 0.12, span + 0.5]} />
-                <meshStandardMaterial {...steel} />
-              </mesh>
-              {Array.from({ length: 9 }, (_, k) => (
-                <mesh key={k} position={[0, g.lift + 1.85, -span / 2 + (k * span) / 8]} rotation-x={k % 2 ? 0.7 : -0.7}>
-                  <boxGeometry args={[0.05, 0.5, 0.05]} />
-                  <meshStandardMaterial {...steel} />
-                </mesh>
-              ))}
-              <mesh position={[-0.17, g.lift + 1.85, 0]} rotation-y={-Math.PI / 2}>
-                <planeGeometry args={[2.2, 0.36]} />
-                <meshStandardMaterial map={tex.sign} emissive="#ffcc00" emissiveMap={tex.sign} emissiveIntensity={0.6} roughness={0.5} />
-              </mesh>
-              <mesh position={[0.17, g.lift + 1.85, 0]} rotation-y={Math.PI / 2}>
-                <planeGeometry args={[2.2, 0.36]} />
-                <meshStandardMaterial map={tex.sign} emissive="#ffcc00" emissiveMap={tex.sign} emissiveIntensity={0.6} roughness={0.5} />
-              </mesh>
-            </group>
-          </group>
-        );
-      })}
-
       {rollers.map((r, i) => (
         <group key={`r${i}`}>
           <group ref={(el) => void (rollerRefs.current[i] = el)} position={r.pos} quaternion={rollerQuat(r, sec)}>
@@ -537,92 +356,13 @@ export function Machines({ race, t }: { race: Race; t: number }) {
 }
 
 /**
- * One tower frame for all the cabins side by side: lattice columns only at the
- * outer corners (fore and aft of the cabins, outside the track), braces on the
- * two outer faces, and one head frame across the top with a winding drum and
- * cable sheaves above each cabin. Nothing passes between the cabins.
- */
-function LiftTower({ elevators, groundY, tex }: { elevators: Elevator[]; groundY: number; tex: { lift: THREE.Texture } }) {
-  const e0 = elevators[0];
-  const fwd = new THREE.Vector3(...e0.fwd).normalize();
-  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-  const yaw = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(fwd, new THREE.Vector3(0, 1, 0), right));
-  const centre = elevators.reduce((acc, e) => acc.add(new THREE.Vector3(...e.center)), new THREE.Vector3()).multiplyScalar(1 / elevators.length);
-  const L = e0.length;
-  const half = Math.max(...elevators.map((e) => Math.abs(e.lat) + e.width / 2)) + 0.55;
-  const top = e0.lift;
-  const groundH = centre.y - groundY;
-  const height = top + 3 + groundH;
-  const posts: [number, number][] = [
-    [-L / 2 - 0.5, -half],
-    [-L / 2 - 0.5, half],
-    [L / 2 + 0.5, -half],
-    [L / 2 + 0.5, half],
-  ];
-  return (
-    <group position={centre} quaternion={yaw}>
-      {posts.map(([x, z], k) => (
-        <group key={k} position={[x, 0, z]}>
-          <mesh position={[0, (top + 3 - groundH) / 2, 0]} castShadow>
-            <boxGeometry args={[0.34, height, 0.34]} />
-            <meshStandardMaterial {...steel} />
-          </mesh>
-          {Array.from({ length: Math.ceil(height / 2.5) }, (_, j) => (
-            <mesh key={j} position={[0, -groundH + j * 2.5 + 1.25, 0]} rotation-y={Math.PI / 4}>
-              <boxGeometry args={[0.55, 0.06, 0.06]} />
-              <meshStandardMaterial {...dark} />
-            </mesh>
-          ))}
-        </group>
-      ))}
-      {/* X-braces on the two outer faces only. */}
-      {[-1, 1].map((e) =>
-        Array.from({ length: Math.ceil(height / 5) }, (_, j) => (
-          <mesh key={`${e}${j}`} position={[0, -groundH + j * 5 + 2.5, e * half]} rotation-z={j % 2 ? 0.75 : -0.75}>
-            <boxGeometry args={[Math.hypot(L + 1, 5), 0.08, 0.08]} />
-            <meshStandardMaterial {...steel} />
-          </mesh>
-        )),
-      )}
-      {/* Head frame across both cabins, a drum and sheaves over each, and the sign on both outer faces. */}
-      <mesh position={[0, top + 3.2, 0]} castShadow>
-        <boxGeometry args={[L + 1.6, 0.5, 2 * half + 0.6]} />
-        <meshStandardMaterial {...dark} />
-      </mesh>
-      {elevators.map((e, k) => {
-        const z = new THREE.Vector3(...e.center).sub(centre).dot(right);
-        return (
-          <group key={k} position={[0, top + 3.9, z]}>
-            <mesh rotation-x={Math.PI / 2} castShadow>
-              <cylinderGeometry args={[0.55, 0.55, 1.1, 32]} />
-              <meshStandardMaterial {...chrome} />
-            </mesh>
-            {[-1, 1].map((g) => (
-              <mesh key={g} position={[g * (L / 2 - 0.3), -0.45, 0]} rotation-x={Math.PI / 2}>
-                <torusGeometry args={[0.18, 0.05, 10, 24]} />
-                <meshStandardMaterial {...steel} />
-              </mesh>
-            ))}
-          </group>
-        );
-      })}
-      {[-1, 1].map((e) => (
-        <mesh key={`s${e}`} position={[0, top + 2.55, e * (half + 0.32)]} rotation-y={e > 0 ? 0 : Math.PI}>
-          <planeGeometry args={[L + 1, 0.7]} />
-          <meshStandardMaterial map={tex.lift} roughness={0.5} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-/**
  * One bay of the endless stair (src/gp/stair.js): the shaft (a front wall up to
  * grid level, a back wall above the entrance, side walls) and its platforms,
  * each a dark plate with a lit front edge, moving on the stair's clock.
  */
 function StairBay({ race, t, elevator, tex }: { race: Race; t: number; elevator: Elevator; tex: { hazard: THREE.Texture } }) {
   const view = useView(race);
+  const sub = useSubframe();
   const E = elevator as unknown as Parameters<typeof stairLoop>[0] & { stopAt?: number | null };
   const loop = useMemo(() => stairLoop(E), [elevator]);
   const frame = useMemo(() => {
@@ -654,10 +394,9 @@ function StairBay({ race, t, elevator, tex }: { race: Race; t: number; elevator:
     if (edges.current) edges.current.instanceMatrix.needsUpdate = true;
   };
   useEffect(() => place(t));
-  useEffect(() => subframe.subscribe((vf) => place(view.tAt(vf))), [race, elevator]);
+  useEffect(() => sub.subscribe((vf) => place(view.tAt(vf))), [sub, view, race, elevator]);
   const L = elevator.length;
   const W = elevator.width;
-  const side = elevator.lat < 0 ? -1 : 1;
   const night = isNight();
   const wallMat = night ? { color: "#2b2e35", metalness: 0.8, roughness: 0.35 } : { color: "#dcdfe5", metalness: 0.6, roughness: 0.35 };
   const frontTop = elevator.lift - elevator.slope * (L / 2) - 0.02;

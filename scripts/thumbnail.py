@@ -18,18 +18,23 @@ for x in range(640):
 img = Image.composite(Image.new("RGB", img.size, (8, 9, 12)), img, shade)
 
 
+FONT = "/System/Library/Fonts/Avenir Next.ttc"
+
+
 def font(size, index):
+    # No fallback: PIL's default font is ~10 px, which would ship an unreadable
+    # thumbnail. Fail loudly instead (the factory then retries / reports it).
     try:
-        return ImageFont.truetype("/System/Library/Fonts/Avenir Next.ttc", size, index=index)
-    except Exception:
-        return ImageFont.load_default()
+        return ImageFont.truetype(FONT, size, index=index)
+    except Exception as e:
+        sys.exit(f"thumbnail.py: cannot load {FONT} (face {index}): {e}")
 
 
 draw = ImageDraw.Draw(img)
 heavy = font(150 if len(big) <= 7 else 112, 8)  # Avenir Next Heavy
 draw.text((52, 300), big, font=heavy, fill="white", stroke_width=6, stroke_fill=(10, 10, 14))
 small = font(54, 0)
-w = draw.textlength(tab, font=font(54, 0)) + 40
+w = draw.textlength(tab, font=small) + 40
 draw.rounded_rectangle([52, 224, 52 + w, 294], radius=14, fill=(255, 204, 0))
 draw.text((72, 230), tab, font=small, fill=(17, 18, 22))
 draw.text((56, 470), "MARBLE FORMULA 2027", font=font(44, 0), fill=(255, 255, 255), stroke_width=3, stroke_fill=(10, 10, 14))

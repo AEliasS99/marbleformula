@@ -32,7 +32,7 @@ export default {
   type: "turntable",
   label: "THE TURNTABLE",
   place: { before: 2, after: 4, maxCurv: 0.035, always: true },
-  guard: [-2, 5],
+  guard: [-5, 6, 3.0], // it throws marbles backwards and up too: guarded well behind it, and high
   dq: true,
   restitution: 0.1,
   collection: "turntables",

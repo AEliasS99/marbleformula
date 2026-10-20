@@ -32,16 +32,6 @@ export default {
   restitution: 0.2,
   collection: "vortices",
   card: { difficulty: 4, chaos: 5, seconds: 4, summary: "A drain: the field swirls round the wall, the fast ones ride high and crash into the slow ones, then down the hole." },
-  /** Shapes the course: the run-up before it, and the gap down to the lower track. */
-  course: {
-    slopeExtra: (f, u, slope, SAMPLE) => (u > f.u + VORTEX.entry - VORTEX.ramp && u <= f.u + VORTEX.entry ? (VORTEX.rampSlope - slope) * SAMPLE : 0),
-    gapDrop: (f, u, SAMPLE) => {
-      if (!(u > f.u + VORTEX.entry + SAMPLE / 2 && u <= f.u + VORTEX.resume + 1e-6)) return 0;
-      const steps = Math.max(1, Math.round((VORTEX.resume - VORTEX.entry) / SAMPLE) - 1); // at least the one hidden sample
-      return (VORTEX.depth + VORTEX.throat + VORTEX.fall) / steps;
-    },
-    isGap: (f, u) => u > f.u + VORTEX.entry && u <= f.u + VORTEX.resume + 1e-6,
-  },
   build(f, { frameAt, statics, out }) {
     const W2 = TRACK.width / 2;
     // A long, gentle guide from the left wall to the centre line: the field drifts right without losing speed,

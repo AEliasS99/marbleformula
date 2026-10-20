@@ -21,7 +21,6 @@ import switchGate from "./switch.js";
 //   collection            the key its records are exported under in the round's JSON
 //   build(f, ctx)         records (and static colliders) for one placement
 //   physics(world, list, ctx) → { kinematics(t)?, frame(f, ctx)?, inside(p)?, export()? }
-//   course                hooks that reshape the track's height around it
 // Shape features (drops, jumps, rumble strips, the chain lift) are part of the
 // course itself; they are listed here with their placement rules only.
 

@@ -1,12 +1,12 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import { ThreeCanvas } from "@remotion/three";
 import { AbsoluteFill, interpolate, spring } from "remotion";
-import { project, type IntroPlan, type Layout, type Race, type Shot, type Vec3, type View } from "./race";
+import { lensFov, project, type IntroPlan, type Layout, type Race, type Shot, type Vec3, type View } from "./race";
 import { Stage } from "./Stage";
 import { flyPacing, TEAM_FRAMES } from "./intro-plan.js";
-import { marbleTextures, studioScene } from "./Scene";
+import { disposeScene, marbleTextures, studioScene } from "./Scene";
 import { flagDataUrl } from "./flags";
 import { TEAMS, teamOf } from "./teams.js";
 import { quality } from "./quality";
@@ -196,13 +196,25 @@ function ShowroomScene({ race, k, x, portrait }: { race: Race; k: number; x: num
     gl.toneMapping = THREE.ACESFilmicToneMapping;
     gl.toneMappingExposure = 1.05;
     const pmrem = new THREE.PMREMGenerator(gl);
-    scene.environment = pmrem.fromScene(studioScene(), 0.02, 0.1, 200, { size: 512 }).texture;
+    const studio = studioScene();
+    scene.environment = pmrem.fromScene(studio, 0.02, 0.1, 200, { size: 512 }).texture;
+    disposeScene(studio);
+    pmrem.dispose();
     scene.background = new THREE.Color("#0b0d12");
     scene.fog = new THREE.Fog("#0b0d12", 8, 22);
   }, [gl, scene]);
   const team = TEAMS[k];
   const idx = team.drivers.map((abbr) => race.marbles.findIndex((m) => (m as { abbr?: string }).abbr === abbr));
   const tex = useMemo(() => idx.map((i) => (i >= 0 ? marbleTextures(race.marbles[i].name, (race.marbles[i] as { flag?: string }).flag ?? "", (race.marbles[i] as { color?: string }).color) : null)), [k]);
+  // Two 1024×512 maps per marble, a new pair of marbles every team: free each team's when the next one comes on.
+  useEffect(
+    () => () =>
+      tex.forEach((tx) => {
+        tx?.map.dispose();
+        tx?.mr.dispose();
+      }),
+    [tex],
+  );
   const R = race.data.marbleRadius;
   const p = x / TEAM_FRAMES;
   // A slow arc round the podium, pushing in; the marbles sit right of the
@@ -530,9 +542,7 @@ function LineupGraphics({ race, view, frame, x, frames, s, layout, width, height
   const fps = race.fps;
   const g = useMemo(() => gridGeometry(race), [race]);
   const sh = view.shotAt(frame);
-  const aspect = width / height;
-  const k = Math.min(1.9, Math.max(1, Math.sqrt(16 / 9 / Math.max(0.3, aspect))));
-  const fov = (2 * Math.atan(Math.tan((sh.fov * Math.PI) / 360) * k) * 180) / Math.PI;
+  const fov = lensFov(sh.fov, width / height, layout);
   const round = (race.data as { round?: number }).round ?? 1;
   const before = (race.data as { standingsBefore?: { marble: number; points: number; pos: number }[] }).standingsBefore ?? [];
   const inn = spring({ frame: x - 6, fps, config: { damping: 16 } });
