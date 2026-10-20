@@ -17,7 +17,6 @@ export default {
     ["drop", 90],
     ["turntable", 141],
     ["jump", 225],
-    ["switch", 245],
     ["drop", 254],
     ["spinner", 286],
     ["hammer", 324],

@@ -7,7 +7,7 @@ export default {
   country: "United Kingdom",
   flag: ["#012169", "#c8102e"],
   scale: 0.08,
-  seed: 2,
+  seed: 6,
   start: "auto", // the line moves to the straightest stretch: the lift tower and the grid need one
   // Fast and flowing: an early drop and jump, a gate and the hammer before the
   // long middle straight where the drain and the whirlwind sit back to back,
@@ -16,7 +16,6 @@ export default {
   layout: [
     ["drop", 60],
     ["jump", 92],
-    ["switch", 135],
     ["hammer", 143],
     ["vortex", 232],
     ["spinner", 212],

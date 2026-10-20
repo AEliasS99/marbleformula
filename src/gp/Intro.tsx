@@ -129,11 +129,12 @@ function introViews(race: Race, plan: IntroPlan) {
     tAt: clock,
     shotAt: (vf) => {
       const u = pace.uAt(vf - fly.at);
+      // Steady: always the same distance behind and a gently varying height, both averaged over a
+      // long stretch of track (a jumpy drone made the lap dizzying).
       const slow = pace.slow(u);
-      const behind = 9 + 5 * (1 - slow);
-      const pos = add(mean(u - behind - 4, u - behind + 4), [0, 1, 0], 3.2 + 8 * (1 - slow));
-      const target = add(mean(u + 2, u + 10), [0, 1, 0], 0.3);
-      return shot(pos, target, 44, "flyover");
+      const pos = add(mean(u - 22, u - 10), [0, 1, 0], 7 + 3 * (1 - slow));
+      const target = add(mean(u - 2, u + 12), [0, 1, 0], 0.3);
+      return shot(pos, target, 46, "flyover");
     },
   };
 
@@ -325,7 +326,7 @@ function TitleGraphics({ race, x, frames, s, layout }: { race: Race; x: number; 
   const rounds = (race.data as { rounds?: number }).rounds ?? 1;
   const big = layout === "landscape" ? 1 : 0.78;
   return (
-    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", opacity: out, background: `radial-gradient(ellipse at center, rgba(10,12,18,${0.55 * a}) 0%, rgba(10,12,18,${0.2 * a}) 70%)` }}>
+    <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", opacity: out }}>
       <div style={{ textAlign: "center", color: "#fff", textShadow: "0 6px 30px rgba(0,0,0,0.45)" }}>
         <div style={{ fontSize: 118 * s * big, fontWeight: 900, letterSpacing: 4 * s, lineHeight: 1, transform: `translateY(${(1 - a) * 40 * s}px)`, opacity: a }}>MARBLE FORMULA</div>
         <div style={{ fontSize: 58 * s * big, fontWeight: 700, letterSpacing: 26 * s * big, marginTop: 10 * s, opacity: b, transform: `scaleX(${0.8 + 0.2 * b})` }}>CHAMPIONSHIP</div>

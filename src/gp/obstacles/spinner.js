@@ -2,7 +2,7 @@ import { Quaternion, Vector3 } from "three";
 import { frameQuat, mod, pointInFrame, quatArr, r3, rot, solid } from "./kit.js";
 import { spinnerParts } from "../rotor.js";
 
-// The whirlwind: a three-blade rotor reaching almost to the walls (a 0.25 gap,
+// The whirlwind: a two-blade rotor reaching almost to the walls (a 0.25 gap,
 // too narrow for a marble to slip past), each blade ending in a hook that forms
 // a pocket on its leading side: it scoops marbles up, carries them round and
 // flings them out. At the wall a blade meets it square, so a marble there is
@@ -21,7 +21,7 @@ export default {
   dq: false, // it flings marbles at the walls: a pad there would disqualify half the field
   restitution: 0.35,
   collection: "spinners",
-  card: { difficulty: 4, chaos: 5, seconds: 3, summary: "A three-blade rotor with hooked tips: scoops marbles in batches and flings them out." },
+  card: { difficulty: 4, chaos: 5, seconds: 3, summary: "A two-blade rotor with hooked tips: scoops marbles in batches and flings them out." },
   build(f, { frameAt, out, sync }) {
     const s = frameAt(f.u);
     const dir = out.spinners.length % 2 ? -1 : 1;
@@ -31,12 +31,12 @@ export default {
       pos: pointInFrame(s, 0, 0.3).map(r3),
       quat: quatArr(frameQuat(s)),
       size: [0.12, 0.5, 1.82], // blade: thickness, height, reach from the axis
-      arms: 3,
+      arms: 2,
       hook: 0.5, // hook length, on the leading side
       dir,
       speed,
       // A blade lies across the track's centre line, sweeping toward the field, as the leader arrives.
-      phase: r3(sync[f.u] !== undefined ? mod(Math.PI / 2 - speed * sync[f.u], (2 * Math.PI) / 3) : (f.u * 0.37) % Math.PI),
+      phase: r3(sync[f.u] !== undefined ? mod(Math.PI / 2 - speed * sync[f.u], Math.PI) : (f.u * 0.37) % Math.PI),
     });
   },
   physics(world, list, { RAPIER, groups }) {

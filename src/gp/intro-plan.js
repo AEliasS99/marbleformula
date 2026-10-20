@@ -17,7 +17,8 @@ export const GRID_U = -9.5; // where the samples (and the grid) begin
  * @param {{ round: number, L: number, highlight: number | null, cards: { type: string, u: number }[], teams: number }} o
  */
 export function introPlan({ round, L, highlight, cards, teams }) {
-  const fly = Math.max(600, Math.min(1260, 330 + 66 * cards.length));
+  // Slow enough to follow: ~20 units of track a second between obstacles (it was ~70 and made people dizzy).
+  const fly = Math.max(1080, Math.min(2100, 600 + 110 * cards.length));
   const scenes = [
     { id: "cold", frames: highlight === null ? 0 : 180 },
     { id: "title", frames: 210 },
@@ -60,7 +61,7 @@ export function flyPacing(L, cards, frames) {
   const step = 0.5;
   const u0 = GRID_U;
   const n = Math.ceil((L - u0) / step);
-  const dens = (u) => 1 + cards.reduce((a, c) => a + 6 * Math.exp(-(((u - c.u - 1) / 6) ** 2)), 0);
+  const dens = (u) => 1 + cards.reduce((a, c) => a + 2.5 * Math.exp(-(((u - c.u - 1) / 7) ** 2)), 0);
   const cum = [0];
   for (let k = 0; k < n; k++) cum.push(cum[k] + dens(u0 + (k + 0.5) * step) * step);
   const total = cum[n];
@@ -103,6 +104,6 @@ export function flyPacing(L, cards, frames) {
     }
     return lo;
   };
-  const slow = (u) => Math.min(1, (dens(u) - 1) / 5);
+  const slow = (u) => Math.min(1, (dens(u) - 1) / 2.5);
   return { uAt, xAt, slow };
 }

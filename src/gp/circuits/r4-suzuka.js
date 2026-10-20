@@ -18,7 +18,6 @@ export default {
     ["hammer", 181],
     ["turntable", 236],
     ["drop", 250],
-    ["switch", 305],
     ["spinner", 314],
     ["rollers", 324],
     ["jump", 341],

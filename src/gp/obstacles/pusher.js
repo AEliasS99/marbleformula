@@ -2,7 +2,8 @@ import { frameQuat, mod, pointInFrame, quatArr, r3, rot, solid, TRACK } from "./
 
 // A block that slides out from one wall across most of the track and back,
 // timed to be fully out as the leader arrives.
-export const PUSHER = { size: [1.2, 0.6, 0.3], travel: 2.6, period: 1.7 };
+// It comes out only 0.85 (a fifth of the track): reaching across, the marbles never met it cleanly.
+export const PUSHER = { size: [1.2, 0.6, 0.3], travel: 0.85, period: 1.4 };
 
 /** Its position at time t: out of the wall by travel·(1−cos)/2. */
 export function pusherPos(p, t) {

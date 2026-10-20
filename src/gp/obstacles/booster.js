@@ -3,7 +3,7 @@ import { frameQuat, pointInFrame, quatArr, r3, TRACK } from "./kit.js";
 // The booster: a glowing pad across the track that pushes every marble on it
 // forward (a force along the track in the bake) up to `target` speed. Placed
 // by the bake on the straights after the bends, where the pack has slowed.
-export const BOOSTER = { length: 4, target: 14, accel: 45 };
+export const BOOSTER = { length: 4, target: 16, accel: 50 };
 
 export default {
   type: "booster",

@@ -105,7 +105,7 @@ const MAX_BANK = (Number(process.env.GP_MAX_BANK ?? 28) * Math.PI) / 180;
 // traps marbles. At 0.8 the low edge still descends, at a fifth of the slope.
 const BANK_FLIP = Number(process.env.GP_BANK_FLIP ?? 1.0); // ×slope: above 1 the low edge may climb briefly in an S
 const BANK_RATE = (Math.tan(SLOPE) * BANK_FLIP) / (TRACK.width / 2); // radians per unit
-const DAMPING = 0.075; // rolling resistance + air: caps the speed of a marble
+const DAMPING = 0.055; // rolling resistance + air: caps the speed of a marble (0.075 felt sluggish)
 // Marble–marble contacts average the two marbles' restitution: 0.75, glass on
 // glass, lively. Everything else (track, obstacles, machines) uses the Min
 // combine rule, so its own value is the effective one: a head-on hit must not
@@ -171,7 +171,9 @@ const TWIST = { amp: (42 * Math.PI) / 180, length: 14 };
 const DROP_HEIGHT = 1.1;
 const BUMP = { amp: 0.13, length: 1.6, count: 4 };
 // Crests at the bends' apexes: a mini kicker (run-up, lip, small drop): fast marbles take off in the bend.
-const BOOSTERS = { spacing: 30, max: Number(process.env.GP_BOOSTERS ?? 8) };
+const VORTEX_SWIRL = { accel: 9, share: 0.9 };
+const FANS = { extra: 3, spacing: 60 };
+const BOOSTERS = { spacing: 22, max: Number(process.env.GP_BOOSTERS ?? 8) };
 const CREST = { runup: 2.5, runupSlope: Math.tan((14 * Math.PI) / 180), ramp: 1.2, lip: 0.22, drop: 0.25, minCurv: 0.035, maxCurv: 0.16, spacing: 18, max: 8 };
 
 function hashString(str) {
@@ -469,6 +471,21 @@ export function buildCourse(round) {
     }
     for (const u of crests) features.push({ type: "crest", u: r3(u), label: "THE CREST", span: [4, 5] });
     features.sort((a, b) => a.u - b.u);
+  }
+  // Fans: a few more wherever a straight is free (FANS), spread over the lap.
+  {
+    const rule = featureRule("fan");
+    const { clear } = placementRules(curv);
+    let added = 0;
+    for (let u = 30; u <= L - 30 && added < FANS.extra; u += 1) {
+      if (!clear(u, rule)) continue;
+      if (features.some((g) => u + rule.after + 6 > g.u - g.span[0] && u - rule.before - 6 < g.u + g.span[1])) continue;
+      if (features.some((g) => g.type === "fan" && Math.abs(g.u - u) < FANS.spacing)) continue;
+      features.push({ type: "fan", u: r3(u), label: rule.label, span: [rule.before, rule.after] });
+      features.sort((a, b) => a.u - b.u);
+      added++;
+      u += FANS.spacing;
+    }
   }
   // Boosters on the straights just after the bends, where the pack has slowed (BOOSTERS).
   {
@@ -1209,7 +1226,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
       }
       // Fans: a lateral force on every marble in their stretch. Boosters: a forward
       // force along the track, up to their target speed.
-      if (obstacles.fans.length || obstacles.boosters.length) {
+      if (obstacles.fans.length || obstacles.boosters.length || obstacles.vortices.length) {
         const mass = bodies[0].mass();
         bodies.forEach((b, i) => {
           b.resetForces(true);
@@ -1219,6 +1236,24 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach 
             if (u < fan.u0 || u > fan.u1) continue;
             const g = fan.accel * fanGust(fan, t) * mass;
             b.addForce({ x: fan.dir[0] * g, y: 0, z: fan.dir[2] * g }, true);
+          }
+          // The vortex's current: inside the bowl every marble is pushed round (counter to the
+          // entry's sense) up to just under the orbit speed sqrt(g·k/r), so all of them circle and
+          // spiral down instead of sliding straight into the hole (most made a fifth of a turn).
+          for (const vx of obstacles.vortices) {
+            const p = b.translation();
+            const rx = p.x - vx.center[0];
+            const rz = p.z - vx.center[2];
+            const r = Math.hypot(rx, rz);
+            if (r > vx.radius || r < vx.hole * 1.15 || p.y > vx.center[1] + 0.6 || p.y < vx.center[1] - vx.depth - 0.2) continue;
+            const tx = rz / r;
+            const tz = -rx / r;
+            const v = b.linvel();
+            const vt = v.x * tx + v.z * tz;
+            const want = VORTEX_SWIRL.share * Math.sqrt((GRAVITY * vx.k) / r);
+            if (vt >= want) continue;
+            const g = VORTEX_SWIRL.accel * mass;
+            b.addForce({ x: tx * g, y: 0, z: tz * g }, true);
           }
           for (const bo of obstacles.boosters) {
             if (u < bo.u0 || u > bo.u1) continue;
