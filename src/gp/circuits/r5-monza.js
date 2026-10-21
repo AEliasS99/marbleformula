@@ -1,40 +1,52 @@
-// The Italian Grand Prix at Monza: 459 units a lap at scale 0.08, three laps.
-//
-// The layout is a list of [obstacle, u]: u is the distance along the lap
-// (0 = start line, the lap ends at the lift tower ~446). Leave u out
-// (["hammer"]) to place it at the first legal spot after the previous entry.
-// `npm run design -- r5-monza` draws the map, checks every placement against
-// the obstacle's rules (src/gp/obstacles/) and lists where each one could go.
-//
-// The order of beats: an early drain to scramble the start, a long middle with
-// the whirlwind and the chain lift, gates before each hard section so the pack
-// arrives together, and a rough last sector into the lift tower.
+// The Italian Grand Prix at Monza: a compact ~228-unit marble-engineered
+// circuit preserving Monza's iconic silhouette (Rettifilo main straight,
+// sweeping Curva Grande, Curve di Lesmo, Variante Ascari S-sweep, and the
+// 180-degree banked Curva Parabolica hairpin) with zero dead straights so all
+// 20 marbles stay in a tight, high-speed pack from start to finish.
 export default {
   id: "r5-monza",
   title: "Italian Grand Prix",
+  circuit: "Autodromo Nazionale Monza",
+  location: "Monza, Italy",
+  realLength: 5793,
   geo: "it-1922",
   gp: "Italy",
   country: "Italy",
   flag: ["#009246", "#ce2b37"],
-  scale: 0.08,
-  seed: 6,
-  dq: { target: 1 }, // calibrated pads, like the other circuits
+  outline: [
+    [-27.4, 0],
+    [-15.2, 0],
+    [-3, 0],
+    [9.1, 0],
+    [21.3, 0],
+    [33.4, 0],
+    [40.3, -3],
+    [43.3, -9.9],
+    [40.3, -18.2],
+    [35.7, -27.4],
+    [31.2, -36.5],
+    [25.1, -41.8],
+    [16, -41],
+    [6.8, -35.7],
+    [-2.3, -32.7],
+    [-11.4, -32.7],
+    [-20.5, -32.7],
+    [-29.6, -32.7],
+    [-38.8, -32.7],
+    [-45.6, -28.1],
+    [-48.6, -19.8],
+    [-47.1, -10.6],
+    [-41, -3],
+    [-34.2, 0],
+  ],
+  start: 16,
+  seed: 18,
+  dq: { target: 1 },
   layout: [
-    ["vortex", 30],
-    ["drop", 69.623],
-    ["jump", 92.741],
-    ["hammer", 111],
-    ["spinner", 159],
-    ["turntable", 217],
-    ["lift", 229.861],
-    ["jump", 254.223],
-    ["bumpers", 268.266],
-    ["rollers", 313],
-    ["fan", 335.93],
-    ["drop", 347.975],
-    ["jump", 365.704],
-    ["bumps", 400.58],
-    ["pusher", 416],
-    ["pusher", 424.358],
+    ["vortex", 25],
+    ["splitter", 71],
+    ["drop", 116],
+    ["hammer", 135],
+    ["rollers", 149],
   ],
 };

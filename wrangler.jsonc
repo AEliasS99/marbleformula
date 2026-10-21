@@ -1,0 +1,13 @@
+{
+  "name": "marble",
+  "account_id": "c9674b74a8dfd9c67ec8124e999589a5",
+  "compatibility_date": "2026-10-21",
+  "assets": {
+    "directory": "./site"
+  },
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "marbleformula.com", "custom_domain": true },
+    { "pattern": "www.marbleformula.com", "custom_domain": true }
+  ]
+}

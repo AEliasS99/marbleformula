@@ -37,7 +37,7 @@ export function vortexFrame(v) {
  * the track enters), `throat` (the short vertical tube below the hole) and
  * `rim` (the flat top of the lip wall).
  */
-export function vortexGeometry(v, segments = 96) {
+export function vortexGeometry(v, segments = 96, rings = 28) {
   const { toWorld } = vortexFrame(v);
   const part = () => ({ position: [], index: [], uv: [] });
   const parts = { cone: part(), lip: part(), throat: part(), rim: part(), stripe: part(), apron: part(), chute: part() };
@@ -66,7 +66,6 @@ export function vortexGeometry(v, segments = 96) {
     }
   };
   // The funnel in many rings, closer together toward the throat where it steepens.
-  const rings = 28;
   const rAt = (t) => v.radius * Math.pow(v.hole / v.radius, t); // geometric spacing
   for (let k = 0; k < rings; k++) {
     const t0 = k / rings;
@@ -92,12 +91,12 @@ export function vortexGeometry(v, segments = 96) {
       }
       g.index.push(base, base + 1, base + 2, base, base + 2, base + 3);
     };
-    const n = 16;
+    const n = 48;
     for (let k = 0; k < n; k++) {
       const xa = x0 + ((0 - x0) * k) / n;
       const xb = x0 + ((0 - x0) * (k + 1)) / n;
-      const za = Math.sqrt(Math.max(0, v.radius * v.radius - xa * xa)) - 0.02;
-      const zb = Math.sqrt(Math.max(0, v.radius * v.radius - xb * xb)) - 0.02;
+      const za = Math.sqrt(Math.max(0, v.radius * v.radius - xa * xa));
+      const zb = Math.sqrt(Math.max(0, v.radius * v.radius - xb * xb));
       // Floor (facing up): from the rim out to the wall.
       quad(parts.apron, [xa, 0, za], [xa, 0, zw], [xb, 0, zw], [xb, 0, zb]);
     }
@@ -110,7 +109,7 @@ export function vortexGeometry(v, segments = 96) {
 
 /** One triangle soup of every part, for the collider. */
 export function vortexSoup(v, which = "all") {
-  const { stripe, ...all } = vortexGeometry(v, 64);
+  const { stripe, ...all } = vortexGeometry(v, 128);
   void stripe; // decoration only
   // "floor": what marbles roll on; "walls": what they ride along (lip, rim, chute).
   const pick = { all: Object.keys(all), floor: ["cone", "throat", "apron"], walls: ["lip", "rim", "chute"] }[which];

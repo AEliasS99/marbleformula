@@ -225,6 +225,8 @@ function TimingTower({ race, f, s }: { race: Race; f: number; s: number }) {
         {race.marbles.map((m, i) => {
           const slot = race.rowSlots[f][i];
           const pos = Math.round(slot) + 1;
+          const prevSlot = race.rowSlots[Math.max(0, f - race.sec(0.35))][i];
+          const gained = started && slot < prevSlot;
           const done = race.finishedBy(i, f);
           let gap = "";
           if (!started) gap = `P${m.grid}`;
@@ -234,8 +236,25 @@ function TimingTower({ race, f, s }: { race: Race; f: number; s: number }) {
           else gap = `+${race.gapAt(i, gf).toFixed(1)}`;
           const out = race.dqBy(i, f);
           return (
-            // A solid row: while two rows trade places the one sliding over hides the other instead of mixing text with it.
-            <div key={m.abbr} style={{ position: "absolute", left: 0, right: 0, top: 5 * s + slot * ROW, height: ROW, display: "flex", alignItems: "center", gap: 12 * s, padding: `0 ${14 * s}px`, fontSize: fs * s, fontWeight: 800, opacity: out ? 0.45 : 1, background: "#ffffff", zIndex: slot > race.ranking(f).indexOf(i) + 0.01 ? 2 : 1 /* the one climbing passes in front */ }}>
+            <div
+              key={m.abbr}
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                top: 5 * s + slot * ROW,
+                height: ROW,
+                display: "flex",
+                alignItems: "center",
+                gap: 12 * s,
+                padding: `0 ${14 * s}px`,
+                fontSize: fs * s,
+                fontWeight: 800,
+                opacity: out ? 0.45 : 1,
+                background: gained ? "#f4f8ff" : "#ffffff",
+                boxShadow: `inset 0 -${1 * s}px 0 rgba(15, 17, 23, 0.05)`,
+              }}
+            >
               <span style={{ width: (fs + 5) * s, height: (fs + 5) * s, borderRadius: 8 * s, display: "flex", alignItems: "center", justifyContent: "center", background: pos <= 3 && !out ? ink : "transparent", color: pos <= 3 && !out ? "white" : ink, fontSize: (fs - 5) * s, fontVariantNumeric: "tabular-nums" }}>
                 {pos}
               </span>
@@ -332,19 +351,20 @@ function ShotCaption({ race, shot, t, f, s, width, height, layout }: OverlayProp
       </Chip>
     ) : null;
 
+  const ranking = race.ranking(f);
   const badges =
     f >= race.timeline.raceStart + race.sec(1) && ["chase", "side", "top", "orbit", "lead", "feature", "finish"].includes(shot.kind)
-      ? race
-          .ranking(f)
-          .filter((i) => !race.finishedBy(i, f))
+      ? ranking
           .slice(0, 3)
-          .map((i, n) => {
+          .filter((i) => !race.finishedBy(i, f) && !race.dqBy(i, f))
+          .map((i) => {
+            const rank = ranking.indexOf(i) + 1;
             const { pos } = race.marblePose(i, t);
             const pt = project(shot, lensFov(shot.fov, width / height, layout), [pos[0], pos[1] + 0.55, pos[2]], width, height);
             if (!pt.visible) return null;
             return (
               <div key={i} style={{ position: "absolute", left: pt.x, top: pt.y - 40 * s, transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 6 * s, padding: `${3 * s}px ${10 * s}px`, background: card, borderRadius: 9 * s, boxShadow: shadow, fontSize: 19 * s, fontWeight: 900, whiteSpace: "nowrap" }}>
-                <span style={{ width: 20 * s, height: 20 * s, borderRadius: 6 * s, background: ink, color: "white", fontSize: 14 * s, display: "flex", alignItems: "center", justifyContent: "center" }}>{n + 1}</span>
+                <span style={{ width: 20 * s, height: 20 * s, borderRadius: 6 * s, background: rank === 1 ? yellow : ink, color: rank === 1 ? ink : "white", fontSize: 14 * s, display: "flex", alignItems: "center", justifyContent: "center" }}>{rank}</span>
                 {race.marbles[i].abbr}
               </div>
             );
@@ -450,7 +470,7 @@ function SplitGraphics({ race, split, f, frame, s, layout, width, height }: { ra
           {gap2 !== null && <span style={{ color: "#5b606e", fontSize: 18 * s, fontVariantNumeric: "tabular-nums" }}>+{gap2.toFixed(1)}s</span>}
         </Chip>,
         34,
-        side ? 360 : 0,
+        side ? 360 : 320,
       )}
       {right}
     </>
@@ -469,7 +489,7 @@ function Toasts({ race, f, s, layout }: { race: Race; f: number; s: number; layo
   if ((ev as { kind: string }).kind === "bestlap") {
     const e = ev as unknown as { a: number; frames: number; lap: number };
     return (
-      <div style={{ position: "absolute", left: layout === "portrait" ? 40 * s : 360 * s, bottom: (layout === "portrait" ? 560 : 50) * s, opacity: k * out, transform: `translateX(${(1 - k) * -60 * s}px)` }}>
+      <div style={{ position: "absolute", left: 40 * s, bottom: (layout === "portrait" ? 560 : 40) * s, opacity: k * out, transform: `translateX(${(1 - k) * -60 * s}px)` }}>
         <Chip s={s} bg={card} size={28}>
           <span style={{ background: "#b03cff", color: "white", padding: `${2 * s}px ${8 * s}px`, borderRadius: 6 * s, fontSize: 18 * s }}>BEST LAP</span>
           <MarbleDot s={s} color={a.color} flag={flagOf(a)} />
@@ -481,7 +501,7 @@ function Toasts({ race, f, s, layout }: { race: Race; f: number; s: number; layo
   }
   if ((ev as { kind: string }).kind === "dq")
     return (
-      <div style={{ position: "absolute", left: layout === "portrait" ? 40 * s : 360 * s, bottom: (layout === "portrait" ? 560 : 50) * s, opacity: k * out, transform: `translateX(${(1 - k) * -60 * s}px)` }}>
+      <div style={{ position: "absolute", left: 40 * s, bottom: (layout === "portrait" ? 560 : 40) * s, opacity: k * out, transform: `translateX(${(1 - k) * -60 * s}px)` }}>
         <Chip s={s} bg={card} size={28}>
           <span style={{ background: "#e8414a", color: "white", padding: `${2 * s}px ${8 * s}px`, borderRadius: 6 * s, fontSize: 18 * s }}>DRAINED</span>
           <MarbleDot s={s} color={a.color} flag={flagOf(a)} />
@@ -491,7 +511,7 @@ function Toasts({ race, f, s, layout }: { race: Race; f: number; s: number; layo
       </div>
     );
   return (
-    <div style={{ position: "absolute", left: layout === "portrait" ? 40 * s : 360 * s, bottom: (layout === "portrait" ? 560 : 50) * s, opacity: k * out, transform: `translateX(${(1 - k) * -60 * s}px)` }}>
+    <div style={{ position: "absolute", left: 40 * s, bottom: (layout === "portrait" ? 560 : 40) * s, opacity: k * out, transform: `translateX(${(1 - k) * -60 * s}px)` }}>
       <Chip s={s} bg={card} size={28}>
         <span style={{ background: yellow, padding: `${2 * s}px ${8 * s}px`, borderRadius: 6 * s, fontSize: 18 * s }}>OVERTAKE</span>
         <MarbleDot s={s} color={a.color} flag={flagOf(a)} />
@@ -593,7 +613,9 @@ function Results({ race, frame, s, layout }: { race: Race; frame: number; s: num
       {results.map((r, k) => {
         const m = race.marbles[r.marble];
         const inn = spring({ frame: frame - at - race.sec(0.2) - k * race.sec(0.1), fps: race.fps, config: { damping: 18 } });
-        const gap = (r as { dq?: boolean }).dq ? "DQ" : r.time === null ? "—" : k === 0 ? `${r.time.toFixed(2)}s` : `+${(r.time - results[0].time!).toFixed(2)}`;
+        const t0 = race.finishSeconds(results[0].marble) ?? results[0].time;
+        const ti = race.finishSeconds(r.marble) ?? r.time;
+        const gap = (r as { dq?: boolean }).dq ? "DQ" : ti === null ? "—" : k === 0 ? `${ti.toFixed(2)}s` : `+${(ti - t0!).toFixed(2)}`;
         return <Row key={r.marble} s={s} inn={inn} pos={r.pos} color={m.color} flag={flagOf(m)} name={m.name} right={gap} extra={r.points ? `+${r.points}` : ""} compact={race.N > 12} />;
       })}
     </Card>

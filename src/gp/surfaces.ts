@@ -101,25 +101,33 @@ export function plasticMaps() {
   return { normal: dataTexture(px.size, px.normal), roughness: dataTexture(px.size, px.rough) };
 }
 
-/** Polished concrete for the studio floor: colour variation and a little sheen variation. New textures on every call. */
+/** Honed architectural slate for the studio floor: subtle slab joints and satin sheen variation. New textures on every call. */
 export function floorMaps(base: string) {
   const px = once(`floor${base}`, () => {
     const size = 512;
-    const low = noiseField(size, 6, 5, 3);
-    const grain = noiseField(size, 128, 2, 4);
+    const low = noiseField(size, 4, 4, 3);
+    const grain = noiseField(size, 64, 2, 4);
+    const height = new Float32Array(size * size);
     const c = new THREE.Color(base);
     const col = new Uint8Array(size * size * 4);
     const rough = new Uint8Array(size * size * 4);
-    for (let i = 0; i < size * size; i++) {
-      const k = 0.88 + low[i] * 0.2 + (grain[i] - 0.5) * 0.06;
-      col[i * 4] = Math.min(255, c.r * 255 * k);
-      col[i * 4 + 1] = Math.min(255, c.g * 255 * k);
-      col[i * 4 + 2] = Math.min(255, c.b * 255 * k);
-      col[i * 4 + 3] = 255;
-      rough[i * 4 + 1] = (0.55 + low[i] * 0.35) * 255;
-      rough[i * 4 + 3] = 255;
-    }
-    return { size, col, rough, normal: normalPixels(grain, size, 1.2) };
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++) {
+        const i = y * size + x;
+        const seamX = Math.min(x % 256, 256 - (x % 256));
+        const seamY = Math.min(y % 256, 256 - (y % 256));
+        const seam = seamX < 2 || seamY < 2 ? 0.72 : seamX < 4 || seamY < 4 ? 0.92 : 1.0;
+        const tile = (((x >> 8) + (y >> 8)) & 1) ? 0.03 : -0.02;
+        const k = (0.92 + tile + low[i] * 0.14 + (grain[i] - 0.5) * 0.025) * seam;
+        col[i * 4] = Math.min(255, Math.max(0, c.r * 255 * k));
+        col[i * 4 + 1] = Math.min(255, Math.max(0, c.g * 255 * k));
+        col[i * 4 + 2] = Math.min(255, Math.max(0, c.b * 255 * k));
+        col[i * 4 + 3] = 255;
+        rough[i * 4 + 1] = (seam < 1 ? 0.78 : 0.34 + low[i] * 0.22) * 255;
+        rough[i * 4 + 3] = 255;
+        height[i] = grain[i] * 0.35 + (seam < 1 ? -0.45 : 0);
+      }
+    return { size, col, rough, normal: normalPixels(height, size, 0.85) };
   });
   return colorMaps(px);
 }

@@ -235,24 +235,33 @@ function ShowroomScene({ race, k, x, portrait }: { race: Race; k: number; x: num
   return (
     <>
       <spotLight position={[1.5, 5, 3]} angle={0.45} penumbra={0.7} intensity={60} castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.0002} shadow-normalBias={0.02} />
+      <spotLight position={[0, 3.8, -3.6]} angle={0.55} penumbra={0.8} intensity={28} color="#eef4ff" />
       <pointLight position={[-2.2, 1.2, -1.8]} color={c0} intensity={10} distance={8} />
       <pointLight position={[2.2, 1.2, -1.8]} color={c1.getHSL({ h: 0, s: 0, l: 0 }).l < 0.15 ? c0 : c1} intensity={8} distance={8} />
       <ambientLight intensity={0.08} />
-      {/* Floor and podium */}
+      {/* Floor and stepped horological plinth */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <circleGeometry args={[20, 96]} />
-        <meshStandardMaterial color="#0f1116" roughness={0.3} metalness={0.5} />
+        <meshPhysicalMaterial color="#0d0f14" roughness={0.26} metalness={0.55} clearcoat={0.35} clearcoatRoughness={0.22} />
       </mesh>
       <group rotation={[0, spin * 0.25, 0]}>
-        <mesh position={[0, 0.1, 0]} castShadow receiveShadow>
-          <cylinderGeometry args={[1.25, 1.32, 0.2, 96]} />
-          <meshStandardMaterial color="#22252d" roughness={0.25} metalness={0.85} />
+        <mesh position={[0, 0.035, 0]} receiveShadow>
+          <cylinderGeometry args={[1.46, 1.54, 0.07, 96]} />
+          <meshStandardMaterial color="#181b22" roughness={0.22} metalness={0.9} />
+        </mesh>
+        <mesh position={[0, 0.072, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[1.455, 0.008, 8, 128]} />
+          <meshStandardMaterial color="#d4af37" metalness={0.95} roughness={0.2} />
+        </mesh>
+        <mesh position={[0, 0.11, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[1.25, 1.32, 0.18, 96]} />
+          <meshStandardMaterial color="#22252d" roughness={0.22} metalness={0.88} />
         </mesh>
         <mesh position={[0, 0.203, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[1.05, 1.18, 96]} />
           <meshStandardMaterial color={c0} emissive={c0} emissiveIntensity={1.6} roughness={0.4} polygonOffset polygonOffsetFactor={-2} />
         </mesh>
-        <mesh position={[0, 0.1, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <mesh position={[0, 0.11, 0]} rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[1.315, 0.012, 8, 128]} />
           <meshStandardMaterial color={c0} emissive={c0} emissiveIntensity={2.4} />
         </mesh>
@@ -333,7 +342,7 @@ function TitleGraphics({ race, x, frames, s, layout }: { race: Race; x: number; 
   const a = spring({ frame: x - 4, fps, config: { damping: 13, mass: 0.8 } });
   const b = spring({ frame: x - 14, fps, config: { damping: 13 } });
   const yr = spring({ frame: x - 26, fps, config: { damping: 9, stiffness: 140 } });
-  const sub = spring({ frame: x - 70, fps, config: { damping: 16 } });
+  const sub = spring({ frame: x - 45, fps, config: { damping: 16 } });
   const out = interpolate(x, [frames - 14, frames], [1, 0], clamp);
   const round = (race.data as { round?: number }).round ?? 1;
   const rounds = (race.data as { rounds?: number }).rounds ?? 1;
@@ -489,7 +498,7 @@ function FlyoverGraphics({ race, plan, x, s, layout, width }: { race: Race; plan
   const info = race.data.info as { circuit: string; location: string; realLength: number; laps?: number; gp: string };
   const land = layout === "landscape";
   const head = spring({ frame: x - 6, fps, config: { damping: 16 } });
-  const headOut = interpolate(x, [150, 166], [1, 0], clamp);
+  const headOut = interpolate(x, [110, 126], [1, 0], clamp);
   const n = plan.cards.length;
   const cur = plan.cards.findIndex((c) => x >= c.from && x < c.to);
   const c = cur >= 0 ? plan.cards[cur] : null;

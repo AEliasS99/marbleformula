@@ -156,10 +156,27 @@ function build(data: RoundData) {
     return { pos: [x, y, z], visible: true };
   };
 
+  const order = data.order;
+  const uFin = (LAPS - 1) * L + ((data.info as { finish?: number }).finish ?? L);
+  const exactFinish: (number | null)[] = marbles.map((m, i) => {
+    if (m.finishFrame === null) return null;
+    const exact = (m as { finishExact?: number | null }).finishExact;
+    if (exact != null) return exact;
+    const ff = m.finishFrame;
+    const p0 = progress(i, Math.max(0, ff - 1));
+    const p1 = progress(i, ff);
+    return p1 > p0 ? ff - 1 + Math.max(0, Math.min(1, (uFin - p0) / (p1 - p0))) : ff;
+  });
+  for (let pos = 1; pos < order.length; pos++) {
+    const prev = exactFinish[order[pos - 1]];
+    const cur = exactFinish[order[pos]];
+    if (prev !== null && cur !== null && cur <= prev + 0.35) exactFinish[order[pos]] = prev + 0.35;
+  }
+
   // Finishers by time, then the rest by progress, then the disqualified (first out, last).
   const rankKey = (i: number, f: number): [number, number] => {
     if (f < timeline.raceStart) return [1, marbles[i].grid]; // on the grid: by grid position
-    if (finishedBy(i, f)) return [0, marbles[i].finishFrame!];
+    if (finishedBy(i, f)) return [0, exactFinish[i] ?? marbles[i].finishFrame!];
     if (dqBy(i, f)) return [2, -((marbles[i] as { dqFrame?: number | null }).dqFrame ?? 0)];
     return [1, -progress(i, f)];
   };
@@ -172,13 +189,12 @@ function build(data: RoundData) {
         return ka[0] - kb[0] || ka[1] - kb[1];
       });
 
-  const order = data.order;
   const winner = order[0];
   const winnerFrame = marbles[winner].finishFrame ?? lastFrame;
   const lastFinishFrame = Math.max(...marbles.map((m) => m.finishFrame ?? lastFrame));
   const raceSeconds = (f: number) => Math.max(0, Math.min(f, lastFinishFrame) - timeline.raceStart) / fps;
   const finishSeconds = (i: number) =>
-    marbles[i].finishFrame === null ? null : (marbles[i].finishFrame! - timeline.raceStart) / fps;
+    exactFinish[i] === null ? null : (exactFinish[i]! - timeline.raceStart) / fps;
 
   // Gap to the leader, the TV way: how long ago the leader was where you are now.
   const leadU: number[] = [];
@@ -225,17 +241,14 @@ function build(data: RoundData) {
       }
     };
     let rank = marbles.map((_, i) => order.indexOf(i));
-    let slots = rank.slice();
-    const every = Math.round(fps / 3);
-    const ease = 1 - Math.pow(1 - 0.45, 30 / fps);
+    const every = Math.round(fps / 2);
     for (let f = 0; f <= lastFrame; f++) {
       if (f % every === 0 || marbles.some((m) => m.finishFrame === f || (m as { dqFrame?: number | null }).dqFrame === f)) {
         if (f < timeline.raceStart) order = ranking(f);
         else settle(f);
         rank = marbles.map((_, i) => order.indexOf(i));
       }
-      slots = slots.map((s, i) => s + (rank[i] - s) * ease);
-      rowSlots.push(slots);
+      rowSlots.push(rank.slice());
     }
   }
 
@@ -342,7 +355,9 @@ function build(data: RoundData) {
   /** Seconds → frames at this round's frame rate. */
   const sec = (x: number) => Math.round(x * fps);
   const margin =
-    marbles[order[1]].finishFrame !== null ? (marbles[order[1]].finishFrame! - winnerFrame) / fps : null;
+    exactFinish[order[1]] !== null && exactFinish[winner] !== null
+      ? (exactFinish[order[1]]! - exactFinish[winner]!) / fps
+      : null;
 
   // --- Split screen --------------------------------------------------------------
   /** The split showing at a video frame (live race only), if any. */

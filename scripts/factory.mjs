@@ -605,8 +605,11 @@ async function factoryMain() {
     const dq = (rest.match(/DQ ([A-Z ]+)/)?.[1] ?? "").trim();
     return { id: m[1], seed: Number(m[2]), race: Number(m[3]), winner: m[4], margin: m[5] === "-" ? null : Number(m[5]), dnf: dnf ? dnf.split(" ").length : 0, drains: dq ? dq.split(" ").length : 0 };
   }
-  /** Lower is better: a close finish, one or two drains, nobody stuck. */
-  const score = (r) => (r.dnf || r.margin === null ? Infinity : r.margin + (r.drains === 0 ? 0.6 : r.drains > 2 ? 0.8 * (r.drains - 2) : 0));
+  /** Lower is better: a close finish (never a 0.00s tie), one or two drains, nobody stuck. */
+  const score = (r) =>
+    r.dnf || r.margin === null
+      ? Infinity
+      : r.margin + (r.margin < 0.015 ? 2.5 : 0) + (r.drains === 0 ? 0.6 : r.drains > 2 ? 0.8 * (r.drains - 2) : 0);
 
   async function sweepAll(list, redo) {
     const todo = list.filter((c) => redo || !state.done[`sweep:${c.id}`] || state.seeds[c.id] === undefined);

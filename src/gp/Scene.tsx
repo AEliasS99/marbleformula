@@ -190,28 +190,41 @@ export function Environment() {
  * target. It pools light where the marbles are and falls off into shade
  * around them, so the frame has a lit subject instead of even, flat light.
  */
-export function Sun({ target }: { target: Vec3 }) {
-  const sun = useMemo(() => {
+export function Sun({ target, pos }: { target: Vec3; pos?: Vec3 }) {
+  const { sun, rim } = useMemo(() => {
     // Late-afternoon sun, low and warm: long shadows from posts, guards and marbles.
-    const l = isNight() ? new THREE.DirectionalLight("#dfe8ff", 2.2) : new THREE.DirectionalLight("#ffd9a6", 3.2);
+    const l = isNight() ? new THREE.DirectionalLight("#dfe8ff", 2.25) : new THREE.DirectionalLight("#ffd9a6", 3.2);
     l.castShadow = true;
     l.shadow.mapSize.set(4096, 4096);
     l.shadow.bias = -0.00025;
     l.shadow.normalBias = 0.02;
     l.shadow.radius = 2;
     l.shadow.blurSamples = 12;
-    Object.assign(l.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 120 });
-    return l;
+    Object.assign(l.shadow.camera, { left: -18, right: 18, top: 18, bottom: -18, near: 1, far: 160 });
+    // Warm Pixar rim/kicker light opposite the key light to sculpt grazing edges on marbles and chrome.
+    const r = new THREE.DirectionalLight(isNight() ? "#ffae66" : "#ffe4b8", isNight() ? 0.78 : 0.55);
+    return { sun: l, rim: r };
   }, []);
   const [x, y, z] = target;
+  const dist = pos ? Math.hypot(pos[0] - x, pos[1] - y, pos[2] - z) : 16;
+  const span = Math.max(18, Math.min(64, dist * 0.85));
+  if (Math.abs(sun.shadow.camera.right - span) > 0.5) {
+    Object.assign(sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, far: Math.max(140, span * 3) });
+    sun.shadow.camera.updateProjectionMatrix();
+  }
   if (isNight()) sun.position.set(x + 8, y + 40, z + 10); // a high studio key: short shadows under each marble
   else sun.position.set(x + 30, y + 21, z + 14); // ~32° above the horizon
   sun.target.position.set(x, y, z);
   sun.target.updateMatrixWorld();
+  rim.position.set(x - 24, y + 14, z - 18);
+  rim.target.position.set(x, y, z);
+  rim.target.updateMatrixWorld();
   return (
     <>
       <primitive object={sun} />
       <primitive object={sun.target} />
+      <primitive object={rim} />
+      <primitive object={rim.target} />
     </>
   );
 }
@@ -501,33 +514,8 @@ export function Circuit({ race }: { race: Race }) {
     });
     checker.magFilter = THREE.NearestFilter;
 
-    // Slim chrome pillars under the raised track, wherever no other track runs below.
     const minY = Math.min(...samples.map((s) => s.p[1]));
     const groundY = minY - 1.4;
-    const pillars: { x: number; y: number; z: number; h: number }[] = [];
-    for (let k = 0; k < samples.length; k += 8) {
-      const s = samples[k];
-      const bottom = pointInFrame(s, 0, -TRACK.wall);
-      const h = bottom[1] - groundY;
-      if (h < 0.4) continue;
-      const blocked = samples.some(
-        (q) => Math.abs(q.u - s.u) > 6 && q.p[1] < s.p[1] && Math.hypot(q.p[0] - s.p[0], q.p[2] - s.p[2]) < TRACK.width / 2 + 1.2,
-      );
-      if (!blocked) pillars.push({ x: bottom[0], y: groundY + h / 2, z: bottom[2], h });
-    }
-    const pillarMesh = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(0.09, 0.09, 1, 24),
-      new THREE.MeshStandardMaterial({ color: "#d9dce3", metalness: 0.9, roughness: 0.18 }),
-      pillars.length,
-    );
-    pillars.forEach((p, i) =>
-      pillarMesh.setMatrixAt(
-        i,
-        new THREE.Matrix4().compose(new THREE.Vector3(p.x, p.y, p.z), new THREE.Quaternion(), new THREE.Vector3(1, p.h, 1)),
-      ),
-    );
-    pillarMesh.castShadow = true;
-
     const xs = samples.map((s) => s.p[0]);
     const zs = samples.map((s) => s.p[2]);
     // Imperfection maps (fresh textures for this canvas). Track UVs are (units along / 4, 0..1 across), so repeat to ~1 tile per unit.
@@ -535,7 +523,7 @@ export function Circuit({ race }: { race: Race }) {
     for (const t of [plastic.normal, plastic.roughness]) t.repeat.set(3, 6); // fine grain: it should show only in the highlights
     const asphalt = asphaltMaps();
     for (const t of [asphalt.normal, asphalt.roughness]) t.repeat.set(1, 4);
-    const floor = isNight() ? floorMaps("#1c1e23") : grassMaps();
+    const floor = isNight() ? floorMaps("#16181f") : grassMaps();
     for (const t of [floor.color, floor.roughness, floor.normal]) t.repeat.set(70, 70);
     return {
       plastic,
@@ -554,7 +542,6 @@ export function Circuit({ race }: { race: Race }) {
       laneNumbers,
       startLine: bandGeometry(samples, -0.12, 0.12, null, null, 0.014),
       finishLine: bandGeometry(samples, uFinish - 0.3, uFinish + 0.3, null, null, 0.014),
-      pillarMesh,
       groundY,
       center: [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...zs) + Math.max(...zs)) / 2] as [number, number],
     };
@@ -564,13 +551,15 @@ export function Circuit({ race }: { race: Race }) {
   return (
     <>
       <mesh geometry={geos.floor} receiveShadow castShadow>
-        <meshStandardMaterial
+        <meshPhysicalMaterial
           map={built.lanes}
-          roughness={1}
+          roughness={0.82}
           roughnessMap={built.asphalt.roughness}
           normalMap={built.asphalt.normal}
-          normalScale={new THREE.Vector2(0.35, 0.35)}
-          envMapIntensity={0.5}
+          normalScale={new THREE.Vector2(0.42, 0.42)}
+          clearcoat={isNight() ? 0.16 : 0.08}
+          clearcoatRoughness={0.32}
+          envMapIntensity={isNight() ? 0.82 : 0.58}
           side={THREE.DoubleSide}
         />
       </mesh>
@@ -637,8 +626,8 @@ export function Circuit({ race }: { race: Race }) {
         {/* A polished studio floor: a blurred planar reflection of the track grounds it in the room. */}
         {/* Brightened: the grass used to get most of its light from the sky's own sun, now capped out of it. */}
         {isNight() ? (
-          // Polished dark concrete: soft reflections of the neon and the softboxes.
-          <meshStandardMaterial map={built.floor.color} roughnessMap={built.floor.roughness} roughness={0.55} metalness={0.2} normalMap={built.floor.normal} normalScale={new THREE.Vector2(0.3, 0.3)} envMapIntensity={1.2} />
+          // Honed architectural slate floor: soft reflections of the neon and studio softboxes.
+          <meshPhysicalMaterial map={built.floor.color} roughnessMap={built.floor.roughness} roughness={0.42} metalness={0.25} clearcoat={0.28} clearcoatRoughness={0.24} normalMap={built.floor.normal} normalScale={new THREE.Vector2(0.14, 0.14)} envMapIntensity={1.25} />
         ) : (
           <meshStandardMaterial map={built.floor.color} color={new THREE.Color(2.2, 2.2, 2.0)} roughnessMap={built.floor.roughness} roughness={1} normalMap={built.floor.normal} normalScale={new THREE.Vector2(0.5, 0.5)} />
         )}
@@ -1196,6 +1185,12 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
                   <meshStandardMaterial map={chev} roughness={0.5} />
                 </mesh>
               ))}
+              {[-1, 1].map((e) => (
+                <mesh key={`brkt${e}`} position={[0, -1.55, e * (W + 0.17)]} castShadow>
+                  <boxGeometry args={[0.24, 0.18, 0.36]} />
+                  <meshStandardMaterial {...chrome} />
+                </mesh>
+              ))}
               </group>
               {/* The hub on the axle. */}
               <mesh rotation-x={Math.PI / 2}>
@@ -1518,9 +1513,9 @@ export function marbleTextures(name: string, code: string, color?: string) {
   const base = color ?? flag?.colors[0] ?? "#888";
   const accent = flag?.colors.find((c) => c.toLowerCase() !== base.toLowerCase()) ?? "#ffffff";
   // Metal/rough map: G = roughness, B = metalness (scaled by the material's 1 / 1).
-  const PAINT = "rgb(0,115,26)"; // satin flake paint: roughness 0.45, metalness 0.1
-  const FLAG = "rgb(0,80,0)"; // printed band: roughness 0.31, no metal
-  const CHROME = "rgb(0,20,255)"; // pinstripes: mirror chrome
+  const PAINT = "rgb(0,92,46)"; // metallic-flake base coat: roughness 0.36, metalness 0.18
+  const FLAG = "rgb(0,68,0)"; // printed band: roughness 0.27, no metal
+  const CHROME = "rgb(0,14,255)"; // pinstripes: mirror chrome
   const bandY = H * 0.3;
   const bandH = H * 0.4;
   const paint = (g: CanvasRenderingContext2D, metalMap: boolean) => {
@@ -1636,6 +1631,7 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
       }),
     [sub, view, race],
   );
+  const night = isNight();
   return (
     <>
       {race.marbles.map((_, i) => {
@@ -1650,15 +1646,137 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
               roughnessMap={tex[i].mr}
               metalness={1}
               roughness={1}
-              clearcoat={0.4}
-              clearcoatRoughness={0.3}
-              envMapIntensity={0.75}
+              clearcoat={1}
+              clearcoatRoughness={0.04}
+              ior={1.52}
+              envMapIntensity={night ? 1.2 : 1.0}
             />
           </mesh>
         );
       })}
     </>
   );
+}
+
+/** High-energy collision sparks emitted deterministically from hard marble impacts; closed-form for any frame or slow-mo replay. */
+export function ImpactSparks({ race, t }: { race: Race; t: number }) {
+  const view = useView(race);
+  const sub = useSubframe();
+  const MAX = 160;
+  const { mesh, sparks } = useMemo(() => {
+    const frames = race.data.frames as number[][][];
+    const fps = race.fps;
+    const list: { t0: number; life: number; origin: Vec3; vel: Vec3; hot: number }[] = [];
+    for (let i = 0; i < race.N; i++) {
+      let lastBurst = -999;
+      for (let f = Math.max(2, race.timeline.raceStart + 10); f < race.lastFrame; f++) {
+        if (f - lastBurst < 12 || race.dqBy(i, f)) continue;
+        const P0 = frames[f - 2][i];
+        const P1 = frames[f - 1][i];
+        const P2 = frames[f][i];
+        const v1x = (P1[0] - P0[0]) * fps;
+        const v1y = (P1[1] - P0[1]) * fps;
+        const v1z = (P1[2] - P0[2]) * fps;
+        const v2x = (P2[0] - P1[0]) * fps;
+        const v2y = (P2[1] - P1[1]) * fps;
+        const v2z = (P2[2] - P1[2]) * fps;
+        const speed = Math.hypot(v2x, v2y, v2z);
+        if (speed < 3.8 || speed > 42) continue;
+        const dvx = v2x - v1x;
+        const dvy = v2y - v1y;
+        const dvz = v2z - v1z;
+        const impulse = Math.hypot(dvx, dvy, dvz);
+        if (impulse < 5.2) continue;
+        lastBurst = f;
+        const count = Math.min(8, Math.floor(3 + (impulse - 5.2) * 0.45));
+        const seed = f * 37 + i * 13;
+        for (let k = 0; k < count; k++) {
+          const s = seed + k * 7.3;
+          const a = hash(s) * Math.PI * 2;
+          const spread = 1.8 + hash(s + 1.9) * 3.8;
+          const up = 1.2 + hash(s + 3.7) * 3.2;
+          list.push({
+            t0: f - 0.5 + hash(s + 5.1) * 0.6,
+            life: 0.18 + hash(s + 8.3) * 0.22,
+            origin: [P1[0], P1[1] + 0.04, P1[2]],
+            vel: [
+              v2x * 0.48 + dvx * 0.22 + Math.cos(a) * spread,
+              Math.max(0.5, v2y * 0.35 + up),
+              v2z * 0.48 + dvz * 0.22 + Math.sin(a) * spread,
+            ],
+            hot: k % 3 === 0 ? 1 : 0,
+          });
+        }
+      }
+    }
+    list.sort((a, b) => a.t0 - b.t0);
+    const geo = new THREE.OctahedronGeometry(1, 0);
+    const mat = new THREE.MeshStandardMaterial({
+      color: "#fff5d6",
+      emissive: "#ff8814",
+      emissiveIntensity: 3.2,
+      roughness: 0.2,
+      toneMapped: false,
+    });
+    const inst = new THREE.InstancedMesh(geo, mat, MAX);
+    inst.frustumCulled = false;
+    const warm = new THREE.Color("#ff9922");
+    const whiteHot = new THREE.Color("#fff7df");
+    for (let k = 0; k < MAX; k++) inst.setColorAt(k, k % 3 === 0 ? whiteHot : warm);
+    return { mesh: inst, sparks: list };
+  }, [race]);
+
+  const update = (simT: number) => {
+    const fps = race.fps;
+    const minT0 = simT - 0.45 * fps;
+    let lo = 0;
+    let hi = sparks.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sparks[mid].t0 < minT0) lo = mid + 1;
+      else hi = mid;
+    }
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const pos = new THREE.Vector3();
+    const sc = new THREE.Vector3();
+    const dir = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    const zero = new THREE.Vector3(0, 0, 0);
+    const DRAG = 3.2;
+    const G = 9.8;
+    let count = 0;
+    for (let idx = lo; idx < sparks.length && count < MAX; idx++) {
+      const sp = sparks[idx];
+      if (sp.t0 > simT) break;
+      const age = (simT - sp.t0) / fps;
+      if (age <= 0 || age >= sp.life) continue;
+      const decay = Math.exp(-DRAG * age);
+      const ex = (1 - decay) / DRAG;
+      pos.set(
+        sp.origin[0] + sp.vel[0] * ex,
+        sp.origin[1] + sp.vel[1] * ex - (G / DRAG) * (age - ex),
+        sp.origin[2] + sp.vel[2] * ex,
+      );
+      dir.set(sp.vel[0] * decay, sp.vel[1] * decay - (G / DRAG) * (1 - decay), sp.vel[2] * decay);
+      const spd = dir.length();
+      if (spd > 0.001) q.setFromUnitVectors(up, dir.divideScalar(spd));
+      else q.identity();
+      const fade = 1 - age / sp.life;
+      const r = 0.015 * (0.4 + 0.6 * fade);
+      const len = Math.min(0.32, (0.06 + spd * 0.014) * fade);
+      sc.set(r, len, r);
+      mesh.setMatrixAt(count++, m.compose(pos, q, sc));
+    }
+    mesh.visible = count > 0;
+    if (mesh.visible) {
+      for (let k = count; k < MAX; k++) mesh.setMatrixAt(k, m.compose(zero, q, zero));
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  };
+  update(t);
+  useEffect(() => sub.subscribe((vf) => update(view.tAt(vf))), [sub, view, race, mesh]);
+  return <primitive object={mesh} />;
 }
 
 /** Confetti over the finish line when the winner crosses; closed-form, so any frame is direct. */

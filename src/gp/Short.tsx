@@ -19,13 +19,28 @@ export const GrandPrixShort = ({ id, season }: { id: string; season?: number }) 
   return (
     <AbsoluteFill style={{ backgroundColor: "#111216" }}>
       <Sequence from={-offset}>
-        <GrandPrix id={id} layout="portrait" />
+        <GrandPrix id={id} layout="portrait" fadeInFrom={offset} />
       </Sequence>
-      <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", opacity: inn * out, pointerEvents: "none" }}>
-        <div style={{ textAlign: "center", fontFamily: "'Avenir Next', 'Montserrat', system-ui, sans-serif", color: "#fff", textShadow: "0 6px 30px rgba(0,0,0,0.6)", transform: `scale(${0.8 + 0.2 * inn})` }}>
-          <div style={{ fontSize: season ? 38 : 44, fontWeight: 800, letterSpacing: season ? 4 : 6, whiteSpace: "nowrap" }}>{chip}</div>
-          <div style={{ fontSize: 76, fontWeight: 900, marginTop: 10 }}>{info.title.toUpperCase()}</div>
-          <div style={{ display: "inline-block", marginTop: 24, background: "#ffcc00", color: "#111216", fontSize: 64, fontWeight: 900, padding: "8px 28px", borderRadius: 16 }}>FINAL LAP</div>
+      <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: 736, opacity: inn * out, pointerEvents: "none" }}>
+        <div
+          style={{
+            textAlign: "center",
+            fontFamily: "'Avenir Next', 'Montserrat', system-ui, sans-serif",
+            color: "#fff",
+            background: "rgba(17, 18, 22, 0.88)",
+            backdropFilter: "blur(14px)",
+            border: "1.5px solid rgba(255, 204, 0, 0.45)",
+            borderRadius: 24,
+            padding: "16px 34px 20px",
+            boxShadow: "0 16px 48px rgba(0,0,0,0.55)",
+            transform: `translateY(${(1 - inn) * 24}px) scale(${0.88 + 0.12 * inn})`,
+          }}
+        >
+          <div style={{ fontSize: season ? 26 : 28, fontWeight: 800, letterSpacing: 5, color: "#ffcc00", whiteSpace: "nowrap" }}>{chip}</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20, marginTop: 10 }}>
+            <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: -1, whiteSpace: "nowrap" }}>{info.title.toUpperCase()}</div>
+            <div style={{ background: "#ffcc00", color: "#111216", fontSize: 38, fontWeight: 900, padding: "6px 20px", borderRadius: 12, letterSpacing: 1, whiteSpace: "nowrap" }}>FINAL LAP</div>
+          </div>
         </div>
       </AbsoluteFill>
     </AbsoluteFill>

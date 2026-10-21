@@ -171,17 +171,21 @@ export function TrackDetails({ race }: { race: Race }) {
     // Pillars, saddle clamps and base plates, wherever no other track runs below.
     const minY = Math.min(...samples.map((s) => s.p[1]));
     const groundY = minY - 1.4;
-    const pillars: { top: THREE.Vector3; h: number; s: Sample }[] = [];
-    for (let k = 0; k < samples.length; k += 8) {
+    const elevators = ((race.data as unknown as { elevators?: { center: Vec3; width: number; length: number }[] }).elevators ?? []);
+    const pillars: { top: THREE.Vector3; h: number; sleeveH: number; s: Sample }[] = [];
+    for (let k = 0; k < samples.length; k += 14) {
       const s = samples[k];
       if (gapNear(s.u)) continue;
       const bottom = v(pointInFrame(s, 0, -TRACK.wall - 0.14));
       const h = bottom.y - groundY;
       if (h < 0.5) continue;
-      const blocked = samples.some(
-        (q) => Math.abs(q.u - s.u) > 6 && q.p[1] < s.p[1] && Math.hypot(q.p[0] - s.p[0], q.p[2] - s.p[2]) < HALF + 1.2,
-      );
-      if (!blocked) pillars.push({ top: bottom, h, s });
+      const sw = s.w ?? HALF;
+      const blocked =
+        samples.some(
+          (q) => Math.abs(q.u - s.u) > 6 && q.p[1] < s.p[1] && Math.hypot(q.p[0] - s.p[0], q.p[2] - s.p[2]) < Math.max(HALF, q.w ?? HALF) + sw * 0.35 + 1.2,
+        ) ||
+        elevators.some((ev) => Math.hypot(ev.center[0] - s.p[0], ev.center[2] - s.p[2]) < Math.max(ev.width, ev.length) + 2.2);
+      if (!blocked) pillars.push({ top: bottom, h, sleeveH: Math.max(0.25, Math.min(1.65, h * 0.45)), s });
     }
     const bottomArc = outer.slice(Math.floor(outer.length / 2) - 6, Math.floor(outer.length / 2) + 7).map((_, i, arr) => {
       const idx = Math.floor(outer.length / 2) - 6 + i;
@@ -189,49 +193,101 @@ export function TrackDetails({ race }: { race: Race }) {
       return outward(outer, idx, 0.02);
     });
     const saddles = mergeGeometries(pillars.map((p) => sweep(samples, bottomArc, p.s.u - 0.09, p.s.u + 0.09, 0.09)))!;
+    const night = isNight();
     const plateBolts: { pos: THREE.Vector3; up: THREE.Vector3; spin: number }[] = [];
-    pillars.forEach((p, k) => {
-      for (const [dx, dz] of [[-0.15, -0.15], [0.15, -0.15], [-0.15, 0.15], [0.15, 0.15]])
-        plateBolts.push({ pos: new THREE.Vector3(p.top.x + dx, groundY + 0.03, p.top.z + dz), up: new THREE.Vector3(0, 1, 0), spin: k * 0.37 });
-    });
+    if (!night) {
+      pillars.forEach((p, k) => {
+        for (const [dx, dz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]])
+          plateBolts.push({ pos: new THREE.Vector3(p.top.x + dx, groundY + 0.04, p.top.z + dz), up: new THREE.Vector3(0, 1, 0), spin: k * 0.37 });
+      });
+    }
 
-    const steel = new THREE.MeshStandardMaterial({ color: "#c9ccd2", metalness: 1, roughness: 0.32 });
+    const steel = new THREE.MeshStandardMaterial({
+      color: night ? "#343944" : "#c9ccd2",
+      metalness: night ? 0.85 : 1,
+      roughness: 0.32,
+      envMapIntensity: night ? 0.4 : 1,
+    });
     const boltMesh = new THREE.InstancedMesh(boltGeometry(), steel, bolts.length + plateBolts.length);
     placeAll(boltMesh, [...bolts, ...plateBolts]);
-
     const pillarMesh = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(0.075, 0.075, 1, 32),
-      new THREE.MeshStandardMaterial({ color: "#dfe2e8", metalness: 1, roughness: 0.16 }),
+      new THREE.CylinderGeometry(0.105, 0.105, 1, 32),
+      new THREE.MeshStandardMaterial({
+        color: night ? "#2a2e37" : "#dfe2e8",
+        metalness: night ? 0.85 : 1,
+        roughness: night ? 0.32 : 0.16,
+        envMapIntensity: night ? 0.42 : 1,
+      }),
       pillars.length,
     );
-    const blockMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.34, 0.12, 0.34), new THREE.MeshPhysicalMaterial({ color: "#f2f3f6", roughness: 0.3, clearcoat: 0.6 }), pillars.length);
-    const plateMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.44, 0.03, 0.44), new THREE.MeshStandardMaterial({ color: "#b9bdc6", metalness: 0.9, roughness: 0.38 }), pillars.length);
+    const sleeveMesh = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.15, 0.165, 1, 32),
+      new THREE.MeshStandardMaterial({
+        color: night ? "#1e2128" : "#9aa0ac",
+        metalness: 0.85,
+        roughness: night ? 0.36 : 0.24,
+        envMapIntensity: night ? 0.38 : 1,
+      }),
+      pillars.length,
+    );
+    const blockMesh = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(0.38, 0.14, 0.38),
+      new THREE.MeshPhysicalMaterial({
+        color: night ? "#252830" : "#f2f3f6",
+        roughness: 0.32,
+        clearcoat: 0.6,
+        envMapIntensity: night ? 0.42 : 1,
+      }),
+      pillars.length,
+    );
+    const plateMesh = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(0.56, 0.04, 0.56),
+      new THREE.MeshStandardMaterial({
+        color: night ? "#22252c" : "#b9bdc6",
+        metalness: 0.85,
+        roughness: 0.38,
+        envMapIntensity: night ? 0.38 : 1,
+      }),
+      pillars.length,
+    );
     const m = new THREE.Matrix4();
     pillars.forEach((p, i) => {
       const yaw = Math.atan2(p.s.t[0], p.s.t[2]);
       const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       pillarMesh.setMatrixAt(i, m.compose(new THREE.Vector3(p.top.x, groundY + p.h / 2, p.top.z), new THREE.Quaternion(), new THREE.Vector3(1, p.h, 1)));
+      sleeveMesh.setMatrixAt(i, m.compose(new THREE.Vector3(p.top.x, groundY + p.sleeveH / 2, p.top.z), new THREE.Quaternion(), new THREE.Vector3(1, p.sleeveH, 1)));
       blockMesh.setMatrixAt(i, m.compose(p.top.clone().add(new THREE.Vector3(0, 0.06, 0)), q, new THREE.Vector3(1, 1, 1)));
-      plateMesh.setMatrixAt(i, m.compose(new THREE.Vector3(p.top.x, groundY + 0.015, p.top.z), q, new THREE.Vector3(1, 1, 1)));
+      plateMesh.setMatrixAt(i, m.compose(new THREE.Vector3(p.top.x, groundY + 0.02, p.top.z), q, new THREE.Vector3(1, 1, 1)));
     });
-    for (const mesh of [pillarMesh, blockMesh, plateMesh]) {
+    for (const mesh of [pillarMesh, sleeveMesh, blockMesh, plateMesh]) {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.instanceMatrix.needsUpdate = true;
     }
 
-    // Height-adjustment collars (knurled) part way up each pillar.
-    const collarGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.16, 36, 1);
+    // Height-adjustment collars (knurled) at the top of each pillar just beneath the saddle block.
+    const collarGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.22, 36, 1);
     const knurl = canvasStripes();
-    const collarMesh = new THREE.InstancedMesh(collarGeo, new THREE.MeshStandardMaterial({ color: "#b8bcc5", metalness: 1, roughness: 0.45, bumpMap: knurl, bumpScale: 0.6 }), pillars.length);
+    const collarMesh = new THREE.InstancedMesh(
+      collarGeo,
+      new THREE.MeshStandardMaterial({
+        color: night ? "#4a4335" : "#d4af37",
+        metalness: 0.92,
+        roughness: 0.32,
+        bumpMap: knurl,
+        bumpScale: 0.6,
+        envMapIntensity: night ? 0.45 : 1,
+      }),
+      pillars.length,
+    );
     // Gaffer-tape marks on the floor around each pillar foot, the way a real set is laid out.
     const tapeMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.62, 0.075), new THREE.MeshStandardMaterial({ color: "#2b2d33", roughness: 0.85 }), pillars.length * 2);
     pillars.forEach((p, i) => {
       const yaw = Math.atan2(p.s.t[0], p.s.t[2]);
-      collarMesh.setMatrixAt(i, m.compose(new THREE.Vector3(p.top.x, groundY + p.h * 0.62, p.top.z), new THREE.Quaternion(), new THREE.Vector3(1, 1, 1)));
+      collarMesh.setMatrixAt(i, m.compose(new THREE.Vector3(p.top.x, p.top.y - 0.24, p.top.z), new THREE.Quaternion(), new THREE.Vector3(1, 1, 1)));
       for (let k = 0; k < 2; k++) {
         const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, yaw + Math.PI / 4 + (k * Math.PI) / 2 + (i % 5) * 0.05));
-        const off = new THREE.Vector3(Math.sin(yaw + 0.9) * 0.3, 0, Math.cos(yaw + 0.9) * 0.3);
+        const off = new THREE.Vector3(Math.sin(yaw + 0.9) * 0.36, 0, Math.cos(yaw + 0.9) * 0.36);
         tapeMesh.setMatrixAt(i * 2 + k, m.compose(new THREE.Vector3(p.top.x + off.x, groundY + 0.003, p.top.z + off.z), q, new THREE.Vector3(1, 1, 1)));
       }
     });
@@ -240,7 +296,7 @@ export function TrackDetails({ race }: { race: Race }) {
     tapeMesh.receiveShadow = true;
     tapeMesh.instanceMatrix.needsUpdate = true;
 
-    return { rims, collars, seams, saddles, boltMesh, pillarMesh, blockMesh, plateMesh, collarMesh, tapeMesh };
+    return { rims, collars, seams, saddles, boltMesh, pillarMesh, sleeveMesh, blockMesh, plateMesh, collarMesh, tapeMesh };
   }, [race]);
 
   return (
@@ -255,10 +311,11 @@ export function TrackDetails({ race }: { race: Race }) {
         <meshStandardMaterial color="#b4b9c3" roughness={0.6} />
       </mesh>
       <mesh geometry={built.saddles} castShadow receiveShadow>
-        <meshStandardMaterial color="#d6d9df" metalness={1} roughness={0.22} />
+        <meshStandardMaterial color={isNight() ? "#2c3038" : "#d6d9df"} metalness={isNight() ? 0.85 : 1} roughness={isNight() ? 0.32 : 0.22} envMapIntensity={isNight() ? 0.42 : 1} />
       </mesh>
       <primitive object={built.boltMesh} />
       <primitive object={built.pillarMesh} />
+      <primitive object={built.sleeveMesh} />
       <primitive object={built.blockMesh} />
       <primitive object={built.plateMesh} />
       <primitive object={built.collarMesh} />
@@ -331,7 +388,7 @@ export function Decals({ race }: { race: Race }) {
       c.height = 256;
       const g = c.getContext("2d")!;
       g.clearRect(0, 0, 1024, 256);
-      g.fillStyle = "#16171c";
+      g.fillStyle = isNight() ? "#f0f3fa" : "#16171c";
       g.font = "900 120px 'Avenir Next', system-ui, sans-serif";
       g.textAlign = "left";
       g.textBaseline = "middle";
@@ -341,7 +398,7 @@ export function Decals({ race }: { race: Race }) {
         g.fillStyle = col;
         g.fillRect(44 + k * 52, 176, 48, 14);
       });
-      g.fillStyle = "#5b606e";
+      g.fillStyle = isNight() ? "#b8c0d0" : "#5b606e";
       g.font = "700 40px 'Avenir Next', system-ui, sans-serif";
       g.fillText(sub, 480, 186);
       const t = new THREE.CanvasTexture(c);

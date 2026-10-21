@@ -12,6 +12,10 @@ import {
   NoiseEffect,
   Pass,
   RenderPass,
+  SMAAAreaImageData,
+  SMAAEffect,
+  SMAAPreset,
+  SMAASearchImageData,
   ToneMappingEffect,
   ToneMappingMode,
   VignetteEffect,
@@ -141,6 +145,14 @@ export function Effects({ race, frame }: { race: Race; frame: number }) {
   );
 }
 
+let smaaImages: [HTMLCanvasElement, HTMLCanvasElement] | null = null;
+function getSmaaImages(): [HTMLCanvasElement, HTMLCanvasElement] {
+  if (!smaaImages) {
+    smaaImages = [SMAASearchImageData.generate().toCanvas()!, SMAAAreaImageData.generate().toCanvas()!];
+  }
+  return smaaImages;
+}
+
 function EffectChain({ race, frame }: { race: Race; frame: number }) {
   const view = useView(race);
   const sub = useSubframe();
@@ -149,9 +161,10 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
 
   const chain = useMemo(() => {
-    const composer = new EffectComposer(gl, { frameBufferType: THREE.HalfFloatType, multisampling: 0 } /* dpr 2 already supersamples */);
+    const buf = gl.getDrawingBufferSize(new THREE.Vector2());
+    const composer = new EffectComposer(gl, { frameBufferType: THREE.HalfFloatType, multisampling: 0 } /* supersampled via dpr + sub-frame jitter + SMAA Ultra */);
     composer.addPass(new RenderPass(scene, camera));
-    const ao = new N8AOPostPass(scene, camera, 1920, 1080);
+    const ao = new N8AOPostPass(scene, camera, buf.x || 1920, buf.y || 1080);
     // Tight and strong: contact shadows under the marbles and in every seam.
     ao.configuration.aoRadius = 0.5;
     ao.configuration.distanceFalloff = 1.0;
@@ -160,9 +173,8 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     ao.configuration.gammaCorrection = false; // the final pass converts to sRGB; doing it twice washes everything out
     ao.setQualityMode("High");
     composer.addPass(ao);
-    // Sharp within a few units of the pack; the foreground and the far track soften.
-    // Gentle: the pack and its surroundings stay crisp; only far background softens.
-    const dof = new DepthOfFieldEffect(camera, { worldFocusRange: 6, bokehScale: 1.1, height: 720 });
+    // Sharp across the entire racing pack and obstacle zone; only far background softens gently at full resolution.
+    const dof = new DepthOfFieldEffect(camera, { worldFocusRange: 28, bokehScale: 0.45, resolutionScale: 1.0 });
     // The set is white: only true specular glints (well above diffuse white) may bloom.
     // With a bright studio the white track sits near 1.0: only real glints, well above it, may bloom.
     // Night: the neon and the glints bloom generously; day: only real specular glints.
@@ -181,11 +193,21 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     // out of range and they rendered as white blotches.
     const finish = new EffectPass(camera, bloom, tone, grade, vignette, noise);
     composer.addPass(finish);
+    // Morphological anti-aliasing after tone mapping (in perceptual [0, 1] range) so 4K (dpr 1)
+    // and split-screen edges have zero stair-stepping on lane markings, chrome rails and rims.
+    const [searchImg, areaImg] = getSmaaImages();
+    const smaa = new (SMAAEffect as unknown as new (s: HTMLCanvasElement, a: HTMLCanvasElement, p: SMAAPreset) => SMAAEffect)(
+      searchImg,
+      areaImg,
+      SMAAPreset.ULTRA,
+    );
+    const aa = new EffectPass(camera, smaa);
+    composer.addPass(aa);
     const accumulate = new AccumulatePass();
     composer.addPass(accumulate);
     // The effect passes' shader clock (only the grain reads it), set per sub-frame below.
-    const clocks = [focus, finish].map((p) => p.fullscreenMaterial as EffectMaterial);
-    return { composer, dof, ao, accumulate, clocks };
+    const clocks = [focus, finish, aa].map((p) => p.fullscreenMaterial as EffectMaterial);
+    return { composer, dof, ao, accumulate, clocks, lastW: 0, lastH: 0, lastPr: 0 };
   }, [gl, scene, camera]);
 
   useEffect(() => () => chain.composer.dispose(), [chain]);
@@ -193,8 +215,13 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
   useFrame(() => {
     const size = gl.getDrawingBufferSize(new THREE.Vector2());
     const pr = gl.getPixelRatio();
-    chain.composer.setSize(size.x / pr, size.y / pr, false);
-    chain.accumulate.setSize(size.x, size.y);
+    if (size.x !== chain.lastW || size.y !== chain.lastH || pr !== chain.lastPr) {
+      chain.composer.setSize(size.x / pr, size.y / pr, false);
+      chain.accumulate.setSize(size.x, size.y);
+      chain.lastW = size.x;
+      chain.lastH = size.y;
+      chain.lastPr = pr;
+    }
     chain.accumulate.clear(gl);
     const { shutter } = MOTION_BLUR;
     const samples = quality().blur;
@@ -202,6 +229,13 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     for (let k = 0; k < samples; k++) {
       const vf = frame + shutter * ((k + 0.5) / samples - 0.5);
       sub.apply(vf);
+      if (samples > 1 && size.x > 0 && size.y > 0) {
+        // Balanced sub-pixel ring jitter (centroid = 0 across the k sub-frames): supersamples static edges.
+        const angle = (k / samples) * Math.PI * 2 + 0.5;
+        camera.projectionMatrix.elements[8] += (Math.cos(angle) * 0.72) / size.x;
+        camera.projectionMatrix.elements[9] += (Math.sin(angle) * 0.72) / size.y;
+        camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+      }
       const shot = view.shotAt(vf);
       chain.dof.target = new THREE.Vector3(...shot.target);
       chain.accumulate.flush = k === samples - 1;

@@ -1,4 +1,4 @@
-import { AbsoluteFill, Html5Audio, Sequence, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, Html5Audio, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { Overlay } from "./Overlay";
 import { getRace, type Layout } from "./race";
 import { Stage } from "./Stage";
@@ -10,13 +10,14 @@ import { Intro } from "./Intro";
 // P1 live on the left (top, in portrait), and on the right a slow-motion
 // replay, the lift tower, or action elsewhere, each with its own clock.
 
-export const GrandPrix = ({ id, layout, clean = false }: { id: string; layout: Layout; clean?: boolean }) => {
+export const GrandPrix = ({ id, layout, clean = false, fadeInFrom }: { id: string; layout: Layout; clean?: boolean; fadeInFrom?: number }) => {
   const race = getRace(id);
   const video = useCurrentFrame();
   const { width, height } = useVideoConfig();
   // The intro plays first; the race's frame 0 follows it.
   const I = race.intro?.total ?? 0;
   const frame = video - I;
+  const raceAudioStart = fadeInFrom !== undefined ? Math.max(0, fadeInFrom - I) : 0;
   const audio = (
     <>
       {I > 0 && (
@@ -25,7 +26,14 @@ export const GrandPrix = ({ id, layout, clean = false }: { id: string; layout: L
         </Sequence>
       )}
       <Sequence from={I} layout="none">
-        <Html5Audio src={staticFile(`gp/${id}.wav`)} />
+        <Html5Audio
+          src={staticFile(`gp/${id}.wav`)}
+          volume={
+            fadeInFrom !== undefined
+              ? (f) => interpolate(f, [raceAudioStart, raceAudioStart + 20], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
+              : 1
+          }
+        />
       </Sequence>
     </>
   );

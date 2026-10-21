@@ -13,7 +13,8 @@
     "design": "node scripts/design.mjs",
     "factory": "node scripts/factory.mjs",
     "factory:loop": "scripts/factory-loop.sh",
-    "factory:stop": "kill $(cat out/factory/loop.pid 2>/dev/null) 2>/dev/null || pkill -TERM -f 'scripts/factory.mjs --season' || echo 'nothing to stop'"
+    "factory:stop": "kill $(cat out/factory/loop.pid 2>/dev/null) 2>/dev/null || pkill -TERM -f 'scripts/factory.mjs --season' || echo 'nothing to stop'",
+    "deploy": "CI=1 npx wrangler deploy && CI=1 npx wrangler pages deploy site --project-name=marble-formula --branch=main"
   },
   "keywords": [],
   "author": "",

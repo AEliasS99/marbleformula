@@ -5,7 +5,7 @@ import { Decals, Lifts, TimingGate, TrackDetails } from "./Details";
 import { Trackside } from "./Trackside";
 import { Machines } from "./Machines";
 import { Effects } from "./Effects";
-import { CameraRig, Circuit, Confetti, Environment, Gantries, Gate, Marbles, Obstacles, STUDIO, Sun } from "./Scene";
+import { CameraRig, Circuit, Confetti, Environment, Gantries, Gate, ImpactSparks, Marbles, Obstacles, STUDIO, Sun } from "./Scene";
 import { ViewContext } from "./view";
 import { createSubframe, SubframeContext } from "./subframe";
 import { quality } from "./quality";
@@ -32,7 +32,7 @@ export function Stage({ race, view, layout, frame, width, height }: { race: Race
             <fog attach="fog" args={isNight() ? ["#07080b", 60, 260] : [STUDIO.fog, 220, 1400]} />
             <Environment />
             <hemisphereLight args={isNight() ? ["#9fb4d8", "#101114", 0.12] : ["#bfd8f5", "#5a7a3c", 0.22]} />
-            <Sun target={shot.target} />
+            <Sun target={shot.target} pos={shot.pos} />
             <CameraRig race={race} layout={layout} frame={frame} />
             <Circuit race={race} />
             <TrackDetails race={race} />
@@ -48,6 +48,7 @@ export function Stage({ race, view, layout, frame, width, height }: { race: Race
             <Gantries race={race} frame={Math.round(t)} />
             <Gate race={race} t={t} />
             <Marbles race={race} t={t} />
+            <ImpactSparks race={race} t={t} />
             <Confetti race={race} t={t} />
             {/* Keep <Effects> the LAST child. On mount it renders the canvas once more from a passive effect,
                 and React runs a parent's children's effects in order: only as the last child does that render

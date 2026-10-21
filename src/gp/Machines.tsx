@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { useView } from "./view";
 import { STAIR, stairLocal, stairLoop, stairTime } from "./stair.js";
 import { isNight } from "./look";
@@ -51,6 +52,7 @@ type Elevator = {
 
 const chrome = { color: "#eceef3", metalness: 1, roughness: 0.07 } as const;
 const steel = { color: "#dfe2e8", metalness: 1, roughness: 0.25 } as const;
+const nightSteel = { color: "#2a2e37", metalness: 0.88, roughness: 0.3, envMapIntensity: 0.45 } as const;
 const dark = { color: "#1b1c20", roughness: 0.5 } as const;
 
 function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void, repeat: [number, number] | null = null) {
@@ -67,13 +69,14 @@ function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D)
   }
   return t;
 }
-const toGeometry = (g: { position: number[]; index: number[]; uv: number[] }) => {
+const toGeometry = (g: { position: number[]; index: number[]; uv: number[] }, withUv = false) => {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(g.position, 3));
-  geo.setAttribute("uv", new THREE.Float32BufferAttribute(g.uv, 2));
+  if (withUv) geo.setAttribute("uv", new THREE.Float32BufferAttribute(g.uv, 2));
   geo.setIndex(g.index);
-  geo.computeVertexNormals();
-  return geo;
+  const smooth = mergeVertices(geo, 1e-4);
+  smooth.computeVertexNormals();
+  return smooth;
 };
 
 /** Hazard stripes (red/white) around the vortex lip, knurl for the rollers. */
@@ -116,7 +119,6 @@ export function Machines({ race, t }: { race: Race; t: number }) {
   const vortices = data.vortices ?? [];
   const rollers = data.rollers ?? [];
   const fans = data.fans ?? [];
-  const groundY = useMemo(() => Math.min(...data.samples.map((s) => s.p[1])) - 1.4, [data]);
   const tex = useMemo(() => ({ hazard: hazardTex(), knurl: knurlTex() }), []);
   useEffect(
     () => () => {
@@ -128,7 +130,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
   const bowls = useMemo(
     () =>
       vortices.map((v) => {
-        const parts = vortexGeometry(v, 160);
+        const parts = vortexGeometry(v, 160, 64);
         // Concentric rings on the cone, every 0.45 units down the slope: they read the funnel's shape.
         const fr = vortexFrame(v);
         const rings: { r: number; y: number }[] = [];
@@ -138,7 +140,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
           const r = 1 / (1 / v.radius - y / v.k);
           rings.push({ r, y: (vortexY(v, r) as number) + 0.012 });
         }
-        return { cone: toGeometry(parts.cone), lip: toGeometry(parts.lip), rim: toGeometry(parts.rim), throat: toGeometry(parts.throat), stripe: toGeometry(parts.stripe), apron: toGeometry(parts.apron), chute: toGeometry(parts.chute), frame: fr, rings };
+        return { cone: toGeometry(parts.cone), lip: toGeometry(parts.lip), rim: toGeometry(parts.rim), throat: toGeometry(parts.throat), stripe: toGeometry(parts.stripe, true), apron: toGeometry(parts.apron), chute: toGeometry(parts.chute), frame: fr, rings };
       }),
     [vortices],
   );
@@ -169,21 +171,53 @@ export function Machines({ race, t }: { race: Race; t: number }) {
     <>
       {bowls.map((b, i) => {
         const v = vortices[i];
+        const night = isNight();
         return (
           <group key={`v${i}`}>
-            {/* The funnel: glossy white inside and out, a chrome throat, hazard stripes on the lip wall and a chrome rim on top. */}
-            {/* Smoked acrylic: the swirl is the show, seen from outside too, but the funnel's shape reads. */}
-            <mesh geometry={b.cone} receiveShadow>
-              <meshPhysicalMaterial color="#cfd9e6" transparent opacity={0.5} roughness={0.08} metalness={0.1} clearcoat={1} clearcoatRoughness={0.04} side={THREE.DoubleSide} depthWrite={false} />
+            {/* The funnel: smoked obsidian crystal glass at night, glossy acrylic by day, with contour rings and chrome rim/throat. */}
+            <mesh geometry={b.cone}>
+              <meshPhysicalMaterial
+                color={night ? "#121a28" : "#cfd9e6"}
+                transparent
+                opacity={night ? 0.62 : 0.5}
+                roughness={night ? 0.05 : 0.08}
+                metalness={night ? 0.18 : 0.1}
+                clearcoat={1}
+                clearcoatRoughness={0.03}
+                envMapIntensity={night ? 1.4 : 1}
+                side={THREE.DoubleSide}
+                depthWrite={false}
+              />
             </mesh>
             {b.rings.map((ring, k) => (
               <mesh key={`ring${k}`} position={b.frame.toWorld(0, ring.y, 0) as Vec3} rotation-x={Math.PI / 2}>
-                <torusGeometry args={[ring.r, 0.012, 6, 128]} />
-                <meshStandardMaterial color={k % 3 === 0 ? "#d8232a" : "#ffffff"} roughness={0.4} />
+                <torusGeometry args={[ring.r, 0.014, 8, 128]} />
+                {night ? (
+                  <meshStandardMaterial
+                    color={k % 3 === 0 ? "#ff3b47" : "#4cdbff"}
+                    emissive={k % 3 === 0 ? "#ff1f2d" : "#14b8ff"}
+                    emissiveIntensity={1.6}
+                    roughness={0.2}
+                    toneMapped={false}
+                  />
+                ) : (
+                  <meshStandardMaterial color={k % 3 === 0 ? "#d8232a" : "#ffffff"} roughness={0.4} />
+                )}
               </mesh>
             ))}
             <mesh geometry={b.lip}>
-              <meshPhysicalMaterial color="#eef3f8" transparent opacity={0.3} roughness={0.06} metalness={0} clearcoat={1} clearcoatRoughness={0.04} side={THREE.DoubleSide} depthWrite={false} />
+              <meshPhysicalMaterial
+                color={night ? "#182234" : "#eef3f8"}
+                transparent
+                opacity={night ? 0.45 : 0.3}
+                roughness={0.05}
+                metalness={night ? 0.12 : 0}
+                clearcoat={1}
+                clearcoatRoughness={0.03}
+                envMapIntensity={night ? 1.3 : 1}
+                side={THREE.DoubleSide}
+                depthWrite={false}
+              />
             </mesh>
             <mesh geometry={b.stripe}>
               <meshStandardMaterial map={tex.hazard} roughness={0.45} side={THREE.DoubleSide} />
@@ -193,7 +227,15 @@ export function Machines({ race, t }: { race: Race; t: number }) {
               <meshStandardMaterial color="#34363b" roughness={0.8} side={THREE.DoubleSide} />
             </mesh>
             <mesh geometry={b.chute} castShadow>
-              <meshPhysicalMaterial color="#eef3f8" transparent opacity={0.3} roughness={0.06} clearcoat={1} side={THREE.DoubleSide} depthWrite={false} />
+              <meshPhysicalMaterial
+                color={night ? "#182234" : "#eef3f8"}
+                transparent
+                opacity={night ? 0.45 : 0.3}
+                roughness={0.05}
+                clearcoat={1}
+                side={THREE.DoubleSide}
+                depthWrite={false}
+              />
             </mesh>
             <mesh geometry={b.rim}>
               <meshStandardMaterial {...chrome} side={THREE.DoubleSide} />
@@ -233,7 +275,7 @@ export function Machines({ race, t }: { race: Race; t: number }) {
               <cylinderGeometry args={[0.45, 0.5, 0.6, 24]} />
               <meshStandardMaterial {...dark} />
             </mesh>}
-            {/* Lamps around the rim, and a support frame: four struts from the throat to the ground. */}
+            {/* Lamps around the rim, and an under-bowl structural cradle truss from the throat to the outer rim. */}
             {Array.from({ length: 12 }, (_, k) => {
               const a = ((k + 0.5) / 12) * Math.PI * 2;
               const x = Math.cos(a) * (v.radius + 0.08);
@@ -249,16 +291,16 @@ export function Machines({ race, t }: { race: Race; t: number }) {
             })}
             {[45, 135, 225, 315].map((deg) => {
               const a = (deg * Math.PI) / 180;
-              const top = b.frame.toWorld(Math.cos(a) * (v.hole + 0.3), -v.depth - v.throat, Math.sin(a) * (v.hole + 0.3)) as Vec3;
-              const foot = b.frame.toWorld(Math.cos(a) * (v.radius + 1.2), groundY - v.center[1], Math.sin(a) * (v.radius + 1.2)) as Vec3;
+              const top = b.frame.toWorld(Math.cos(a) * (v.hole + 0.32), -v.depth - v.throat * 0.85, Math.sin(a) * (v.hole + 0.32)) as Vec3;
+              const foot = b.frame.toWorld(Math.cos(a) * (v.radius - 0.08), -0.06, Math.sin(a) * (v.radius - 0.08)) as Vec3;
               const mid = top.map((c, k) => (c + foot[k]) / 2) as Vec3;
               const dir = new THREE.Vector3(foot[0] - top[0], foot[1] - top[1], foot[2] - top[2]);
               const len = dir.length();
               const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
               return (
                 <mesh key={deg} position={mid} quaternion={q} castShadow>
-                  <cylinderGeometry args={[0.07, 0.09, len, 12]} />
-                  <meshStandardMaterial {...steel} />
+                  <cylinderGeometry args={[0.065, 0.08, len, 14]} />
+                  <meshStandardMaterial {...(night ? nightSteel : steel)} />
                 </mesh>
               );
             })}
@@ -308,13 +350,22 @@ export function Machines({ race, t }: { race: Race; t: number }) {
       ))}
 
       {fans.map((fan, i) => {
-        const h = fan.pos[1] - groundY;
+        const night = isNight();
+        const mat = night ? nightSteel : steel;
         return (
           <group key={`f${i}`} position={fan.pos} quaternion={fan.quat}>
-            {/* Post to the ground, motor housing behind the hub, cage ring and five blades facing across the track. */}
-            <mesh position={[0, -h / 2, 0]} castShadow>
-              <cylinderGeometry args={[0.1, 0.14, h, 16]} />
-              <meshStandardMaterial {...steel} />
+            {/* Track-mounted cantilever bracket into the trough underside, motor housing behind the hub, cage ring and five blades. */}
+            <mesh position={[0, -0.7, fan.side * -0.22]} castShadow>
+              <cylinderGeometry args={[0.1, 0.13, 1.4, 16]} />
+              <meshStandardMaterial {...mat} />
+            </mesh>
+            <mesh position={[0, -1.32, fan.side * 0.88]} castShadow>
+              <boxGeometry args={[0.26, 0.18, 2.35]} />
+              <meshStandardMaterial {...mat} />
+            </mesh>
+            <mesh position={[0, -0.82, fan.side * 0.65]} rotation-x={fan.side * 0.58} castShadow>
+              <cylinderGeometry args={[0.065, 0.065, 1.85, 12]} />
+              <meshStandardMaterial {...mat} />
             </mesh>
             <mesh position={[0, 0, fan.side * -0.35]} rotation-x={Math.PI / 2} castShadow>
               <cylinderGeometry args={[0.28, 0.32, 0.5, 24]} />
@@ -378,16 +429,20 @@ function StairBay({ race, t, elevator, tex }: { race: Race; t: number; elevator:
   const edges = useRef<THREE.InstancedMesh | null>(null);
   const m4 = useMemo(() => new THREE.Matrix4(), []);
   const one = useMemo(() => new THREE.Vector3(1, 1, 1), []);
+  const zero = useMemo(() => new THREE.Vector3(0, 0, 0), []);
   const place = (tt: number) => {
     const s = stairTime(E, tt / race.fps);
     for (let k = 0; k < loop.count; k++) {
       const [x, y, z] = stairLocal(E, loop, k, s);
+      // Only show the ascending shaft's active plates (the return leg runs inside the transfer housing).
+      const active = Math.abs(z) < 0.06 && y >= -0.65 && y <= elevator.lift + 0.45;
+      const sc = active ? one : zero;
       const p = frame.at(x, y - STAIR.plate / 2, z);
-      m4.compose(p, frame.plate, one);
+      m4.compose(p, frame.plate, sc);
       mesh.current?.setMatrixAt(k, m4);
       // The lit edge along the platform's front.
       const e = frame.at(x + (elevator.length / 2 - 0.05) * Math.cos(STAIR.tilt), y - (elevator.length / 2 - 0.05) * Math.sin(STAIR.tilt), z);
-      m4.compose(e, frame.plate, one);
+      m4.compose(e, frame.plate, sc);
       edges.current?.setMatrixAt(k, m4);
     }
     if (mesh.current) mesh.current.instanceMatrix.needsUpdate = true;
@@ -398,31 +453,69 @@ function StairBay({ race, t, elevator, tex }: { race: Race; t: number; elevator:
   const L = elevator.length;
   const W = elevator.width;
   const night = isNight();
-  const wallMat = night ? { color: "#2b2e35", metalness: 0.8, roughness: 0.35 } : { color: "#dcdfe5", metalness: 0.6, roughness: 0.35 };
+  const wallMat = night
+    ? { color: "#1c1f26", metalness: 0.55, roughness: 0.48, envMapIntensity: 0.35 }
+    : { color: "#dcdfe5", metalness: 0.65, roughness: 0.32 };
   const frontTop = elevator.lift - elevator.slope * (L / 2) - 0.02;
+  const H = elevator.lift + 1.2;
+  const midY = (elevator.lift - 0.6) / 2;
+  const rings: number[] = [];
+  for (let ry = 2.6; ry < elevator.lift - 0.8; ry += 3.4) rings.push(ry);
   return (
     <group>
       <instancedMesh ref={mesh} args={[undefined, undefined, loop.count]} castShadow receiveShadow frustumCulled={false}>
         <boxGeometry args={[L - 0.06, STAIR.plate, W - 0.06]} />
-        <meshStandardMaterial color={night ? "#565d6b" : "#e9ebef"} emissive={night ? "#1a2a40" : "#000000"} emissiveIntensity={night ? 1.2 : 0} metalness={0.4} roughness={0.35} />
+        <meshStandardMaterial color={night ? "#2c303a" : "#e9ebef"} metalness={0.82} roughness={0.28} />
       </instancedMesh>
       <instancedMesh ref={edges} args={[undefined, undefined, loop.count]} frustumCulled={false}>
-        <boxGeometry args={[0.14, STAIR.plate + 0.04, W - 0.06]} />
-        <meshStandardMaterial color="#ffcc00" emissive="#ffb300" emissiveIntensity={night ? 5 : 0.8} toneMapped={!night} />
+        <boxGeometry args={[0.11, STAIR.plate + 0.02, W - 0.08]} />
+        <meshStandardMaterial color="#e5b84b" emissive="#d49b27" emissiveIntensity={night ? 1.35 : 0.35} metalness={0.7} roughness={0.25} />
       </instancedMesh>
-      {/* The shaft as an open frame (its walls are physics only: solid, they hid the stair from
-          every camera): corner posts, a rail along the front at grid level and a lit lip at the entrance. */}
+      {/* Architectural elevator cage: corner columns, horizontal tie-rings, smoked glass sides, and crowned top housing. */}
       {[-1, 1].map((ex) =>
         [-1, 1].map((ez) => {
-          const c = frame.at(ex * (L / 2 + 0.15), (loop.yb + loop.yt) / 2, ez * (W / 2 + 0.1));
+          const c = frame.at(ex * (L / 2 + 0.15), midY, ez * (W / 2 + 0.1));
           return (
             <mesh key={`p${ex}${ez}`} position={c} quaternion={frame.yaw} castShadow>
-              <boxGeometry args={[0.12, loop.yt - loop.yb + 1.2, 0.12]} />
+              <boxGeometry args={[0.15, H, 0.15]} />
               <meshStandardMaterial {...wallMat} />
             </mesh>
           );
         }),
       )}
+      {rings.map((ry, idx) => (
+        <group key={`r${idx}`}>
+          {[-1, 1].map((ez) => (
+            <mesh key={`rz${ez}`} position={frame.at(0, ry, ez * (W / 2 + 0.1))} quaternion={frame.yaw}>
+              <boxGeometry args={[L + 0.34, 0.08, 0.09]} />
+              <meshStandardMaterial {...wallMat} />
+            </mesh>
+          ))}
+          <mesh position={frame.at(-L / 2 - 0.15, ry, 0)} quaternion={frame.yaw}>
+            <boxGeometry args={[0.09, 0.08, W + 0.24]} />
+            <meshStandardMaterial {...wallMat} />
+          </mesh>
+        </group>
+      ))}
+      {[-1, 1].map((ez) => (
+        <mesh key={`gl${ez}`} position={frame.at(0, midY + 0.4, ez * (W / 2 + 0.08))} quaternion={frame.yaw}>
+          <boxGeometry args={[L + 0.08, H - 1.2, 0.02]} />
+          <meshPhysicalMaterial color="#9fb8d8" transparent opacity={night ? 0.05 : 0.12} roughness={0.12} metalness={0.1} envMapIntensity={night ? 0.3 : 1} depthWrite={false} />
+        </mesh>
+      ))}
+      {/* Top crown cap and bottom plinth */}
+      <mesh position={frame.at(0, elevator.lift + 0.55, 0)} quaternion={frame.yaw} castShadow>
+        <boxGeometry args={[L + 0.46, 0.34, W + 0.38]} />
+        <meshStandardMaterial {...wallMat} />
+      </mesh>
+      <mesh position={frame.at(0, elevator.lift + 0.55, 0)} quaternion={frame.yaw}>
+        <boxGeometry args={[L + 0.48, 0.06, W + 0.4]} />
+        <meshStandardMaterial color="#d4af37" metalness={0.95} roughness={0.22} />
+      </mesh>
+      <mesh position={frame.at(0, -0.58, 0)} quaternion={frame.yaw} receiveShadow>
+        <boxGeometry args={[L + 0.46, 0.28, W + 0.38]} />
+        <meshStandardMaterial {...wallMat} />
+      </mesh>
       <mesh position={frame.at(L / 2 + 0.15, frontTop, 0)} quaternion={frame.yaw} castShadow>
         <boxGeometry args={[0.14, 0.1, W + 0.3]} />
         <meshStandardMaterial {...wallMat} />

@@ -17,7 +17,7 @@ import { agitatorArm, agitatorQuat, vortexSoup } from "../vortex.js";
 // the lower track resumes `resume` past it. A steep run-up (`ramp` units at
 // `rampSlope`) so the field arrives faster than the rim's orbit speed, and a
 // guide at `guide`° that eases it right instead of braking it.
-export const VORTEX = { radius: 3.4, hole: 0.85, k: 2.9, lip: 2.2, throat: 0.4, fall: 0.6, entry: 0.4, centre: 2.4, resume: 1.8, offset: -1.3, ramp: 8, rampSlope: Math.tan((15 * Math.PI) / 180), guide: 13 };
+export const VORTEX = { radius: 3.4, hole: 0.85, k: 2.9, lip: 1.15, throat: 0.4, fall: 0.6, entry: -1.1, centre: 2.4, resume: 1.8, offset: -1.3, ramp: 8, rampSlope: Math.tan((15 * Math.PI) / 180), guide: 13 };
 VORTEX.depth = Math.round(VORTEX.k * (1 / VORTEX.hole - 1 / VORTEX.radius) * 1000) / 1000;
 // Paddles: none. Any paddle slower than the orbit brakes it (a drain needs a free bowl);
 // the parameters stay for the day a faster agitator earns its place.
@@ -38,9 +38,10 @@ export default {
     // and the opening it leaves (2.1, three marbles) cannot clog.
     {
       const side = -1;
-      const dl = W2 - 0.04;
+      const dl = W2 - 0.14;
       const du = dl / Math.tan((VORTEX.guide * Math.PI) / 180);
-      const s = frameAt(f.u + VORTEX.entry - 0.6 - du / 2);
+      const uEnd = f.u + VORTEX.centre - 3.22;
+      const s = frameAt(uEnd - du / 2);
       const yaw = Math.atan2(side * dl, du);
       const q = frameQuat(s).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), yaw));
       statics.push({ kind: "fin", shape: "box", pos: pointInFrame(s, side * (W2 - 0.04 - dl / 2), 0.3).map(r3), quat: quatArr(q), size: [Math.hypot(du, dl), 0.6, 0.08], restitution: 0.6 });
@@ -60,7 +61,7 @@ export default {
       depth: VORTEX.depth,
       lip: VORTEX.lip,
       throat: VORTEX.throat,
-      entryLo: r3(zc - W2 - 0.2),
+      entryLo: r3(zc - 0.15),
       entryHi: r3(zc + W2 + 0.2),
       chute: { x0: r3(-(VORTEX.centre - VORTEX.entry) - 0.1), z: r3(zc + W2) },
       k: VORTEX.k,

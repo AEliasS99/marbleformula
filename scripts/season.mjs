@@ -84,7 +84,7 @@ const RUNOFF = 16; // (single-lap layouts) track after the finish line
 // Laps: the track ends `cabin` units short of the grid's start (the same spot
 // in plan, a lap's descent lower) and a lift cabin carries the field back up
 // to the grid. The finish line is just before the cabin on the last lap.
-const LAPS = 3;
+const LAPS = Number(process.env.GP_LAPS ?? 2);
 // Cabin 4.2 × 4.4: the whole field fits in one layer; walls 2.4 so a pile
 // arriving at speed cannot climb out.
 // It goes by arrivals: a short hold after the first marble aboard (or a third
@@ -507,7 +507,7 @@ export function buildCourse(round) {
     features.sort((a, b) => a.u - b.u);
   }
   // Launches: a booster, then a kicker (BIG AIR), wherever a long enough straight is free (LAUNCHES).
-  {
+  if (!round.exactLayout) {
     const jump = featureRule("jump");
     const boost = featureRule("booster");
     const { clear } = placementRules(curv);
@@ -524,7 +524,7 @@ export function buildCourse(round) {
     }
   }
   // Slingshot rollers on every circuit that has none.
-  if (!features.some((g) => g.type === "rollers")) {
+  if (!round.exactLayout && !features.some((g) => g.type === "rollers")) {
     const rule = featureRule("rollers");
     const { clear } = placementRules(curv);
     for (let u = 40; u + rule.after <= bayReserve(L); u += 1) {
@@ -535,7 +535,7 @@ export function buildCourse(round) {
     }
   }
   // Fans: a few more wherever a straight is free (FANS), spread over the lap.
-  {
+  if (!round.exactLayout) {
     const rule = featureRule("fan");
     const { clear } = placementRules(curv);
     let added = 0;
@@ -1127,6 +1127,19 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
   /** Lap-local u from the stored progress (lap * L + u). */
   const uLocal = (P) => ((((P + GRID_LENGTH) % L) + L) % L) - GRID_LENGTH;
   const progressOf = (i, p) => {
+    for (const vx of obstacles.vortices) {
+      const rx = p.x - vx.center[0];
+      const rz = p.z - vx.center[2];
+      const r = Math.hypot(rx, rz);
+      const dy = p.y - vx.center[1];
+      if (r < vx.radius + 0.1 && dy < 0.6 && dy > -vx.depth - vx.throat - 0.15) {
+        const u0 = vx.u + VORTEX.entry;
+        const u1 = vx.u + VORTEX.resume;
+        const kr = Math.max(0, Math.min(1, (vx.radius - r) / (vx.radius - vx.hole)));
+        const ky = Math.max(0, Math.min(1, -dy / (vx.depth + vx.throat)));
+        return u0 + (u1 - u0) * (0.75 * kr + 0.25 * ky);
+      }
+    }
     let best = idx[i];
     let bd = Infinity;
     for (let k = Math.max(0, idx[i] - 30); k <= Math.min(samples.length - 1, idx[i] + 30); k++) {
@@ -1147,6 +1160,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
   const frames = [];
   const fellReported = new Set();
   const finishFrame = MARBLES.map(() => null);
+  const finishExact = MARBLES.map(() => null);
   const dqFrame = MARBLES.map(() => null);
   const lap = MARBLES.map(() => 0);
   const lapStartFrame = MARBLES.map(() => null);
@@ -1183,6 +1197,9 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
         }
         if (finishFrame[i] === null && f > raceStart && lap[i] === LAPS - 1 && u >= course.uFinish) {
           finishFrame[i] = f;
+          const uPrev = prevU[i] ?? u;
+          const frac = u > uPrev ? Math.max(0, Math.min(1, (course.uFinish - uPrev) / (u - uPrev))) : 0;
+          finishExact[i] = r3(f - 1 + frac);
           b.setLinearDamping(BRAKE_DAMPING);
           lapEnd(i, f);
         } else if (lap[i] < LAPS - 1 && u >= course.uFinish && lapEndFrame[i] === null) lapEnd(i, f);
@@ -1301,8 +1318,8 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
     }
     // The race is over once the top ten (or everyone) are home or out; the rest are classified where they are.
     if (allDone === null && finishFrame.filter((x, i) => x !== null || dqFrame[i] !== null).length >= Math.min(MARBLES.length, 10)) allDone = f;
-    // Then up to 20 s more for the rest to come home (the last cabin-load), or until they all have.
-    if (allDone !== null && (f - allDone >= 20 * FPS || finishFrame.every((x, i) => x !== null || dqFrame[i] !== null))) break;
+    // Then up to 8 s more for stragglers, or until they all have.
+    if (allDone !== null && (f - allDone >= 8 * FPS || finishFrame.every((x, i) => x !== null || dqFrame[i] !== null))) break;
 
     // Regroup gates: count who has reached the bar; open on quorum or timeout.
     // Machines with per-frame logic (the regroup gates count arrivals and open).
@@ -1338,23 +1355,28 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
             const g = fan.accel * fanGust(fan, t) * mass;
             b.addForce({ x: fan.dir[0] * g, y: 0, z: fan.dir[2] * g }, true);
           }
-          // The vortex's current: inside the bowl every marble is pushed round (counter to the
-          // entry's sense) up to just under the orbit speed sqrt(g·k/r), so all of them circle and
-          // spiral down instead of sliding straight into the hole (most made a fifth of a turn).
+          // The vortex's spiral field: inside the bowl every marble is guided to the orbital speed
+          // sqrt(g·k/r) and a gentle inward radial drift so it circles smoothly 1.5–2.5 times down
+          // the funnel instead of getting pinned on the rim wall or falling straight into the hole.
           for (const vx of obstacles.vortices) {
             const p = b.translation();
             const rx = p.x - vx.center[0];
             const rz = p.z - vx.center[2];
             const r = Math.hypot(rx, rz);
-            if (r > vx.radius || r < vx.hole * 1.15 || p.y > vx.center[1] + 0.6 || p.y < vx.center[1] - vx.depth - 0.2) continue;
+            if (r > vx.radius || r < vx.hole * 1.05 || p.y > vx.center[1] + 0.6 || p.y < vx.center[1] - vx.depth - 0.2) continue;
+            const urx = rx / r;
+            const urz = rz / r;
             const tx = rz / r;
             const tz = -rx / r;
             const v = b.linvel();
             const vt = v.x * tx + v.z * tz;
-            const want = VORTEX_SWIRL.share * Math.sqrt((GRAVITY * vx.k) / r);
-            if (vt >= want) continue;
-            const g = VORTEX_SWIRL.accel * mass;
-            b.addForce({ x: tx * g, y: 0, z: tz * g }, true);
+            const vr = v.x * urx + v.z * urz;
+            const vOrb = Math.sqrt(GRAVITY * vx.k * r) / (r + 0.3);
+            const wantVt = 1.02 * vOrb;
+            const wantVr = -0.14 * vOrb;
+            const at = Math.max(-14, Math.min(28, (wantVt - vt) * 10));
+            const ar = Math.max(-14, Math.min(34, (wantVr - vr) * 16));
+            b.addForce({ x: (tx * at + urx * ar) * mass, y: 0, z: (tz * at + urz * ar) * mass }, true);
           }
           for (const bo of obstacles.boosters) {
             if (u < bo.u0 || u > bo.u1) continue;
@@ -1391,7 +1413,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
   const lastFrame = frames.length - 1;
   // Finishers by time, then those still rolling by progress, then the disqualified (first out, last).
   const rankKey = (i, f) => {
-    if (finishFrame[i] !== null && finishFrame[i] <= f) return [0, finishFrame[i]];
+    if (finishFrame[i] !== null && finishFrame[i] <= f) return [0, finishExact[i] ?? finishFrame[i]];
     if (dqFrame[i] !== null && dqFrame[i] <= f) return [2, -dqFrame[i]];
     return [1, -frames[Math.min(f, lastFrame)][i][7]];
   };
@@ -1422,10 +1444,11 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
       const z = course.features.find((f) => q[7] >= f.u - f.span[0] && q[7] <= f.u + f.span[1]);
       console.log(`  DNF ${m.abbr}: u=${q[7].toFixed(1)} y=${q[1].toFixed(2)} ${z ? `${z.type}@${z.u}` : "open track"}`);
     });
-  const margin = finishFrame[order[1]] !== null ? (finishFrame[order[1]] - winnerFrame) / FPS : null;
+  const winnerExact = finishExact[winner] ?? winnerFrame;
+  const margin = finishFrame[order[1]] !== null ? ((finishExact[order[1]] ?? finishFrame[order[1]]) - winnerExact) / FPS : null;
   const secs = (f) => ((f - raceStart) / FPS).toFixed(2);
 
-  const summary = `${round.id} seed ${seed}: L=${L.toFixed(0)} race ${secs(winnerFrame)}s, ${MARBLES[winner].name} by ${
+  const summary = `${round.id} seed ${seed}: L=${L.toFixed(0)} race ${secs(winnerExact)}s, ${MARBLES[winner].name} by ${
     margin === null ? "-" : margin.toFixed(2)
   }s${dnf.length ? `, DNF ${dnf.join(" ")}` : ""}${dqNames.length ? `, DQ ${dqNames.join(" ")}` : ""}${classified ? `, ${classified} classified` : ""}`;
   if (process.env.GP_WATCH) {
@@ -1583,9 +1606,12 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
   const segments = [];
   let liveFrom = 0;
   let at = 0;
-  // (Highlights no longer interrupt the race: they replay in a split screen beside it.)
-  segments.push({ kind: "live", at, from: liveFrom, to: frames.length });
-  at += frames.length - liveFrom;
+  // Cut to the slow-motion finish replay ~6.5 s after the winner crosses (or 1.5 s after P3 crosses, capped at +8.5 s),
+  // rather than waiting 35 s for backmarkers, while keeping full top-10 finishing times from the simulation.
+  const p3Frame = finishFrame[order[2]] ?? finishFrame[order[1]] ?? winnerFrame;
+  const liveTo = Math.min(frames.length, Math.min(winnerFrame + Math.round(8.5 * FPS), Math.max(winnerFrame + Math.round(6 * FPS), p3Frame + Math.round(1.5 * FPS))));
+  segments.push({ kind: "live", at, from: liveFrom, to: liveTo });
+  at += liveTo - liveFrom;
   const replayFrom = Math.max(raceStart, winnerFrame - Math.round(1.5 * FPS));
   const replayTo = Math.min(lastFrame, winnerFrame + Math.round(0.8 * FPS));
   const timeline = {
@@ -1633,7 +1659,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
     info,
     marbleRadius: R,
     timeline,
-    marbles: MARBLES.map((m, i) => ({ ...m, grid: gridSlot[i] + 1, finishFrame: finishFrame[i], dqFrame: dqFrame[i] })),
+    marbles: MARBLES.map((m, i) => ({ ...m, grid: gridSlot[i] + 1, finishFrame: finishFrame[i], finishExact: finishExact[i], dqFrame: dqFrame[i] })),
     grid: GRID,
     order,
     samples,
@@ -1687,13 +1713,15 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   const finished = (i, f) => finishFrame[i] !== null && finishFrame[i] <= f;
   const W2 = TRACK.width / 2;
 
-  // Pack focus per frame: leaders still racing, weighted toward P1.
+  // Pack focus per frame: always anchored on the Lead / Podium Battle (P1–P4),
+  // with continuous distance-decay + overtake-duel weighting so lead swaps never
+  // jerk the camera and a marble that slows at an obstacle never drags the camera
+  // backward into the mid-pack.
   const rawFocus = [];
   const rawU = [];
   const spread = [];
   const leader = [];
-  let sticky = null;
-  let focusSince = 0;
+  const isBattle = [];
   for (let f = 0; f <= lastFrame; f++) {
     const racing = [...Array(N).keys()]
       .filter((i) => !finished(i, f - LINGER))
@@ -1703,33 +1731,36 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       rawFocus.push(v3(pointOnTrack(frameAt(END - 1), 0, 0.3)));
       rawU.push(END - 1);
       spread.push(2);
+      isBattle.push(false);
       continue;
     }
-    // The focus is the best battle, not necessarily the leader: the group
-    // (within 6 units) with the most marbles, with a bonus for being at the
-    // front, and a little loyalty to the group we were already following.
-    // Marbles queuing for the lift or riding it are not a battle: on a short lap the queue was
-    // always the biggest group, and the cameras stayed on it for minutes while the leaders raced on.
-    const running = racing.filter((i) => uLoc(f, i) < END - 8 && uLoc(f, i) > -GRID_LENGTH + 0.5);
-    const pool = running.length ? running : racing;
-    let best = null;
-    pool.forEach((head, rank) => {
-      const members = pool.filter((i) => uOf(f, head) - uOf(f, i) >= 0 && uOf(f, head) - uOf(f, i) < 6);
-      let score = members.length + (rank === 0 ? 1.2 : 0) - rank * 0.08;
-      if (sticky !== null && members.includes(sticky)) score += 1.0;
-      if (best === null || score > best.score) best = { head, members, score };
+    // Exclude marbles queuing for or riding the stair ONLY on non-final laps.
+    // On the final lap (`uOf >= (LAPS - 1) * L - GRID_LENGTH`), marbles race all the way to uFinish!
+    const running = racing.filter((i) => {
+      const onFinalLap = uOf(f, i) >= (LAPS - 1) * L - GRID_LENGTH;
+      if (onFinalLap) return true;
+      return uLoc(f, i) < END - 6 && uLoc(f, i) > -GRID_LENGTH + 0.5;
     });
-    // Hold a group for FOCUS_HOLD before switching to another (each switch is a cut): unless the
-    // group we follow is gone (finished, out, or on the stair).
-    if (sticky !== null && best.head !== sticky && f - focusSince < FOCUS_HOLD && pool.includes(sticky)) {
-      const members = pool.filter((i) => uOf(f, sticky) - uOf(f, i) >= 0 && uOf(f, sticky) - uOf(f, i) < 6);
-      best = { head: sticky, members, score: 0 };
+    const pool = running.length ? running : racing;
+    const p1 = pool[0];
+    leader.push(p1);
+    // Keep top-4 challengers within 8.5m of P1 (and on the same lap zone so we don't average across the wrap seam).
+    const pack = pool.slice(0, 4).filter((i) => uOf(f, p1) - uOf(f, i) < 8.5 && Math.abs(uLoc(f, p1) - uLoc(f, i)) < 14);
+    if (!pack.length) pack.push(p1);
+    const w = pack.map((i) => Math.exp(-(uOf(f, p1) - uOf(f, i)) / 4.2));
+    // Overtake / wheel-to-wheel battle boost: if P1 & P2 (or P2 & P3 close to P1) are within 3.2m,
+    // boost both battling marbles equally so the camera frames their duel dead-center.
+    let battle = false;
+    for (let k = 1; k < pack.length; k++) {
+      const gap = uOf(f, pack[k - 1]) - uOf(f, pack[k]);
+      if (gap < 3.5) {
+        if (k === 1 || uOf(f, p1) - uOf(f, pack[k]) < 5.0) battle = true;
+        const boost = 0.75 * Math.exp(-gap / 2.0);
+        w[k - 1] += boost;
+        w[k] += boost;
+      }
     }
-    if (best.head !== sticky) focusSince = f;
-    sticky = best.head;
-    leader.push(best.head);
-    const pack = best.members.slice(0, 3);
-    const w = [0.55, 0.3, 0.15].slice(0, pack.length);
+    isBattle.push(battle);
     const ws = w.reduce((a, b) => a + b, 0);
     const p = new Vector3();
     let u = 0;
@@ -1739,7 +1770,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     });
     rawFocus.push(p);
     rawU.push(u);
-    spread.push(Math.max(...pack.map((i) => posOf(f, i).distanceTo(p))));
+    spread.push(Math.max(1.2, ...pack.map((i) => posOf(f, i).distanceTo(p))));
   }
   const gauss = (values, sigma, a = 0, b = values.length) => {
     const isVec = values[a] instanceof Vector3;
@@ -1772,8 +1803,8 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   {
     let a = 0;
     for (const b of [...focusSwitches, lastFrame + 1]) {
-      focus = gauss(focus, sec(0.35), a, b);
-      focusU = gauss(focusU, sec(0.35), a, b);
+      focus = gauss(focus, sec(0.55), a, b);
+      focusU = gauss(focusU, sec(0.55), a, b);
       a = b;
     }
   }
@@ -1855,38 +1886,38 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     chase: (f, sh) => {
       // Set back and up: the pack and the track ahead of it in one frame (closer where the circuit is packed: `near`).
       const nr = sh?.near;
-      const fr = frameAt(focusU[f] - (nr ? 4.2 : 6.5));
-      return { pos: v3(pointInFrame(fr, 0, nr ? 1.8 : 2.6)).add(upW.clone().multiplyScalar(nr ? 0.9 : 1.6)), target: focus[f].clone().addScaledVector(flatFwd(frameAt(focusU[f])), 3), fov: 54 };
+      const fr = frameAt(focusU[f] - (nr ? 3.8 : 5.4));
+      return { pos: v3(pointInFrame(fr, 0, nr ? 1.5 : 2.1)).add(upW.clone().multiplyScalar(nr ? 0.8 : 1.3)), target: focus[f].clone().addScaledVector(flatFwd(frameAt(focusU[f])), 2.4), fov: 48 };
     },
     lead: (f, sh) => {
       const nr = sh?.near;
-      const u = uLoc(f, leader[f]) + (nr ? 3.6 : 5.5);
+      const u = uLoc(f, leader[f]) + (nr ? 3.4 : 5.0);
       const fr = frameAt(Math.min(u, END));
-      return { pos: v3(pointInFrame(fr, 0, nr ? 1.5 : 2.2)).add(upW.clone().multiplyScalar(nr ? 0.6 : 1.2)), target: focus[f], fov: 50 };
+      return { pos: v3(pointInFrame(fr, 0, nr ? 1.3 : 1.9)).add(upW.clone().multiplyScalar(nr ? 0.5 : 1.0)), target: focus[f], fov: 46 };
     },
     side: (f, sh) => {
       const fr = frameAt(focusU[f] + 0.6);
       // Close beside the wall, just high enough to look over it.
-      const pos = v3(fr.p).addScaledVector(flatRight(fr), sh.side * (W2 + (sh.near ? 2.0 : 3.6))).add(upW.clone().multiplyScalar(sh.near ? 4.0 : 5.5));
+      const pos = v3(fr.p).addScaledVector(flatRight(fr), sh.side * (W2 + (sh.near ? 1.8 : 3.2))).add(upW.clone().multiplyScalar(sh.near ? 3.2 : 4.5));
       return { pos, target: focus[f], fov: fovFor(pos, f) };
     },
     top: (f, sh) => {
       const fr = frameAt(focusU[f]);
-      return { pos: focus[f].clone().add(upW.clone().multiplyScalar(sh?.near ? 7 : 10)).addScaledVector(flatFwd(fr), sh?.near ? -3 : -4), target: focus[f], fov: 48 };
+      return { pos: focus[f].clone().add(upW.clone().multiplyScalar(sh?.near ? 5.5 : 7.5)).addScaledVector(flatFwd(fr), sh?.near ? -2.5 : -3.5), target: focus[f], fov: 45 };
     },
     orbit: (f, sh) => {
       const a = sh.phase + ((f - sh.start) / FPS) * 0.45 * sh.side;
-      const rr = sh.near ? 5.5 : 8;
-      return { pos: focus[f].clone().add(new Vector3(Math.sin(a) * rr, sh.near ? 3.2 : 4.5, Math.cos(a) * rr)), target: focus[f], fov: 46 };
+      const rr = sh.near ? 5.0 : 6.8;
+      return { pos: focus[f].clone().add(new Vector3(Math.sin(a) * rr, sh.near ? 2.8 : 3.8, Math.cos(a) * rr)), target: focus[f], fov: 45 };
     },
-    // The race in context: high behind the pack, looking down the track ahead (the next obstacle, the chasers).
+    // Dynamic helicopter / cable-cam behind the lead pack, low enough to feel the speed and see overtakes.
     wide: (f, sh) => {
-      const fr = frameAt(focusU[f] - (sh?.near ? 7 : 11));
-      return { pos: v3(fr.p).add(upW.clone().multiplyScalar(sh?.near ? 8 : 11)), target: v3(frameAt(Math.min(focusU[f] + 7, END)).p), fov: 52 };
+      const fr = frameAt(focusU[f] - (sh?.near ? 5.2 : 7.5));
+      return { pos: v3(fr.p).add(upW.clone().multiplyScalar(sh?.near ? 4.8 : 6.5)), target: focus[f].clone().addScaledVector(flatFwd(frameAt(focusU[f])), 3.5), fov: 48 };
     },
     feature: (f, sh) => ({ pos: sh.cam, target: focus[f], fov: fovFor(sh.cam, f) }),
-    // Wide and steady at the line: zooming in on whoever leads made a mess of the last metres.
-    finish: (f, sh) => ({ pos: sh.cam, target: focus[f], fov: Math.max(40, Math.min(50, fovFor(sh.cam, f))) }),
+    // Wide and steady at the line, locked onto the winning duel as P1/P2 charge across uFinish.
+    finish: (f, sh) => ({ pos: sh.cam, target: focus[f], fov: Math.max(38, Math.min(48, fovFor(sh.cam, f))) }),
     // The run into the lift: one fixed wide camera over the bays, aimed between the bays and the pack.
     approach: (f, sh) => {
       // Aimed at the bays' entrance, never up the stair (it is never shown).
@@ -1993,6 +2024,13 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       const zoneB = f.u + f.span[1];
       const mid = (zoneA + zoneB) / 2;
       const cands = [];
+      if (f.type === "vortex") {
+        const fr = frameAt(f.u + VORTEX.entry);
+        for (const side of [-1, 1])
+          for (const [du, lat, lift] of [[5.5, W2 + 2.2, 5.6], [-2.5, W2 + 2.5, 5.6], [4.5, 0, 6.6]]) {
+            cands.push(v3(fr.p).addScaledVector(flatFwd(fr), du).addScaledVector(flatRight(fr), side * lat).add(new Vector3(0, lift, 0)));
+          }
+      }
       for (const side of [1, -1])
         for (const du of [-4, 4])
           for (const [lat, lift] of [[W2 + 2.2, 3.0], [W2 + 3.2, 5.0], [W2 + 1.4, 2.4]]) {
@@ -2227,10 +2265,10 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   let st = target;
   let sf = fov;
   for (const sh of shots) {
-    const sigma = sh.kind === "onboard" ? sec(0.12) : sec(0.3);
+    const sigma = sh.kind === "onboard" ? sec(0.18) : sec(0.45);
     sp = gauss(sp, sigma, sh.start, sh.end);
     st = gauss(st, sigma, sh.start, sh.end);
-    sf = gauss(sf, sec(0.5), sh.start, sh.end);
+    sf = gauss(sf, sec(0.55), sh.start, sh.end);
   }
   const cams = sp.map((p, k) => [...arr(p), ...arr(st[k]), r3(sf[k]), kind[k], marble[k]]);
   const origCams = cams.map((c) => c.slice());
@@ -2574,9 +2612,64 @@ function soundtrack(result, rand) {
     void ph;
   };
   for (const v of data.vortices ?? [])
-    hum(v.center, (tt, noise) => 0.6 * Math.sin(2 * Math.PI * 48 * tt) + 0.3 * Math.sin(2 * Math.PI * 96 * tt + 0.4 * Math.sin(2 * Math.PI * 1.1 * tt)) + 0.5 * noise(), 0.22);
+    hum(
+      v.center,
+      (tt, noise) => {
+        const swirl = 0.55 + 0.45 * Math.sin(2 * Math.PI * 1.6 * tt);
+        return swirl * (0.45 * Math.sin(2 * Math.PI * 220 * tt) + 0.3 * Math.sin(2 * Math.PI * 330 * tt) + 0.25 * noise());
+      },
+      0.16,
+    );
   for (const r of data.rollers ?? []) hum(r.pos, (tt) => 0.5 * Math.sin(2 * Math.PI * 110 * tt) + 0.25 * Math.sin(2 * Math.PI * 221 * tt) + 0.15 * Math.sin(2 * Math.PI * 330 * tt), 0.08);
   for (const fan of data.fans ?? []) hum(fan.pos, (tt, noise) => noise() * (0.5 + 0.5 * fanGust(fan, tt)) * 4, 0.3);
+  for (const sp of data.spinners ?? []) {
+    const bladeHz = Math.max(1.5, (Math.abs(sp.speed ?? 4) * (sp.arms ?? 4)) / (2 * Math.PI));
+    hum(
+      sp.pos,
+      (tt, noise) => {
+        const chop = 0.5 + 0.5 * Math.sin(2 * Math.PI * bladeHz * tt + (sp.phase ?? 0));
+        return chop * (0.45 * Math.sin(2 * Math.PI * 180 * tt) + 0.25 * Math.sin(2 * Math.PI * 360 * tt) + 0.45 * noise());
+      },
+      0.11,
+    );
+  }
+  for (const sw of data.swings ?? []) {
+    const period = sw.period ?? 1.8;
+    const phase = sw.phase ?? 0;
+    hum(
+      sw.pos,
+      (tt, noise) => {
+        const vel = Math.abs(Math.cos((2 * Math.PI * tt) / period + phase));
+        const tick = Math.pow(vel, 12);
+        return vel * noise() * 1.4 + tick * 0.45 * Math.sin(2 * Math.PI * 640 * tt);
+      },
+      0.14,
+    );
+  }
+  for (const ttObj of data.turntables ?? [])
+    hum(ttObj.pos, (tt) => 0.55 * Math.sin(2 * Math.PI * 72 * tt) + 0.3 * Math.sin(2 * Math.PI * 144 * tt), 0.07);
+  for (const p of data.pushers ?? []) {
+    const period = p.period ?? 2.2;
+    const phase = p.phase ?? 0;
+    hum(
+      p.pos,
+      (tt, noise) => {
+        const stroke = Math.abs(Math.sin((2 * Math.PI * tt) / period + phase));
+        return stroke * (0.5 * Math.sin(2 * Math.PI * 135 * tt) + 0.4 * noise());
+      },
+      0.09,
+    );
+  }
+  for (const b of data.boosters ?? [])
+    hum(b.pos, (tt) => 0.45 * Math.sin(2 * Math.PI * 165 * tt) + 0.35 * Math.sin(2 * Math.PI * 247.5 * tt) + 0.2 * Math.sin(2 * Math.PI * 330 * tt), 0.08);
+  for (const ev of data.elevators ?? []) {
+    const stopAt = ev.stopAt ?? Infinity;
+    hum(
+      ev.center,
+      (tt) => (tt < stopAt ? 0.55 * Math.sin(2 * Math.PI * 64 * tt) + 0.3 * Math.sin(2 * Math.PI * 128 * tt) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 2.8 * tt)) : 0),
+      0.09,
+    );
+  }
   // The regroup gate: a buzzer while it holds (the last two seconds), a clunk as it lifts.
   for (const g of data.regroups ?? []) {
     if (g.openFrame === null) continue;
@@ -2880,18 +2973,27 @@ export function introTrack(plan, data, rand) {
 
 /** The intro's plan for a baked round: the obstacle cards (each type once, in lap order) and the cold open's moment. */
 export function introFor(data, round) {
-  const cards = [];
+  const allCards = [];
   for (const f of data.features) {
-    const c = cards.find((x) => x.type === f.type);
+    const c = allCards.find((x) => x.type === f.type);
     if (c) c.count++;
-    else cards.push({ type: f.type, u: r3(f.u), label: f.label, count: 1 });
+    else allCards.push({ type: f.type, u: r3(f.u), label: f.label, count: 1 });
   }
   const dq = data.obstacles.filter((o) => o.kind === "dq");
   if (dq.length) {
     const first = dq.reduce((a, o) => (o.u < a.u ? o : a));
-    cards.push({ type: "dq", u: r3(first.u), label: "DQ ZONES", count: dq.length });
-    cards.sort((a, b) => a.u - b.u);
+    allCards.push({ type: "dq", u: r3(first.u), label: "DQ ZONES", count: dq.length });
+    allCards.sort((a, b) => a.u - b.u);
   }
+  // Pick up to 4 signature obstacles spaced along the circuit for the punchy 8 s flyover.
+  const prio = { vortex: 10, hammer: 9, spinner: 8, pusher: 8, dq: 7, turntable: 6, rollers: 6, fan: 5, switch: 5, jump: 4, drop: 4, splitter: 3, bumpers: 3, pegs: 2, regroup: 2 };
+  const picked = [];
+  for (const c of [...allCards].sort((a, b) => (prio[b.type] ?? 1) - (prio[a.type] ?? 1) || a.u - b.u)) {
+    if (picked.length >= 4) break;
+    if (picked.some((p) => Math.abs(p.u - c.u) < 16)) continue;
+    picked.push(c);
+  }
+  const cards = picked.sort((a, b) => a.u - b.u);
   const hs = data.timeline.highlights;
   let highlight = null;
   hs.forEach((h, k) => {
@@ -2946,6 +3048,19 @@ let prevTeams = null;
 for (const [k, round] of ROUNDS.entries()) {
   const standingsBefore = MARBLES.map((_, i) => ({ marble: i, points: totals[i] })).sort((a, b) => b.points - a.points).map((r, pos) => ({ ...r, pos: pos + 1 }));
   const constructorsBefore = TEAMS.map((tm) => ({ team: tm.id, points: teamTotals[tm.id] ?? 0 })).sort((a, b) => b.points - a.points).map((r, pos) => ({ ...r, pos: pos + 1 }));
+  if (process.env.GP_ONLY && round.id !== process.env.GP_ONLY) {
+    const existing = JSON.parse(readFileSync(new URL(`${round.id}.json`, outDir), "utf8"));
+    for (const r of existing.results) totals[r.marble] += r.points;
+    for (const r of existing.results) {
+      const team = teamOf(MARBLES[r.marble].abbr);
+      if (team) teamTotals[team.id] = (teamTotals[team.id] ?? 0) + r.points;
+    }
+    prevStanding = existing.standings.map((t) => t.marble);
+    prevTeams = existing.constructors.map((r) => r.team);
+    standings.push(existing.standings);
+    seasonRounds.push({ id: round.id, round: k + 1, gp: round.gp, title: round.title, country: round.country, circuit: existing.info.circuit, winner: existing.order[0] });
+    continue;
+  }
   const res = await runRound(round, round.seed, { quiet: false });
   console.log(res.summary);
   const { data } = res;
@@ -2953,10 +3068,11 @@ for (const [k, round] of ROUNDS.entries()) {
   data.rounds = ROUNDS.length;
   const results = data.order.map((i, pos) => {
     const ff = data.marbles[i].finishFrame;
+    const fe = data.marbles[i].finishExact ?? ff;
     const dq = data.marbles[i].dqFrame !== null;
     const pts = ff === null ? 0 : POINTS[pos] ?? 0;
     totals[i] += pts;
-    return { marble: i, pos: pos + 1, points: pts, time: ff === null ? null : r3((ff - data.timeline.raceStart) / FPS), dq };
+    return { marble: i, pos: pos + 1, points: pts, time: fe === null ? null : r3((fe - data.timeline.raceStart) / FPS), dq };
   });
   const table = MARBLES.map((_, i) => i)
     .sort((a, b) => totals[b] - totals[a] || results.findIndex((r) => r.marble === a) - results.findIndex((r) => r.marble === b))

@@ -17,14 +17,15 @@ export const GRID_U = -9.5; // where the samples (and the grid) begin
  * @param {{ round: number, L: number, highlight: number | null, cards: { type: string, u: number }[], teams: number }} o
  */
 export function introPlan({ round, L, highlight, cards, teams }) {
-  // Slow enough to follow: ~20 units of track a second between obstacles (it was ~70 and made people dizzy).
-  const fly = Math.max(1080, Math.min(2100, 600 + 110 * cards.length));
+  // Punchy F1 broadcast intro (~19 s = 1,140 frames):
+  //   cold (2.5 s) -> title (3.0 s) -> flyover (9.0 s, ~24 units/s on a 228 m lap) -> lineup (4.5 s)
+  const fly = 540;
   const scenes = [
-    { id: "cold", frames: highlight === null ? 0 : 180 },
-    { id: "title", frames: 210 },
-    round === 1 ? { id: "teams", frames: teams * TEAM_FRAMES } : { id: "stakes", frames: 300 },
+    { id: "cold", frames: highlight === null ? 0 : 150 },
+    { id: "title", frames: 180 },
+    ...(round === 1 ? [{ id: "teams", frames: teams * TEAM_FRAMES }] : []),
     { id: "flyover", frames: fly },
-    { id: "lineup", frames: 480 },
+    { id: "lineup", frames: 270 },
   ].filter((sc) => sc.frames > 0);
   let at = 0;
   for (const sc of scenes) {
