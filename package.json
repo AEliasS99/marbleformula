@@ -14,6 +14,8 @@
     "factory": "node scripts/factory.mjs",
     "factory:loop": "scripts/factory-loop.sh",
     "factory:stop": "kill $(cat out/factory/loop.pid 2>/dev/null) 2>/dev/null || pkill -TERM -f 'scripts/factory.mjs --season' || echo 'nothing to stop'",
+    "upload": "node scripts/upload-youtube.mjs",
+    "upload:auth": "node scripts/upload-youtube.mjs --auth",
     "deploy": "CI=1 npx wrangler deploy && CI=1 npx wrangler pages deploy site --project-name=marble-formula --branch=main"
   },
   "keywords": [],
