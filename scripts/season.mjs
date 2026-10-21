@@ -189,7 +189,9 @@ const STAIR_SHOT_MAX = 7 * 60; // frames
 const NO_STAIR_SPLITS = true; // the stair is shown only from above, and only when P1 is riding it
 const FOCUS_HOLD = 5 * 60; // frames: the director follows a group at least this long
 const STAIR_CAM = { above: 16, fov: 46 };
-const CAM_FEATURES = ["vortex", "spinner", "hammer", "turntable", "rollers", "pusher", "jump", "drop", "lift", "fan", "bumpers", "pegs", "splitter"];
+// Only the vortex (where marbles orbit for ~6-8 s) gets a static camera; every other obstacle is
+// filmed smoothly in passing by the forward-tracking cameras so cuts never disorient the viewer.
+const CAM_FEATURES = ["vortex"];
 const TUBES = { minCurv: 0.17, height: 1.7 };
 const LAUNCHES = { max: 2, gap: 12 };
 const FANS = { extra: 3, spacing: 60 };
@@ -1803,8 +1805,8 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   {
     let a = 0;
     for (const b of [...focusSwitches, lastFrame + 1]) {
-      focus = gauss(focus, sec(0.55), a, b);
-      focusU = gauss(focusU, sec(0.55), a, b);
+      focus = gauss(focus, sec(0.85), a, b);
+      focusU = gauss(focusU, sec(0.85), a, b);
       a = b;
     }
   }
@@ -2063,7 +2065,19 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     )
     .sort((a, b) => a.start - b.start);
   const fs = frameAt(course.uFinish);
-  const finishCam = v3(fs.p).addScaledVector(flatRight(fs), W2 + 3).add(new Vector3(0, 5.6, 0)).addScaledVector(flatFwd(fs), 2.5);
+  const finishCam = (() => {
+    let best = null;
+    for (const side of [1, -1])
+      for (const [du, out, up] of [[-1.5, W2 + 3.2, 4.2], [-3.0, W2 + 4.0, 4.8], [0.5, W2 + 3.5, 4.5], [-5.0, W2 + 5.0, 5.5]]) {
+        const at = frameAt(course.uFinish + du);
+        const cam = v3(at.p).addScaledVector(flatRight(at), side * out).add(new Vector3(0, up, 0));
+        if (roomAt(cam, course.uFinish + du) < 1.5) continue;
+        let score = 0;
+        for (let u = course.uFinish - 22; u <= course.uFinish + 1; u += 2) if (clear(cam, v3(frameAt(u).p).add(new Vector3(0, 0.4, 0)))) score++;
+        if (best === null || score > best.score) best = { cam, score };
+      }
+    return best ? best.cam : v3(fs.p).addScaledVector(flatRight(fs), W2 + 3).add(new Vector3(0, 4.6, 0)).addScaledVector(flatFwd(fs), -1.5);
+  })();
   const replayCam = v3(fs.p).addScaledVector(flatRight(fs), W2 + 0.9).add(new Vector3(0, 4.2, 0));
   // The approach to the lift: high and set back beside the funnel, on whichever side has room and a clear view.
   const approach = (() => {
@@ -2081,9 +2095,6 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       }
     return best ? { cam: best.cam, aim } : null;
   })();
-  // The finish line sits at the lift's door: from beside it the camera looked into the tower's
-  // lattice. The wide approach camera sees the run-in, the line and the bays.
-  if (approach) finishCam.copy(approach.cam);
 
   // Drone reveal of the whole circuit.
   const box = { min: new Vector3(Infinity, Infinity, Infinity), max: new Vector3(-Infinity, -Infinity, -Infinity) };
@@ -2097,109 +2108,76 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
 
   // --- Shot list -------------------------------------------------------------------
   const shots = [];
-  const REVEAL = sec(2);
+  const REVEAL = sec(2.5);
   shots.push({ kind: "drone", start: 0, end: REVEAL });
-  const gridEnd = raceStart + sec(2.0); // hold until the ten lanes have funnelled into the track
+  const gridEnd = raceStart + sec(2.5); // hold until the ten lanes have funnelled into the track
   shots.push({ kind: "grid", start: REVEAL, end: gridEnd });
-  const cycle = ["wide", "chase", "side", "lead", "wide", "top", "orbit", "side", "chase", "wide", "onboard", "lead", "side", "orbit"];
+  // Forward-looking tracking shots only (chase, wide, top): never flip backwards (lead), spin (orbit),
+  // or cut perpendicular (side), so the viewer always follows the direction of travel and the pack battle.
+  const cycle = ["chase", "wide", "chase", "top", "wide"];
+  const battleCycle = ["chase", "wide", "chase"];
   let ci = 0;
+  let bci = 0;
   let f = gridEnd;
   let finishUsed = false;
-  const approachLaps = new Set();
   while (f <= lastFrame) {
     let sh = null;
-    if (!finishUsed && winnerFrame - f <= sec(3.5)) {
-      sh = { kind: "finish", cam: finishCam, start: f, end: Math.max(winnerFrame + sec(2), f + sec(2)) };
+    if (!finishUsed && winnerFrame - f <= sec(4.0)) {
+      sh = { kind: "finish", cam: finishCam, start: f, end: Math.max(winnerFrame + sec(2.5), f + sec(3)) };
       finishUsed = true;
     } else if (finishUsed) {
-      // After the win: follow the rest home, then hold on the finish.
+      // After the win: follow the rest home calmly, then hold on the finish.
       const allIn = finishFrame.every((x) => x !== null && x < f - LINGER);
       const nextU = uLoc(f, leader[f]);
       if (allIn) sh = { kind: "finish", cam: finishCam, start: f, end: lastFrame + 1 };
       else if (nextU > course.uFinish - 7 && uOf(f, leader[f]) > (LAPS - 1) * L) {
-        // Someone is about to cross: the finish camera, until they have.
-        let end = f + sec(1);
-        while (end <= lastFrame && end < f + sec(4) && !finished(leader[f], end - LINGER)) end++;
+        let end = f + sec(2);
+        while (end <= lastFrame && end < f + sec(5) && !finished(leader[f], end - LINGER)) end++;
         sh = { kind: "finish", cam: finishCam, start: f, end };
       } else {
-        // Follow the rest home, with the same framing check as during the race.
-        for (const kind of ["side", "chase", "lead", "top", "side"]) {
-          const cand = { kind, side: rand() < 0.5 ? 1 : -1, phase: rand() * Math.PI * 2, start: f, end: f + sec(3) };
+        for (const kind of ["chase", "wide", "top"]) {
+          const cand = { kind, side: 1, phase: 0, start: f, end: f + sec(6) };
           if (usable(kind, cand, f, Math.min(cand.end, lastFrame + 1))) {
             sh = cand;
             break;
           }
         }
-        sh ??= { kind: "top", start: f, end: f + sec(2.5) };
+        sh ??= { kind: "top", start: f, end: f + sec(5) };
       }
       ci++;
     } else {
-      // An obstacle coming up: its locked camera takes over at the planned moment.
-      // (Up to 1.5 s early, so two obstacles close together both get their shot.)
-      // No full-screen stair shots: the race stays with the racing groups (see NO_STAIR_SPLITS).
-      const es = NO_STAIR_SPLITS ? null : elevatorShots.find((c) => !c.used && f >= c.start && f < c.end - sec(1));
-      // The leader running into the lift bays: the wide approach camera until the lift's own shot.
-      // Once per lap, following the real leader (P1): the director's focus can sit in the lift queue
-      // for minutes, and the shot used to fire again and again (2 min of one view).
-      let top = -1;
-      for (let i = 0; i < N; i++) if (!finished(i, f) && (top < 0 || uOf(f, i) > uOf(f, top))) top = i;
-      const lu = top >= 0 ? uLoc(f, top) : -1;
-      const lap = top >= 0 ? Math.floor((uOf(f, top) + GRID_LENGTH) / L) : -1;
-      if (!es && approach && top >= 0 && !approachLaps.has(lap) && lu > course.END - 22 && lu < course.END - 2) {
-        approachLaps.add(lap);
-        let end = f + sec(1.5);
-        while (end < f + sec(4) && end <= lastFrame && uLoc(end, top) < course.END - 0.3 && uLoc(end, top) > course.END - 30) end++;
-        if (!finishUsed && winnerFrame - sec(3.5) > f) end = Math.min(end, winnerFrame - sec(3.5));
-        if (end > f + sec(0.8)) sh = { kind: "approach", cam: approach.cam, aim: arr(approach.aim), start: f, end: Math.min(end, lastFrame + 1) };
-      }
-      // The stair runs without pause: a full-screen stair shot only for the race leader's ride, at most
-      // STAIR_SHOT_MAX long; the rides it overlaps are covered by it but never stretch it (one shot once
-      // absorbed every back-marker's ride and ran for 160 s). The other rides are seen in the splits.
-      if (es && !sh) {
-        es.used = true;
-        let top = -1;
-        for (let i = 0; i < N; i++) if (!finished(i, f) && (top < 0 || uOf(f, i) > uOf(f, top))) top = i;
-        if (es.riders?.includes(top)) {
-          sh = { kind: "elevator", cabin: es.cabin, label: "THE STAIRWAY", feature: "elevator", start: f, end: Math.min(es.end, f + STAIR_SHOT_MAX) };
-          for (const o of elevatorShots) if (!o.used && o.start < sh.end) o.used = true;
-        }
-      }
-      // Calmer cutting: an obstacle's camera takes over only once the current shot has run ~3.5 s
-      // (and only for the big obstacles: see CAM_FEATURES), so cuts never come every second or two.
-      const settled = shots.length === 0 || f - shots[shots.length - 1].start >= sec(3.5);
-      const fc = sh || !settled ? null : featureCams.find((c) => !c.used && CAM_FEATURES.includes(c.type) && f >= c.start - sec(1.5) && f < c.end - sec(1));
+      // Calmer cutting: an obstacle's camera takes over only once the current shot has run ~7.5 s
+      // (and only for CAM_FEATURES), and holds at least 5.5 s.
+      const settled = shots.length === 0 || f - shots[shots.length - 1].start >= sec(7.5);
+      const fc = sh || !settled ? null : featureCams.find((c) => !c.used && CAM_FEATURES.includes(c.type) && f >= c.start - sec(1.0) && f < c.end - sec(2.0));
       if (fc) {
         fc.used = true;
-        const nextRide = elevatorShots.find((c) => !c.used && c.start > f);
-        sh = { kind: "feature", cam: fc.cam, label: fc.label, feature: fc.type, start: f, end: Math.max(f + sec(3), nextRide ? Math.min(fc.end, Math.max(f + sec(2.5), nextRide.start)) : fc.end) };
+        sh = { kind: "feature", cam: fc.cam, label: fc.label, feature: fc.type, start: f, end: Math.max(f + sec(5.5), fc.end) };
       }
-      // Don't start a long shot that would cut into the next obstacle's or the lift's camera.
-      const nextFc = featureCams.find((c) => !c.used && c.start > f);
-      const nextEs = elevatorShots.find((c) => !c.used && c.start > f);
-      const capAt = Math.min(nextFc ? Math.max(f + sec(3.5), nextFc.start - sec(0.2)) : Infinity, nextEs ? Math.max(f + sec(3), nextEs.start) : Infinity);
-      for (let tries = 0; !sh && tries < cycle.length; tries++) {
-        const kind = cycle[ci % cycle.length];
-        ci++;
-        const len = sec(kind === "onboard" ? 4.5 : kind === "top" ? 5 : 5.5 + rand() * 2.5);
+      const nextFc = featureCams.find((c) => !c.used && CAM_FEATURES.includes(c.type) && c.start > f);
+      const capAt = nextFc ? Math.max(f + sec(7.0), nextFc.start - sec(0.2)) : Infinity;
+      let battleCount = 0;
+      const checkEnd = Math.min(lastFrame, f + sec(5));
+      for (let q = f; q <= checkEnd; q++) if (isBattle[q]) battleCount++;
+      const useBattle = battleCount >= (checkEnd - f + 1) * 0.35 || winnerFrame - f <= sec(10);
+      const activeCycle = useBattle ? battleCycle : cycle;
+      for (let tries = 0; !sh && tries < activeCycle.length; tries++) {
+        const kind = activeCycle[(useBattle ? bci++ : ci++) % activeCycle.length];
+        const len = sec(kind === "top" ? 7.0 : 8.0 + rand() * 2.5);
         const cand = { kind, start: f, end: f + len, side: rand() < 0.5 ? 1 : -1, phase: rand() * Math.PI * 2 };
-        if (kind === "onboard") {
-          const ld = leader[f];
-          const chaser = [...Array(N).keys()]
-            .filter((i) => i !== ld && !finished(i, f))
-            .sort((a, b) => uOf(f, b) - uOf(f, a))[0];
-          cand.marble = chaser !== undefined && uOf(f, ld) - uOf(f, chaser) < 2.5 ? chaser : ld;
-        }
         cand.end = Math.min(cand.end, capAt);
         if (usable(kind, cand, f, Math.min(cand.end, lastFrame + 1))) sh = cand;
-        else if (kind !== "onboard") {
-          // The circuit is packed here: the same shot, closer in.
+        else {
           cand.near = true;
           if (usable(kind, cand, f, Math.min(cand.end, lastFrame + 1))) sh = cand;
         }
       }
-      if (!sh) sh = { kind: "top", start: f, end: Math.min(f + sec(4), capAt) };
-      // Don't run into the finish shot.
-      if (!finishUsed) sh.end = Math.min(sh.end, Math.max(f + sec(2), winnerFrame - sec(3.5)));
+      if (!sh) sh = { kind: "chase", near: true, start: f, end: Math.min(f + sec(8), capAt) };
+      // Don't run into the finish shot, nor leave a short sliver before it.
+      if (!finishUsed) {
+        const finStart = winnerFrame - sec(4.0);
+        if (finStart > f && sh.end > finStart - sec(4.0)) sh.end = finStart;
+      }
     }
     sh.end = Math.min(Math.max(sh.end, f + 1), lastFrame + 1);
     shots.push(sh);
@@ -2220,7 +2198,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   const FOLLOWING = ["chase", "lead", "side", "top", "orbit", "wide", "feature", "finish", "approach"];
   // A switch near a shot's start or end moves that cut onto the switch (the neighbouring shot absorbs
   // the difference) instead of leaving a sliver of a shot: never a piece under MIN_PIECE.
-  const MIN_PIECE = sec(2.5);
+  const MIN_PIECE = sec(5.5);
   for (let k = 0; k < shots.length; k++) {
     const sh = shots[k];
     if (!FOLLOWING.includes(sh.kind)) continue;
@@ -2244,6 +2222,15 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     shots.splice(k + 1, 0, { ...sh, start: at });
     sh.end = at;
   }
+  for (let k = 1; k < shots.length; k++) {
+    const prev = shots[k - 1];
+    const cur = shots[k];
+    if (prev.kind === cur.kind && Boolean(prev.near) === Boolean(cur.near) && !focusSwitches.includes(cur.start)) {
+      prev.end = cur.end;
+      shots.splice(k, 1);
+      k--;
+    }
+  }
   // Behind the grid, looking past the marbles to the start gantry.
   const gridPos = v3(pointInFrame(frameAt(-11.5), 0, 4.6));
   const gridTarget = v3(pointOnTrack(frameAt(0.5), 0, 0.4));
@@ -2265,10 +2252,10 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   let st = target;
   let sf = fov;
   for (const sh of shots) {
-    const sigma = sh.kind === "onboard" ? sec(0.18) : sec(0.45);
+    const sigma = sh.kind === "onboard" ? sec(0.25) : sec(0.75);
     sp = gauss(sp, sigma, sh.start, sh.end);
     st = gauss(st, sigma, sh.start, sh.end);
-    sf = gauss(sf, sec(0.55), sh.start, sh.end);
+    sf = gauss(sf, sec(0.75), sh.start, sh.end);
   }
   const cams = sp.map((p, k) => [...arr(p), ...arr(st[k]), r3(sf[k]), kind[k], marble[k]]);
   const origCams = cams.map((c) => c.slice());
@@ -2385,8 +2372,11 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     return { pos: ps, target: ts, fov, keys: k };
   };
   const raw = [];
-  // Replays of the highlights and bloopers, starting just after each one.
-  highlights.forEach((h, k) => raw.push({ kind: "replay", start: h.insert, end: h.insert + h.frames, highlight: k, prio: 3 }));
+  // Only split the screen for actual disqualifications (DQ replays) so the main race view isn't
+  // constantly interrupted by mid-race split-screen transitions.
+  highlights.forEach((h, k) => {
+    if (h.dq) raw.push({ kind: "replay", start: h.insert, end: h.insert + h.frames, highlight: k, prio: 3 });
+  });
   // Every lift ride, both cabins: one split while either is moving.
   const rides = elevators
     .flatMap((e, k) => e.cycles.filter((c) => c.riseAt !== undefined && c.openAt !== undefined).map((c) => ({ cabin: k, start: Math.max(0, c.closeAt - sec(0.6)), end: c.closeTopAt !== undefined ? c.closeTopAt + sec(0.4) : c.openAt + sec(2), riders: c.riders })))
@@ -2408,17 +2398,6 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     for (let a = r.start; a < r.end - sec(2); a += sec(20)) pieces.push({ ...r, start: a, end: Math.min(r.end, a + sec(8)), cabins: r.cabins.filter((c) => c.end > a && c.start < a + sec(8)) });
     raw.splice(k, 1, ...pieces);
   }
-  // Action away from P1: the director cut to an obstacle while P1 is well clear of it (15+ units ahead).
-  for (const sh of shots) {
-    if (sh.kind !== "feature" || sh.start < raceStart + sec(3) || sh.end - sh.start < sec(1.5)) continue;
-    let away = 0;
-    let n = 0;
-    for (let f = sh.start; f < sh.end; f += 6) {
-      n++;
-      if (p1[f] !== leader[f] && uOf(f, p1[f]) - uOf(f, leader[f]) > 15) away++;
-    }
-    if (away >= n * 0.7) raw.push({ kind: "action", start: sh.start, end: sh.end, label: sh.label ?? null, feature: sh.feature ?? null, prio: 1 });
-  }
   // Resolve overlaps by priority; nothing shorter than 1.5 s, nothing after the win.
   const taken = new Array(lastFrame + 2).fill(null);
   // While P1 rides the stair there is no split (its left half would have to show the stair, which is
@@ -2427,7 +2406,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   for (let f = 0; f <= lastFrame; f++) if (cabinOf(p1[f], f) !== null) for (let g = Math.max(0, f - sec(0.5)); g <= Math.min(lastFrame, f + sec(0.5)); g++) taken[g] = blocked;
   for (const sp of [...raw].sort((a, b) => b.prio - a.prio || a.start - b.start)) {
     const a = Math.max(sp.start, raceStart + sec(2));
-    const b = Math.min(sp.end, winnerFrame - sec(1), lastFrame + 1);
+    const b = Math.min(sp.end, winnerFrame - sec(15), lastFrame + 1);
     if (b - a < sec(1.5)) continue;
     let free = true;
     for (let f = a; f < b; f++) if (taken[f]) free = false;
@@ -2436,8 +2415,8 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       // A replay waits for the slot to clear, keeping its length.
       const len = b - a;
       let s0 = a;
-      while (s0 + len < winnerFrame - sec(1) && taken.slice(s0, s0 + len).some(Boolean)) s0 += sec(0.5);
-      if (s0 + len >= winnerFrame - sec(1)) continue;
+      while (s0 + len < winnerFrame - sec(15) && taken.slice(s0, s0 + len).some(Boolean)) s0 += sec(0.5);
+      if (s0 + len >= winnerFrame - sec(15)) continue;
       sp.start = s0;
       sp.end = s0 + len;
     } else {
@@ -2447,11 +2426,10 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     for (let f = sp.start; f < sp.end; f++) taken[f] = sp;
   }
   const splits = [...new Set(taken.filter((x) => x && x !== blocked))].sort((a, b) => a.start - b.start);
-  // Cameras: P1 on the left (overriding the main stream), the right half's own.
+  // Cameras: keep the smooth main camera on the left (only tagging leader), the right half's own.
   for (const sp of splits) {
     const span = Array.from({ length: sp.end - sp.start }, (_, j) => sp.start + j);
-    const left = subjectCams(span.map(leaderKey), sp.start, sec(2.5), camForKey);
-    for (const f of span) cams[f] = [...arr(left.pos[f - sp.start]), ...arr(left.target[f - sp.start]), r3(left.fov[f - sp.start]), "leader", p1[f]];
+    for (const f of span) cams[f] = [...origCams[f].slice(0, 7), "leader", p1[f]];
     if (sp.kind === "lift") {
       // The cabin P1 isn't in (the left half already shows P1's), or the one the split is about.
       // The right half: the wide frontal view of the stair (the left half has P1, closer, when it rides).

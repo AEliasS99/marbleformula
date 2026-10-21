@@ -17,15 +17,15 @@ export const GRID_U = -9.5; // where the samples (and the grid) begin
  * @param {{ round: number, L: number, highlight: number | null, cards: { type: string, u: number }[], teams: number }} o
  */
 export function introPlan({ round, L, highlight, cards, teams }) {
-  // Punchy F1 broadcast intro (~19 s = 1,140 frames):
-  //   cold (2.5 s) -> title (3.0 s) -> flyover (9.0 s, ~24 units/s on a 228 m lap) -> lineup (4.5 s)
-  const fly = 540;
+  // Smooth F1 broadcast intro (~25 s = 1,500 frames):
+  //   cold (2.5 s) -> title (3.0 s) -> flyover (13.0 s, calm drone lap slowing over each obstacle) -> lineup (6.5 s)
+  const fly = 780;
   const scenes = [
     { id: "cold", frames: highlight === null ? 0 : 150 },
     { id: "title", frames: 180 },
     ...(round === 1 ? [{ id: "teams", frames: teams * TEAM_FRAMES }] : []),
     { id: "flyover", frames: fly },
-    { id: "lineup", frames: 270 },
+    { id: "lineup", frames: 390 },
   ].filter((sc) => sc.frames > 0);
   let at = 0;
   for (const sc of scenes) {
@@ -33,17 +33,17 @@ export function introPlan({ round, L, highlight, cards, teams }) {
     at += sc.frames;
   }
   const pace = flyPacing(L, cards, fly);
-  // Each card shows while the drone passes its obstacle (at least 1.3 s).
+  // Each card shows while the drone passes its obstacle (at least 2.0 s).
   const shown = cards.map((c) => {
     const a = Math.round(pace.xAt(c.u - 5));
-    const b = Math.round(Math.max(pace.xAt(c.u + 7), a + 78));
+    const b = Math.round(Math.max(pace.xAt(c.u + 7), a + 120));
     return { ...c, from: a, to: b };
   });
-  // Every card stays up at least 1.3 s (a close neighbour waits its turn), and
+  // Every card stays up at least 2.0 s (a close neighbour waits its turn), and
   // gives way when the next one comes in.
   for (let k = 1; k < shown.length; k++) {
-    shown[k].from = Math.max(shown[k].from, shown[k - 1].from + 78);
-    shown[k].to = Math.max(shown[k].to, shown[k].from + 78);
+    shown[k].from = Math.max(shown[k].from, shown[k - 1].from + 120);
+    shown[k].to = Math.max(shown[k].to, shown[k].from + 120);
   }
   for (let k = 0; k < shown.length; k++) {
     if (k + 1 < shown.length) shown[k].to = Math.min(shown[k].to, shown[k + 1].from);
