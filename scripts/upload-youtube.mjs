@@ -18,8 +18,9 @@
 //   npm run upload -- --season 3 --dry-run               # preview titles, descriptions, files without uploading
 
 import { execFile } from "node:child_process";
-import { closeSync, existsSync, openSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { CIRCUITS } from "../src/gp/circuits/index.js";
 
@@ -70,12 +71,25 @@ function loadClient() {
     return { clientId: process.env.YOUTUBE_CLIENT_ID, clientSecret: process.env.YOUTUBE_CLIENT_SECRET };
   }
   if (!existsSync(CLIENT_FILE)) {
+    // Auto-import from ~/Downloads/client_secret*.json if the user just downloaded it!
+    const dl = `${homedir()}/Downloads`;
+    if (existsSync(dl)) {
+      const matches = readdirSync(dl)
+        .filter((f) => f.startsWith("client_secret") && f.endsWith(".json"))
+        .map((f) => ({ path: `${dl}/${f}`, mtime: statSync(`${dl}/${f}`).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime);
+      if (matches.length > 0) {
+        copyFileSync(matches[0].path, CLIENT_FILE);
+        console.log(`✓ Automatically imported ${matches[0].path} -> .youtube-client.json`);
+      }
+    }
+  }
+  if (!existsSync(CLIENT_FILE)) {
     console.error(`\nMissing ${CLIENT_FILE.replace(ROOT, "")}!`);
     console.error(`To set up YouTube OAuth in 60 seconds:`);
-    console.error(`  1. Open: https://console.cloud.google.com/apis/credentials?project=gen-lang-client-0869187042`);
-    console.error(`  2. Click "+ CREATE CREDENTIALS" -> "OAuth client ID" -> Application type: "Desktop app"`);
-    console.error(`  3. Download the JSON file and save it as:`);
-    console.error(`       ${CLIENT_FILE}`);
+    console.error(`  1. Open: https://console.cloud.google.com/auth/clients?project=gen-lang-client-0869187042`);
+    console.error(`  2. Click "+ Create Client" -> Application type: "Desktop app" -> Create`);
+    console.error(`  3. Click "Download JSON" (it will go to ~/Downloads, and this script will auto-detect it!)`);
     console.error(`  4. Run:  npm run upload:auth\n`);
     process.exit(1);
   }
