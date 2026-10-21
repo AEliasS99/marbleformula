@@ -95,6 +95,7 @@ async function authorizeInteractive({ clientId, clientSecret }) {
     `&response_type=code` +
     `&scope=${encodeURIComponent(SCOPES)}` +
     `&access_type=offline` +
+    `&login_hint=${encodeURIComponent("marbleformula1@gmail.com")}` +
     `&prompt=consent`;
 
   console.log(`\nOpening browser to authorize YouTube channel (@MarbleFormula)...`);
