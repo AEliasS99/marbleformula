@@ -1,50 +1,45 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Marble Formula Championship 2027 — 4K 60fps Physics Marble Racing</title>
-  <meta name="description" content="Twenty national-flag chrome marbles. Ten constructor teams. Five legendary Formula 1 circuits engineered into high-banked neon marble tracks with 100% real 3D physics." />
+  <title>Marble Formula — Dual Engine Control Center (Marbles &amp; Motorsport Cars)</title>
+  <meta name="description" content="Centro de control e interfaz interactiva de Marble Formula: explora los 2 motores físicos 3D (Canicas y Coches de Motorsport), 10 localizaciones 3D, catálogo de obstáculos, 20 coches/canicas y emisiones 4K60." />
   <link rel="canonical" href="https://marbleformula.com/" />
 
-  <!-- Open Graph / Social -->
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://marbleformula.com/" />
-  <meta property="og:title" content="Marble Formula Championship 2027 — 4K Physics Marble Racing" />
-  <meta property="og:description" content="20 national marbles, 10 teams, 5 iconic F1 circuits, and brutal track machines. 100% real Rapier 3D physics, rendered in 4K 60fps." />
-  <meta property="og:image" content="https://marbleformula.com/assets/r5-monza.jpg" />
+  <meta property="og:title" content="Marble Formula — Dual 3D Physics Studio (Marbles &amp; Motorsport Cars)" />
+  <meta property="og:description" content="2 Motores Físicos (Canicas Art-Glass y Coches TCR/F1), 10 Localizaciones 3D, Puertas Láser 'Don't Be Last!' y Telemetría 4K 60fps." />
+  <meta property="og:image" content="https://marbleformula.com/assets/alps-cars-2.jpg" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Marble Formula Championship 2027" />
-  <meta name="twitter:description" content="20 national marbles, 10 teams, 5 iconic F1 circuits. 100% real physics in 4K 60fps." />
-  <meta name="twitter:image" content="https://marbleformula.com/assets/r5-monza.jpg" />
 
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3CradialGradient id='g' cx='35%25' cy='30%25' r='65%25'%3E%3Cstop offset='0%25' stop-color='%23ffffff'/%3E%3Cstop offset='35%25' stop-color='%23ffd400'/%3E%3Cstop offset='75%25' stop-color='%23ff2a3c'/%3E%3Cstop offset='100%25' stop-color='%2308090c'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='29' fill='url(%23g)' stroke='%23ffd400' stroke-width='2'/%3E%3C/svg%3E" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet" />
 
   <style>
     :root {
-      --bg: #07080b;
-      --bg-elev: #10131a;
-      --bg-card: #141821;
-      --ink: #0f1117;
+      --bg: #07080c;
+      --bg-elev: #0f1219;
+      --bg-card: #141923;
+      --bg-card-hover: #1a2130;
+      --ink: #0b0d13;
       --text: #f5f7fa;
-      --muted: #9aa3b5;
+      --muted: #98a2b3;
       --yellow: #ffd400;
       --red: #ff2a3c;
       --cyan: #00f0ff;
       --green: #00e676;
+      --purple: #b388ff;
+      --orange: #ff8a00;
       --border: rgba(255, 255, 255, 0.1);
       --radius: 16px;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     html {
       scroll-behavior: smooth;
@@ -56,31 +51,28 @@
 
     body {
       background:
-        radial-gradient(circle at 18% 0%, rgba(0, 240, 255, 0.08), transparent 40%),
-        radial-gradient(circle at 82% 12%, rgba(255, 212, 0, 0.08), transparent 42%),
+        radial-gradient(circle at 15% 0%, rgba(0, 240, 255, 0.08), transparent 38%),
+        radial-gradient(circle at 85% 10%, rgba(255, 212, 0, 0.08), transparent 40%),
         var(--bg);
       overflow-x: hidden;
       line-height: 1.5;
     }
 
-    a {
-      color: inherit;
-      text-decoration: none;
-    }
+    a { color: inherit; text-decoration: none; }
 
     .container {
-      width: min(1240px, 92vw);
+      width: min(1320px, 93vw);
       margin: 0 auto;
     }
 
-    /* --- Top Broadcast Navbar --- */
+    /* --- Navbar --- */
     .navbar {
       position: sticky;
       top: 0;
-      z-index: 50;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      background: rgba(7, 8, 11, 0.82);
+      z-index: 100;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      background: rgba(7, 8, 12, 0.86);
       border-bottom: 1px solid var(--border);
     }
 
@@ -105,228 +97,231 @@
       background: var(--yellow);
       color: var(--ink);
       font-weight: 900;
-      font-size: 0.78rem;
+      font-size: 0.75rem;
       padding: 4px 8px;
       border-radius: 6px;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.05em;
     }
 
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 28px;
-      font-size: 0.9rem;
-      font-weight: 600;
+      gap: 22px;
+      font-size: 0.86rem;
+      font-weight: 700;
       color: var(--muted);
     }
 
-    .nav-links a:hover {
-      color: #fff;
-    }
+    .nav-links a:hover { color: #fff; }
 
     .btn-yt {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       background: var(--red);
       color: #fff;
       font-weight: 800;
-      font-size: 0.9rem;
-      padding: 10px 18px;
+      font-size: 0.85rem;
+      padding: 9px 16px;
       border-radius: 999px;
-      box-shadow: 0 8px 24px rgba(255, 42, 60, 0.35);
-      transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+      box-shadow: 0 6px 20px rgba(255, 42, 60, 0.35);
+      transition: transform 0.15s ease, background 0.15s ease;
     }
 
-    .btn-yt:hover {
-      transform: translateY(-1px);
-      background: #ff3f4f;
-      box-shadow: 0 12px 28px rgba(255, 42, 60, 0.5);
-    }
+    .btn-yt:hover { transform: translateY(-1px); background: #ff4252; }
+    .btn-yt svg { width: 16px; height: 16px; fill: currentColor; }
 
-    .btn-yt svg {
-      width: 18px;
-      height: 18px;
-      fill: currentColor;
-    }
-
-    /* --- Hero Section --- */
+    /* --- Hero --- */
     .hero {
       position: relative;
-      min-height: 84vh;
-      display: flex;
-      align-items: center;
-      padding: 64px 0 72px;
-      overflow: hidden;
+      padding: 64px 0 56px;
       border-bottom: 1px solid var(--border);
+      overflow: hidden;
     }
 
-    .hero-video-wrap {
-      position: absolute;
-      inset: 0;
-      z-index: 0;
-    }
-
-    .hero-video-wrap video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      opacity: 0.42;
-      filter: saturate(1.15) contrast(1.05);
-    }
-
-    .hero-video-wrap::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background:
-        linear-gradient(90deg, rgba(7, 8, 11, 0.95) 0%, rgba(7, 8, 11, 0.72) 52%, rgba(7, 8, 11, 0.45) 100%),
-        linear-gradient(180deg, rgba(7, 8, 11, 0.4) 0%, rgba(7, 8, 11, 0.15) 50%, rgba(7, 8, 11, 0.98) 100%);
-    }
-
-    .hero-content {
-      position: relative;
-      z-index: 2;
-      max-width: 760px;
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 36px;
+      align-items: center;
     }
 
     .live-pill {
       display: inline-flex;
       align-items: center;
       gap: 10px;
-      background: rgba(255, 255, 255, 0.96);
-      color: var(--ink);
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #fff;
       padding: 6px 14px 6px 8px;
       border-radius: 999px;
       font-weight: 800;
-      font-size: 0.78rem;
-      letter-spacing: 0.04em;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
-      margin-bottom: 24px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      margin-bottom: 18px;
     }
 
     .live-pill .dot {
-      background: var(--red);
-      color: #fff;
+      background: var(--green);
+      color: var(--ink);
       padding: 3px 8px;
       border-radius: 999px;
-      font-size: 0.7rem;
+      font-size: 0.68rem;
       font-weight: 900;
-      letter-spacing: 0.06em;
     }
 
     .hero h1 {
-      font-size: clamp(2.6rem, 6vw, 4.75rem);
+      font-size: clamp(2.3rem, 4.6vw, 3.85rem);
       font-weight: 900;
-      line-height: 0.98;
+      line-height: 1.02;
       letter-spacing: -0.04em;
       text-transform: uppercase;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
 
-    .hero h1 .accent {
+    .hero h1 .accent-cyan {
+      color: var(--cyan);
+    }
+
+    .hero h1 .accent-yellow {
       display: inline-block;
       background: var(--yellow);
       color: var(--ink);
-      padding: 2px 14px 6px;
-      border-radius: 10px;
+      padding: 2px 12px 5px;
+      border-radius: 9px;
       margin-top: 6px;
     }
 
     .hero p {
-      font-size: clamp(1.05rem, 1.8vw, 1.25rem);
-      color: #d5dce8;
-      max-width: 640px;
-      margin-bottom: 32px;
-      font-weight: 500;
+      font-size: 1.05rem;
+      color: #cfd6e4;
+      margin-bottom: 26px;
+      max-width: 620px;
     }
 
     .hero-actions {
       display: flex;
       flex-wrap: wrap;
-      gap: 14px;
-      align-items: center;
+      gap: 12px;
     }
 
     .btn-primary {
       display: inline-flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       background: var(--yellow);
       color: var(--ink);
       font-weight: 900;
-      font-size: 1rem;
-      padding: 16px 26px;
+      font-size: 0.94rem;
+      padding: 13px 22px;
       border-radius: 12px;
-      letter-spacing: -0.01em;
-      box-shadow: 0 12px 32px rgba(255, 212, 0, 0.28);
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: 0 10px 28px rgba(255, 212, 0, 0.25);
+      transition: transform 0.15s ease;
     }
 
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 16px 38px rgba(255, 212, 0, 0.42);
-    }
+    .btn-primary:hover { transform: translateY(-2px); }
 
     .btn-secondary {
       display: inline-flex;
       align-items: center;
       gap: 10px;
-      background: rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.08);
       color: #fff;
-      border: 1px solid rgba(255, 255, 255, 0.22);
+      border: 1px solid rgba(255, 255, 255, 0.2);
       font-weight: 800;
-      font-size: 1rem;
-      padding: 15px 24px;
+      font-size: 0.94rem;
+      padding: 13px 20px;
       border-radius: 12px;
-      backdrop-filter: blur(8px);
-      transition: background 0.15s ease, transform 0.15s ease;
+      transition: background 0.15s ease;
     }
 
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.18);
-      transform: translateY(-2px);
-    }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.15); }
 
-    /* --- Telemetry Strip --- */
-    .telemetry-strip {
+    .hero-showcase {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 16px;
-      margin-top: 48px;
-      padding-top: 28px;
-      border-top: 1px solid rgba(255, 255, 255, 0.14);
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
     }
 
-    .stat-item {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
+    .hero-card {
+      position: relative;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      aspect-ratio: 16 / 10;
+      background: #000;
     }
 
-    .stat-val {
+    .hero-card.wide {
+      grid-column: span 2;
+      aspect-ratio: 16 / 9;
+    }
+
+    .hero-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .hero-card-badge {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(7, 8, 12, 0.88);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #fff;
+      font-size: 0.74rem;
+      font-weight: 800;
+      padding: 5px 10px;
+      border-radius: 7px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .hero-card-badge span { color: var(--yellow); }
+
+    /* --- KPI Summary Bar --- */
+    .kpi-bar {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 14px;
+      margin-top: 38px;
+      padding-top: 26px;
+      border-top: 1px solid var(--border);
+    }
+
+    .kpi-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .kpi-val {
       font-family: "JetBrains Mono", monospace;
-      font-size: 1.55rem;
+      font-size: 1.45rem;
       font-weight: 800;
       color: #fff;
     }
 
-    .stat-val span {
-      color: var(--yellow);
-    }
+    .kpi-val span { color: var(--cyan); }
+    .kpi-val em { color: var(--yellow); font-style: normal; }
 
-    .stat-label {
-      font-size: 0.76rem;
+    .kpi-lbl {
+      font-size: 0.72rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.06em;
       color: var(--muted);
+      margin-top: 2px;
     }
 
-    /* --- Section Headers --- */
+    /* --- Sections --- */
     section {
-      padding: 88px 0;
+      padding: 76px 0;
       border-bottom: 1px solid var(--border);
     }
 
@@ -336,7 +331,7 @@
       align-items: flex-end;
       justify-content: space-between;
       gap: 20px;
-      margin-bottom: 44px;
+      margin-bottom: 36px;
     }
 
     .eyebrow {
@@ -344,993 +339,1468 @@
       background: var(--yellow);
       color: var(--ink);
       font-weight: 900;
-      font-size: 0.74rem;
+      font-size: 0.72rem;
       padding: 4px 10px;
       border-radius: 6px;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
 
+    .eyebrow.cyan { background: var(--cyan); color: var(--ink); }
+    .eyebrow.green { background: var(--green); color: var(--ink); }
+    .eyebrow.red { background: var(--red); color: #fff; }
+
     .section-title {
-      font-size: clamp(1.85rem, 3.6vw, 2.75rem);
+      font-size: clamp(1.75rem, 3.2vw, 2.55rem);
       font-weight: 900;
       letter-spacing: -0.03em;
-      line-height: 1.08;
+      line-height: 1.1;
     }
 
     .section-sub {
       color: var(--muted);
-      max-width: 520px;
-      font-size: 1rem;
+      max-width: 560px;
+      font-size: 0.96rem;
     }
 
-    /* --- Broadcast Preview Player --- */
-    .player-shell {
-      background: var(--bg-card);
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      border-radius: 20px;
-      overflow: hidden;
-      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.65);
+    /* --- Filter Pills --- */
+    .filter-tabs {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      background: #0d1017;
+      padding: 6px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
     }
 
-    .player-topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 20px;
-      background: #0c0e14;
-      border-bottom: 1px solid var(--border);
-      font-size: 0.82rem;
+    .filter-btn {
+      background: transparent;
+      color: var(--muted);
+      border: none;
+      padding: 9px 16px;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 0.83rem;
       font-weight: 800;
+      cursor: pointer;
+      transition: all 0.15s ease;
     }
 
-    .player-topbar-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .badge-round {
+    .filter-btn:hover { color: #fff; }
+    .filter-btn.active {
       background: var(--yellow);
       color: var(--ink);
-      padding: 3px 9px;
-      border-radius: 5px;
-      font-weight: 900;
-      font-size: 0.74rem;
+    }
+    .filter-btn.active-cyan {
+      background: var(--cyan);
+      color: var(--ink);
     }
 
-    .player-video-wrap {
-      position: relative;
-      aspect-ratio: 16 / 9;
-      background: #000;
-    }
-
-    .player-video-wrap video {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-
-    .player-footer {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 18px 24px;
-      background: #10131b;
-    }
-
-    .player-footer p {
-      color: var(--muted);
-      font-size: 0.92rem;
-    }
-
-    /* --- 5-Round Calendar Grid --- */
-    .circuits-grid {
+    /* --- Dual Engines Comparison --- */
+    .engines-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-      gap: 24px;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
     }
 
-    .circuit-card {
+    .engine-panel {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
+      border-radius: 20px;
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
     }
 
-    .circuit-card:hover {
-      transform: translateY(-4px);
-      border-color: rgba(255, 212, 0, 0.45);
-      box-shadow: 0 20px 44px rgba(0, 0, 0, 0.5);
+    .engine-panel.marble-eng {
+      border-top: 4px solid var(--cyan);
     }
 
-    .circuit-thumb {
+    .engine-panel.car-eng {
+      border-top: 4px solid var(--yellow);
+    }
+
+    .engine-banner {
       position: relative;
       aspect-ratio: 16 / 9;
-      overflow: hidden;
       background: #000;
+      overflow: hidden;
     }
 
-    .circuit-thumb img {
+    .engine-banner img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .engine-tag {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-weight: 900;
+      font-size: 0.75rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .engine-body {
+      padding: 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      flex: 1;
+    }
+
+    .engine-title {
+      font-size: 1.55rem;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+    }
+
+    .engine-code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.78rem;
+      color: var(--cyan);
+      background: rgba(0, 240, 255, 0.08);
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+
+    .spec-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .spec-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: #d5dce6;
+    }
+
+    .spec-list li strong {
+      color: #fff;
+    }
+
+    .spec-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-top: 7px;
+      flex-shrink: 0;
+    }
+
+    .spec-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+      font-size: 0.82rem;
+    }
+
+    .spec-table th, .spec-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      text-align: left;
+    }
+
+    .spec-table th {
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+    }
+
+    .spec-table td.mono {
+      font-family: "JetBrains Mono", monospace;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* --- Locations Grid --- */
+    .locations-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 22px;
+    }
+
+    .loc-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .loc-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(255, 212, 0, 0.45);
+    }
+
+    .loc-thumb {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .loc-thumb img {
       width: 100%;
       height: 100%;
       object-fit: cover;
       transition: transform 0.35s ease;
     }
 
-    .circuit-card:hover .circuit-thumb img {
-      transform: scale(1.04);
-    }
+    .loc-card:hover .loc-thumb img { transform: scale(1.04); }
 
-    .circuit-round-pill {
+    .loc-badges {
       position: absolute;
-      top: 12px;
-      left: 12px;
-      background: var(--yellow);
-      color: var(--ink);
-      font-weight: 900;
-      font-size: 0.74rem;
-      padding: 4px 10px;
-      border-radius: 6px;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
-    }
-
-    .circuit-length-pill {
-      position: absolute;
-      bottom: 12px;
-      right: 12px;
-      background: rgba(15, 17, 23, 0.88);
-      color: #fff;
-      font-family: "JetBrains Mono", monospace;
-      font-size: 0.75rem;
-      font-weight: 700;
-      padding: 4px 9px;
-      border-radius: 6px;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-    }
-
-    .circuit-body {
-      padding: 22px;
+      top: 10px;
+      left: 10px;
+      right: 10px;
       display: flex;
-      flex-direction: column;
-      flex: 1;
-      gap: 12px;
-    }
-
-    .circuit-title-row {
-      display: flex;
-      align-items: center;
       justify-content: space-between;
       gap: 8px;
+      pointer-events: none;
     }
 
-    .circuit-title {
-      font-size: 1.3rem;
+    .pill {
+      font-size: 0.7rem;
       font-weight: 900;
-      letter-spacing: -0.02em;
+      padding: 4px 9px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
 
-    .circuit-sub {
-      font-size: 0.84rem;
-      color: var(--muted);
-      font-weight: 600;
+    .pill-yellow { background: var(--yellow); color: var(--ink); }
+    .pill-cyan { background: var(--cyan); color: var(--ink); }
+    .pill-dark {
+      background: rgba(10, 12, 18, 0.86);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      font-family: "JetBrains Mono", monospace;
     }
 
-    .circuit-desc {
-      font-size: 0.92rem;
-      color: #c9d1e0;
+    .loc-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
       flex: 1;
     }
 
-    .obstacle-tags {
+    .loc-title {
+      font-size: 1.22rem;
+      font-weight: 900;
+    }
+
+    .loc-meta {
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-weight: 600;
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .loc-desc {
+      font-size: 0.88rem;
+      color: #cbd5e1;
+      flex: 1;
+    }
+
+    .tag-row {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
       margin-top: 4px;
     }
 
-    .obstacle-tag {
-      font-size: 0.72rem;
+    .tag {
+      font-size: 0.69rem;
       font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      padding: 4px 8px;
+      padding: 3px 8px;
       border-radius: 5px;
       background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       color: #e2e8f0;
-      border: 1px solid rgba(255, 255, 255, 0.09);
+      text-transform: uppercase;
     }
 
-    /* --- Broadcast White Cards for Obstacles --- */
-    .obstacles-grid {
+    .tag.car-tag {
+      background: rgba(255, 212, 0, 0.14);
+      border-color: rgba(255, 212, 0, 0.35);
+      color: var(--yellow);
+    }
+
+    .tag.marble-tag {
+      background: rgba(0, 240, 255, 0.12);
+      border-color: rgba(0, 240, 255, 0.32);
+      color: var(--cyan);
+    }
+
+    /* --- Obstacles Catalog --- */
+    .obs-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 18px;
     }
 
     .obs-card {
-      background: #ffffff;
-      color: var(--ink);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 22px 22px 20px 26px;
-      position: relative;
-      overflow: hidden;
-      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+      padding: 20px;
       display: flex;
       flex-direction: column;
       gap: 10px;
+      position: relative;
+      overflow: hidden;
     }
 
-    .obs-card::before {
-      content: "";
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 7px;
-      background: var(--yellow);
+    .obs-card[data-engine="car"] {
+      border-left: 4px solid var(--yellow);
     }
 
-    .obs-card.danger-max::before {
-      background: var(--red);
+    .obs-card[data-engine="marble"] {
+      border-left: 4px solid var(--cyan);
     }
 
-    .obs-head {
+    .obs-card[data-engine="both"] {
+      border-left: 4px solid var(--green);
+    }
+
+    .obs-top {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
+      gap: 8px;
     }
 
-    .obs-name {
-      font-size: 1.2rem;
+    .obs-title {
+      font-size: 1.08rem;
       font-weight: 900;
-      letter-spacing: -0.02em;
       text-transform: uppercase;
     }
 
-    .obs-badge {
+    .obs-eng-badge {
       font-family: "JetBrains Mono", monospace;
-      font-size: 0.7rem;
+      font-size: 0.68rem;
       font-weight: 800;
-      padding: 3px 7px;
-      border-radius: 4px;
-      background: #f1f4f9;
-      color: #475569;
+      padding: 3px 8px;
+      border-radius: 5px;
       text-transform: uppercase;
     }
+
+    .obs-eng-badge.car { background: rgba(255, 212, 0, 0.16); color: var(--yellow); }
+    .obs-eng-badge.marble { background: rgba(0, 240, 255, 0.16); color: var(--cyan); }
+    .obs-eng-badge.both { background: rgba(0, 230, 118, 0.16); color: var(--green); }
 
     .obs-desc {
-      font-size: 0.92rem;
-      color: #334155;
-      font-weight: 500;
+      font-size: 0.87rem;
+      color: #cbd5e1;
       flex: 1;
     }
 
-    .danger-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 6px;
+    .obs-file {
+      font-family: "JetBrains Mono", monospace;
       font-size: 0.72rem;
-      font-weight: 900;
-      letter-spacing: 0.08em;
-      color: #64748b;
-      text-transform: uppercase;
+      color: var(--muted);
     }
 
-    .danger-pips {
-      display: flex;
-      gap: 4px;
-    }
-
-    .pip {
-      width: 14px;
-      height: 6px;
-      border-radius: 2px;
-      background: #e2e8f0;
-    }
-
-    .pip.on {
-      background: var(--red);
-    }
-
-    /* --- 10 Teams & 20 National Marbles --- */
-    .teams-showcase {
+    /* --- 20 Vehicles & Marbles Grid --- */
+    .roster-grid {
       display: grid;
-      grid-template-columns: 1.15fr 0.85fr;
-      gap: 24px;
-      margin-bottom: 28px;
-    }
-
-    .showcase-img-card {
-      position: relative;
-      border-radius: var(--radius);
-      overflow: hidden;
-      border: 1px solid var(--border);
-      background: #000;
-      min-height: 260px;
-    }
-
-    .showcase-img-card img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-
-    .teams-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(295px, 1fr));
       gap: 16px;
     }
 
-    .team-card {
+    .racer-card {
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 18px;
-      position: relative;
-      overflow: hidden;
-      cursor: pointer;
-      transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: transform 0.15s ease, border-color 0.15s ease;
     }
 
-    .team-card:hover,
-    .team-card.selected {
-      transform: translateY(-2px);
-      border-color: var(--yellow);
-      background: #191f2c;
+    .racer-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(255, 255, 255, 0.28);
     }
 
-    .team-stripe {
-      height: 5px;
-      border-radius: 999px;
-      margin-bottom: 14px;
-    }
-
-    .team-top {
+    .racer-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 6px;
+      gap: 10px;
     }
 
-    .team-abbr {
-      font-family: "JetBrains Mono", monospace;
-      font-size: 0.74rem;
-      font-weight: 800;
-      padding: 2px 7px;
-      border-radius: 4px;
-      background: rgba(255, 255, 255, 0.1);
-      color: #fff;
-    }
-
-    .team-name {
-      font-size: 1.05rem;
-      font-weight: 800;
-      margin-bottom: 4px;
-    }
-
-    .team-story {
-      font-size: 0.82rem;
-      color: var(--muted);
-      font-style: italic;
-      margin-bottom: 14px;
-    }
-
-    .team-drivers {
+    .racer-id {
       display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
     }
 
-    .driver-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 4px 9px;
-      border-radius: 6px;
-      font-size: 0.78rem;
+    .racer-avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      position: relative;
+      box-shadow: inset -5px -5px 12px rgba(0,0,0,0.6), inset 4px 4px 10px rgba(255,255,255,0.45), 0 4px 12px rgba(0,0,0,0.5);
+      border: 2px solid rgba(255, 255, 255, 0.22);
+      flex-shrink: 0;
+    }
+
+    .racer-name {
+      font-size: 1.05rem;
+      font-weight: 900;
+    }
+
+    .racer-sub {
+      font-size: 0.75rem;
+      color: var(--muted);
       font-weight: 700;
     }
 
-    /* --- CTA Banner --- */
-    .cta-banner {
-      background: linear-gradient(135deg, #151924 0%, #0d1017 100%);
-      border: 1px solid rgba(255, 212, 0, 0.3);
-      border-radius: 24px;
-      padding: 56px 40px;
-      text-align: center;
-      position: relative;
-      overflow: hidden;
-      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
-    }
-
-    .cta-banner h2 {
-      font-size: clamp(2rem, 4vw, 3rem);
+    .class-badge {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.72rem;
       font-weight: 900;
-      letter-spacing: -0.03em;
-      margin-bottom: 14px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--yellow);
+      border: 1px solid rgba(255, 212, 0, 0.28);
     }
 
-    .cta-banner p {
-      color: var(--muted);
-      max-width: 560px;
-      margin: 0 auto 28px;
-      font-size: 1.08rem;
+    .stat-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.28);
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .stat-row {
+      display: grid;
+      grid-template-columns: 78px 1fr 28px;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.73rem;
+      font-weight: 800;
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .stat-track {
+      height: 7px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .stat-fill {
+      height: 100%;
+      border-radius: 999px;
+    }
+
+    .racer-perk {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #d1fae5;
+      background: rgba(0, 230, 118, 0.08);
+      border: 1px solid rgba(0, 230, 118, 0.2);
+      padding: 6px 10px;
+      border-radius: 8px;
+    }
+
+    /* --- CLI & Pipeline Section --- */
+    .cli-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+      gap: 20px;
+    }
+
+    .cli-card {
+      background: #0c0f16;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .cli-card h3 {
+      font-size: 1.05rem;
+      font-weight: 900;
+      color: var(--yellow);
+    }
+
+    .cli-pre {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.78rem;
+      background: #06080c;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #e2e8f0;
+      padding: 12px 14px;
+      border-radius: 9px;
+      overflow-x: auto;
+      line-height: 1.55;
     }
 
     footer {
       padding: 40px 0;
       color: var(--muted);
-      font-size: 0.86rem;
+      font-size: 0.85rem;
       text-align: center;
     }
 
-    footer a {
-      color: #fff;
-      text-decoration: underline;
-      text-underline-offset: 3px;
-    }
-
-    @media (max-width: 860px) {
-      .nav-links {
-        display: none;
-      }
-      .telemetry-strip {
-        grid-template-columns: repeat(2, 1fr);
-      }
-      .teams-showcase {
-        grid-template-columns: 1fr;
-      }
-      .cta-banner {
-        padding: 40px 22px;
-      }
+    @media (max-width: 960px) {
+      .hero-grid, .engines-grid { grid-template-columns: 1fr; }
+      .kpi-bar { grid-template-columns: repeat(2, 1fr); }
+      .nav-links { display: none; }
     }
   </style>
 </head>
 <body>
 
-  <!-- Top Broadcast Bar -->
+  <!-- Top Navbar -->
   <header class="navbar">
     <div class="container navbar-inner">
       <a href="#" class="brand">
-        <span class="brand-tag">MFC 2027</span>
-        <span>MARBLE FORMULA</span>
+        <span class="brand-tag">STUDIO HUB</span>
+        <span>MARBLE FORMULA · ENGINE &amp; WORLD ATLAS</span>
       </a>
       <nav class="nav-links">
-        <a href="#preview">Race Preview</a>
-        <a href="#circuits">5 F1 Circuits</a>
-        <a href="#machines">Track Machines</a>
-        <a href="#teams">Teams &amp; Grid</a>
+        <a href="#engines">2 Motores (Canicas &amp; Coches)</a>
+        <a href="#locations">10 Localizaciones 3D</a>
+        <a href="#obstacles">Obstáculos &amp; Física</a>
+        <a href="#roster">20 Coches &amp; Canicas</a>
+        <a href="#broadcasts">Vídeos YouTube</a>
+        <a href="#pipeline">Comandos CLI</a>
       </nav>
       <a class="btn-yt" href="https://www.youtube.com/@MarbleFormula" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.6 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-        <span>Subscribe on YouTube</span>
+        <svg viewBox="0 0 24 24"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.6 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+        <span>@MarbleFormula</span>
       </a>
     </div>
   </header>
 
   <!-- Hero Section -->
   <section class="hero">
-    <div class="hero-video-wrap">
-      <video src="/assets/hero.mp4" poster="/assets/r5-monza.jpg" autoplay loop muted playsinline></video>
-    </div>
-    <div class="container hero-content">
-      <div class="live-pill">
-        <span class="dot">4K 60FPS</span>
-        <span>100% Real Rapier 3D Physics · Zero Scripting</span>
+    <div class="container">
+      <div class="hero-grid">
+        <div>
+          <div class="live-pill">
+            <span class="dot">LIVE HUB</span>
+            <span>Dual 3D Physics Architecture · Rapier 3D + Three.js + Remotion 4K60</span>
+          </div>
+          <h1>
+            Dos Motores Físicos.<br />
+            <span class="accent-cyan">Canicas Art-Glass</span> &amp;<br />
+            <span class="accent-yellow">Coches Motorsport</span>
+          </h1>
+          <p>
+            Panel central de control de <strong>Marble Formula</strong>: inspecciona los <strong>2 motores de simulación</strong> (Canicas vs. Coches TCR/F1), las <strong>10 localizaciones 3D</strong> (Tokio, Alpes Suizos, El Cairo, Sídney, Nueva York y los 5 circuitos clásicos), el catálogo de <strong>obstáculos y puertas láser "Don't Be Last!"</strong>, y la parrilla de <strong>20 países y 10 escuderías</strong>.
+          </p>
+          <div class="hero-actions">
+            <a class="btn-primary" href="#engines">Explorar los 2 Motores ↓</a>
+            <a class="btn-secondary" href="#locations">Ver las 10 Localizaciones 3D</a>
+            <a class="btn-secondary" href="#roster">Inspeccionar 20 Coches y Canicas</a>
+          </div>
+        </div>
+
+        <div class="hero-showcase">
+          <div class="hero-card wide">
+            <img src="/assets/alps-cars-2.jpg" alt="Swiss Alps Motorsport Car Engine with Matterhorn, cows, flags and cable cars" />
+            <div class="hero-card-badge"><span>MOTOR COCHES (GP_CARS=1)</span> · Alpes Suizos (Matterhorn, Teleférico 3D, Vacas Suizas)</div>
+          </div>
+          <div class="hero-card">
+            <img src="/assets/tokyo-cars-2.jpg" alt="Tokyo Shibuya Neon Car Engine" />
+            <div class="hero-card-badge"><span>TOKIO SHIBUYA</span> · TCR Nocturno &amp; Torii Neón</div>
+          </div>
+          <div class="hero-card">
+            <img src="/assets/loc-cairo.jpg" alt="Cairo Giza Pyramids Marble Engine" />
+            <div class="hero-card-badge"><span>MOTOR CANICAS</span> · Pirámides de Giza &amp; Esfinge</div>
+          </div>
+        </div>
       </div>
-      <h1>
-        Marble Formula<br />
-        <span class="accent">Championship 2027</span>
-      </h1>
-      <p>
-        Twenty chrome national-flag marbles. Ten constructor teams. Five iconic Formula 1 circuits transformed into banked neon half-pipes packed with spinning rotors, pendulum axes, and vortex drains.
-      </p>
-      <div class="hero-actions">
-        <a class="btn-primary" href="https://www.youtube.com/@MarbleFormula" target="_blank" rel="noopener">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.6 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-          Watch Full Races on YouTube
+
+      <!-- KPI Bar -->
+      <div class="kpi-bar">
+        <div class="kpi-box">
+          <div class="kpi-val">2<span> Motores</span></div>
+          <div class="kpi-lbl">Canicas 3D &amp; Coches TCR/F1</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-val">10<em> Mundos</em></div>
+          <div class="kpi-lbl">5 World Tour + 5 Clásicos F1</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-val">20<span> Países</span></div>
+          <div class="kpi-lbl">10 Escuderías · 4 Clases Chasis</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-val">15<em>+</em></div>
+          <div class="kpi-lbl">Máquinas, DRS y Checkpoints</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-val">10<span> Pts</span></div>
+          <div class="kpi-lbl">Presupuesto VEL + EST + INT</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-val">4K<span> 60fps</span></div>
+          <div class="kpi-lbl">UHD Render &amp; Don't Be Last!</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 1. THE TWO ENGINES: MARBLE ENGINE VS CAR ENGINE -->
+  <section id="engines">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow cyan">Arquitectura Dual</span>
+          <h2 class="section-title">Los Dos Motores: Canicas vs. Coches Motorsport</h2>
+        </div>
+        <p class="section-sub">
+          Ambos motores comparten los circuitos 3D peraltados, el director de cámaras IA con raycasting y las puertas láser <strong>"Don't Be Last!"</strong>, pero ejecutan físicas, colisiones, obstáculos y síntesis de audio completamente distintos.
+        </p>
+      </div>
+
+      <div class="engines-grid">
+        <!-- ENGINE 1: MARBLE ENGINE -->
+        <article class="engine-panel marble-eng">
+          <div class="engine-banner">
+            <img src="/assets/loc-alps-marble.jpg" alt="Motor de Canicas 3D" />
+            <span class="engine-tag" style="background: var(--cyan); color: var(--ink);">ENGINE 01 · MARBLE GRAND PRIX</span>
+          </div>
+          <div class="engine-body">
+            <div>
+              <h3 class="engine-title">🔮 Motor de Canicas (Art-Glass &amp; Pinball Chaos)</h3>
+              <p style="color: var(--muted); font-size: 0.9rem; margin-top: 4px;">
+                Esferas de cristal artesanal con remolinos internos (<em>Swirled Art-Glass</em>) y banderas nacionales compitiendo a través de 24–31 máquinas mecánicas por circuito.
+              </p>
+            </div>
+
+            <div class="engine-code">Comando: node scripts/season.mjs (GP_CARS=0 por defecto)</div>
+
+            <ul class="spec-list">
+              <li><span class="spec-dot" style="background: var(--cyan);"></span><div><strong>Física Esférica Pura (Rapier 3D):</strong> Rotación angular real en 3 ejes, restitución cristal-con-cristal (<code>0.48</code>) y gravedad escalada (<code>25 m/s²</code>).</div></li>
+              <li><span class="spec-dot" style="background: var(--cyan);"></span><div><strong>2 Vueltas con Escalera Mecánica (The Stairway) y Chain Lift:</strong> Al final de la Vuelta 1, dos cabinas elevadoras suben a las canicas de vuelta a la cima.</div></li>
+              <li><span class="spec-dot" style="background: var(--cyan);"></span><div><strong>24–31 Obstáculos Mecánicos Activos:</strong> El Vórtice (embudo hiperbólico), El Martillo (péndulo), El Torbellino (rotor de 3 aspas), Turntable, Rollers, Pushers, Bosque de Pegs y Splitters.</div></li>
+              <li><span class="spec-dot" style="background: var(--cyan);"></span><div><strong>Checkpoints "Don't Be Last!" (20 Canicas):</strong> 3 puertas láser por carrera (<code>19 → 18 → 17</code> sobreviven) + Zonas Rojas DQ.</div></li>
+              <li><span class="spec-dot" style="background: var(--cyan);"></span><div><strong>Audio ASMR Espacial:</strong> Impactos táctiles cristal-contra-cristal, rodadura sobre metal/madera y zumbido de rotores.</div></li>
+            </ul>
+
+            <table class="spec-table">
+              <thead>
+                <tr><th>Parámetro</th><th>Configuración Canicas</th><th>Archivo Clave</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Parrilla</td><td class="mono">20 Canicas (10x2 filas)</td><td class="mono">scripts/season.mjs</td></tr>
+                <tr><td>Colisionador</td><td class="mono">Sphere (R = 0.35m)</td><td class="mono">src/gp/Scene.tsx</td></tr>
+                <tr><td>Muro de Pista</td><td class="mono">Half-Pipe + Guardas 1.4m</td><td class="mono">src/gp/trackMesh.js</td></tr>
+                <tr><td>Audio</td><td class="mono">ASMR Glass-on-Glass</td><td class="mono">scripts/season.mjs</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <!-- ENGINE 2: CAR ENGINE -->
+        <article class="engine-panel car-eng">
+          <div class="engine-banner">
+            <img src="/assets/alps-cars-1.jpg" alt="Motor de Coches Motorsport TCR/F1" />
+            <span class="engine-tag" style="background: var(--yellow); color: var(--ink);">ENGINE 02 · MOTORSPORT CAR ENGINE</span>
+          </div>
+          <div class="engine-body">
+            <div>
+              <h3 class="engine-title">🏎️ Motor de Coches (TCR / F1 Motorsport Dynamics)</h3>
+              <p style="color: var(--muted); font-size: 0.9rem; margin-top: 4px;">
+                Coches de competición 3D con 4 siluetas de chasis, trazada óptima (Fuera → Ápice → Fuera), zonas de frenada carbon-ceramic, dirección Ackermann y luces de freno FIA.
+              </p>
+            </div>
+
+            <div class="engine-code" style="color: var(--yellow); background: rgba(255,212,0,0.08); border-color: rgba(255,212,0,0.25);">Comando: GP_CARS=1 GP_HEAT=1..4|final node scripts/season.mjs</div>
+
+            <ul class="spec-list">
+              <li><span class="spec-dot" style="background: var(--yellow);"></span><div><strong>Perfil de Telemetría y Frenada Real (<code>buildCarTelemetryProfile</code>):</strong> Velocidad punta en recta de <code>16–22 m/s</code> (con rebufo + DRS) y frenada real antes de cada curva hasta <code>10–12 m/s</code> en el ápice.</div></li>
+              <li><span class="spec-dot" style="background: var(--yellow);"></span><div><strong>Trazada Óptima Macro + Divebombs por el Interior:</strong> Los coches se abren en la entrada, tocan el piano interior en el ápice y salen abriéndose al exterior con <code>0.0%</code> de saltos verticales.</div></li>
+              <li><span class="spec-dot" style="background: var(--yellow);"></span><div><strong>Dinámica Visual 3D:</strong> Giro Ackermann en las ruedas delanteras (<code>steerYaw</code>), luces de freno FIA traseras que se iluminan al frenar, cabeceo (<code>pitch</code>) y balanceo (<code>roll</code>).</div></li>
+              <li><span class="spec-dot" style="background: var(--yellow);"></span><div><strong>Colisiones OBB 3D Chasis-a-Chasis (<code>solveCarChassisCollisions</code>):</strong> Cajas orientadas de <code>1.54m × 0.88m</code> para duelos rueda a rueda sin solapamientos.</div></li>
+              <li><span class="spec-dot" style="background: var(--yellow);"></span><div><strong>Torneo "Don't Be Last!" (4 Heats + Gran Final):</strong> En Heats de 6 coches (<code>5 → 4 → 3</code> sobreviven en los 3 Checkpoints; Top 2 clasifican); en la Gran Final de 10 coches (<code>8 → 6 → 4</code> sobreviven).</div></li>
+            </ul>
+
+            <table class="spec-table">
+              <thead>
+                <tr><th>Parámetro</th><th>Configuración Coches</th><th>Archivo Clave</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Formato Torneo</td><td class="mono">4 Heats (6) + Final (10)</td><td class="mono">scripts/car-engine.mjs</td></tr>
+                <tr><td>Física &amp; Trazada</td><td class="mono">Spline Chord + OBB 1.54×0.88m</td><td class="mono">scripts/car-engine.mjs</td></tr>
+                <tr><td>Muro de Pista</td><td class="mono">Barrera F1 Baja (0.58m)</td><td class="mono">src/gp/trackMesh.js</td></tr>
+                <tr><td>Audio</td><td class="mono">Multi-Gear V8/V10 + Synthwave</td><td class="mono">scripts/car-engine.mjs</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. ALL 10 LOCATIONS & 3D SCENERY -->
+  <section id="locations">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow green">Atlas de Circuitos 3D</span>
+          <h2 class="section-title">Las 10 Localizaciones Creadas</h2>
+        </div>
+        <div class="filter-tabs" id="loc-filters">
+          <button class="filter-btn active" onclick="filterLocations('all', this)">Todas (10)</button>
+          <button class="filter-btn" onclick="filterLocations('s3', this)">Season 3 · World Tour Monumental (5)</button>
+          <button class="filter-btn" onclick="filterLocations('s1', this)">Season 1 &amp; 2 · Clásicos F1 (5)</button>
+        </div>
+      </div>
+
+      <div class="locations-grid" id="locations-container">
+        <!-- 1. SWISS ALPS (r1-monaco) -->
+        <article class="loc-card" data-season="s3">
+          <div class="loc-thumb">
+            <img src="/assets/alps-cars-2.jpg" alt="Swiss Alpine Grand Prix Matterhorn" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-yellow">🇨🇭 S3 · ROUND 2 · ALPES SUIZOS</span>
+              <span class="pill pill-dark">id: r1-monaco · 633m</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇨🇭 Swiss Alpine GP — Matterhorn GlacierPass</h3>
+            <div class="loc-meta">Zermatt, Suiza · theme: "alps" · src/gp/Themes.tsx</div>
+            <p class="loc-desc">
+              Paso de alta montaña en los Alpes Suizos con picos del <strong>Matterhorn</strong> nevados, <strong>Teleférico Alpino 3D</strong> cruzando sobre la pista, <strong>vacas suizas manchadas con cencerro dorado</strong>, chalets de madera, abetos nevados y banderas suizas a ambos lados del asfalto.
+            </p>
+            <div class="tag-row">
+              <span class="tag car-tag">🏎️ Car Engine Ready</span>
+              <span class="tag marble-tag">🔮 Marble Engine Ready</span>
+              <span class="tag">Teleférico 3D</span>
+              <span class="tag">Vacas Suizas + Chalets</span>
+              <span class="tag">Muro F1 0.58m</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- 2. TOKYO SHIBUYA (r5-monza) -->
+        <article class="loc-card" data-season="s3">
+          <div class="loc-thumb">
+            <img src="/assets/tokyo-scenery.jpg" alt="Tokyo Grand Prix Shibuya Neon Expressway" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-yellow">🇯🇵 S3 · ROUND 1 · TOKIO NEÓN</span>
+              <span class="pill pill-dark">id: r5-monza · 635m</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇯🇵 Tokyo GP — Shibuya Neon Expressway</h3>
+            <div class="loc-meta">Tokio, Japón · theme: "tokyo" · src/gp/Themes.tsx</div>
+            <p class="loc-desc">
+              Autopista nocturna Wangan y cruce de Shibuya rodeada de <strong>rascacielos cyberpunk iluminados</strong>, <strong>arcos Torii gigantes sobre el asfalto</strong>, pagodas japonesas tradicionales, cerezos Sakura y carteles luminosos kanji.
+            </p>
+            <div class="tag-row">
+              <span class="tag car-tag">🏎️ Car Engine Ready</span>
+              <span class="tag marble-tag">🔮 Marble Engine Ready</span>
+              <span class="tag">Arcos Torii 3D</span>
+              <span class="tag">Rascacielos Shibuya</span>
+              <span class="tag">Cerezos Sakura</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- 3. CAIRO GIZA PYRAMIDS (r2-silverstone) -->
+        <article class="loc-card" data-season="s3">
+          <div class="loc-thumb">
+            <img src="/assets/loc-cairo.jpg" alt="Egyptian Grand Prix Giza Pyramids" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-cyan">🇪🇬 S3 · ROUND 3 · EL CAIRO</span>
+              <span class="pill pill-dark">id: r2-silverstone · 631m</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇪🇬 Egyptian GP — Giza Pyramid Dunes</h3>
+            <div class="loc-meta">El Cairo, Egipto · theme: "cairo" · src/gp/Themes.tsx</div>
+            <p class="loc-desc">
+              Circuito desértico monumental entre las <strong>Grandes Pirámides de Giza</strong>, la <strong>Gran Esfinge 3D</strong>, obeliscos con jeroglíficos dorados, portales de templos faraónicos con antorchas de fuego y oasis de palmeras.
+            </p>
+            <div class="tag-row">
+              <span class="tag car-tag">🏎️ Car Engine Ready</span>
+              <span class="tag marble-tag">🔮 Marble Engine Ready</span>
+              <span class="tag">Pirámides de Giza</span>
+              <span class="tag">Gran Esfinge 3D</span>
+              <span class="tag">Obeliscos &amp; Antorchas</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- 4. SYDNEY HARBOUR (r3-spa) -->
+        <article class="loc-card" data-season="s3">
+          <div class="loc-thumb">
+            <img src="/assets/loc-sydney.jpg" alt="Australian Grand Prix Sydney Harbour Bridge" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-cyan">🇦🇺 S3 · ROUND 4 · SÍDNEY</span>
+              <span class="pill pill-dark">id: r3-spa · 629m</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇦🇺 Australian GP — Sydney Harbour Bridge</h3>
+            <div class="loc-meta">Sídney, Australia · theme: "sydney" · src/gp/Themes.tsx</div>
+            <p class="loc-desc">
+              Trazado costero al atardecer con las velas blancas de la <strong>Ópera de Sídney 3D</strong>, el gran arco de acero del <strong>Sydney Harbour Bridge</strong>, rascacielos de Circular Quay, faros costeros y veleros en la bahía.
+            </p>
+            <div class="tag-row">
+              <span class="tag car-tag">🏎️ Car Engine Ready</span>
+              <span class="tag marble-tag">🔮 Marble Engine Ready</span>
+              <span class="tag">Sydney Opera House</span>
+              <span class="tag">Harbour Bridge</span>
+              <span class="tag">Veleros &amp; Bahía</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- 5. NEW YORK TIMES SQUARE (r4-suzuka) -->
+        <article class="loc-card" data-season="s3">
+          <div class="loc-thumb">
+            <img src="/assets/loc-newyork.jpg" alt="New York Grand Prix Times Square Finale" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-cyan">🇺🇸 S3 · ROUND 5 · NUEVA YORK</span>
+              <span class="pill pill-dark">id: r4-suzuka · 632m</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇺🇸 New York GP — Times Square Finale</h3>
+            <div class="loc-meta">Nueva York, EE.UU. · theme: "newyork" · src/gp/Themes.tsx</div>
+            <p class="loc-desc">
+              Gran final urbana entre cañones de rascacielos de Manhattan con la <strong>Estatua de la Libertad 3D</strong> e isla iluminada, aguja Art-Deco del <strong>Empire State</strong>, pantallas gigantes de Broadway y puentes de acero sobre el Hudson.
+            </p>
+            <div class="tag-row">
+              <span class="tag car-tag">🏎️ Car Engine Ready</span>
+              <span class="tag marble-tag">🔮 Marble Engine Ready</span>
+              <span class="tag">Estatua de la Libertad</span>
+              <span class="tag">Empire State &amp; Broadway</span>
+              <span class="tag">Puente Brooklyn</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- 6. MONZA (Classic S1) -->
+        <article class="loc-card" data-season="s1">
+          <div class="loc-thumb">
+            <img src="/assets/r5-monza.jpg" alt="Monza Temple of Speed" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-dark">🇮🇹 S1 · ROUND 1 · MONZA</span>
+              <span class="pill pill-dark">5.793 km GeoJSON</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇮🇹 Italian GP — Autodromo Nazionale Monza</h3>
+            <div class="loc-meta">Monza, Italia · Season 1 Classic GP</div>
+            <p class="loc-desc">
+              El Templo de la Velocidad: Curva Grande, variante Ascari, embudo del Vórtice y la mítica Parabolica peraltada a 28°.
+            </p>
+            <div class="tag-row">
+              <span class="tag marble-tag">🔮 Season 1 Published</span>
+              <span class="tag">Parabolica 28°</span>
+              <span class="tag">The Vortex</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- 7. MONACO (Classic S1) -->
+        <article class="loc-card" data-season="s1">
+          <div class="loc-thumb">
+            <img src="/assets/r1-monaco.jpg" alt="Circuit de Monaco" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-dark">🇲🇨 S1 · ROUND 2 · MÓNACO</span>
+              <span class="pill pill-dark">3.337 km GeoJSON</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇲🇨 Monaco GP — Circuit de Monaco</h3>
+            <div class="loc-meta">Monte Carlo, Mónaco · Season 1 Classic GP</div>
+            <p class="loc-desc">
+              Trazado técnico por el puerto de Montecarlo, horquilla de Loews con tubos de neón, caída de 1.1m y Turntable en La Rascasse.
+            </p>
+            <div class="tag-row">
+              <span class="tag marble-tag">🔮 Season 1 Published</span>
+              <span class="tag">Túnel de Neón</span>
+              <span class="tag">The Whirlwind</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- 8. SILVERSTONE (Classic S1) -->
+        <article class="loc-card" data-season="s1">
+          <div class="loc-thumb">
+            <img src="/assets/r2-silverstone.jpg" alt="Silverstone Circuit" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-dark">🇬🇧 S1 · ROUND 3 · SILVERSTONE</span>
+              <span class="pill pill-dark">5.891 km GeoJSON</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇬🇧 British GP — Silverstone Circuit</h3>
+            <div class="loc-meta">Northamptonshire, Reino Unido · Season 1 Classic GP</div>
+            <p class="loc-desc">
+              Curvas enlazadas de alta velocidad en Maggotts y Becketts hacia la recta Hangar con Chain Lift y Vortex.
+            </p>
+            <div class="tag-row">
+              <span class="tag marble-tag">🔮 Season 1 Published</span>
+              <span class="tag">Maggotts-Becketts</span>
+              <span class="tag">Chain Lift</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- 9. SPA-FRANCORCHAMPS (Classic S1) -->
+        <article class="loc-card" data-season="s1">
+          <div class="loc-thumb">
+            <img src="/assets/r3-spa.jpg" alt="Spa-Francorchamps" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-dark">🇧🇪 S1 · ROUND 4 · SPA</span>
+              <span class="pill pill-dark">7.004 km GeoJSON</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇧🇪 Belgian GP — Spa-Francorchamps</h3>
+            <div class="loc-meta">Stavelot, Bélgica · Season 1 Classic GP</div>
+            <p class="loc-desc">
+              Desnivel masivo en las Ardenas con caída vertical en Eau Rouge, salto Big Air en la recta Kemmel y bloques Pusher.
+            </p>
+            <div class="tag-row">
+              <span class="tag marble-tag">🔮 Season 1 Published</span>
+              <span class="tag">Eau Rouge Drop</span>
+              <span class="tag">Kemmel Big Air</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- 10. SUZUKA (Classic S1) -->
+        <article class="loc-card" data-season="s1">
+          <div class="loc-thumb">
+            <img src="/assets/r4-suzuka.jpg" alt="Suzuka Circuit" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-dark">🇯🇵 S1 · ROUND 5 · SUZUKA</span>
+              <span class="pill pill-dark">5.807 km GeoJSON</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇯🇵 Japanese GP — Suzuka Figure-8</h3>
+            <div class="loc-meta">Mie, Japón · Season 1 Classic GP</div>
+            <p class="loc-desc">
+              El único circuito en ocho del calendario: las Eses con Rumble Strip, puente cruzado y cilindros de tracción a 10 u/s.
+            </p>
+            <div class="tag-row">
+              <span class="tag marble-tag">🔮 Season 1 Published</span>
+              <span class="tag">Figure-8 Crossover</span>
+              <span class="tag">The Rollers</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. OBSTACLES & TRACK FEATURES BY ENGINE -->
+  <section id="obstacles">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow red">Catálogo de Elementos de Pista</span>
+          <h2 class="section-title">Obstáculos y Sistemas por Motor</h2>
+        </div>
+        <div class="filter-tabs">
+          <button class="filter-btn active" onclick="filterObstacles('all', this)">Todos (14)</button>
+          <button class="filter-btn" onclick="filterObstacles('car', this)">🏎️ Exclusivos Motor Coches</button>
+          <button class="filter-btn" onclick="filterObstacles('marble', this)">🔮 Exclusivos Motor Canicas</button>
+          <button class="filter-btn" onclick="filterObstacles('both', this)">⚡ Compartidos (Ambos Motores)</button>
+        </div>
+      </div>
+
+      <!-- Visual Highlight Cards for Key Systems -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div class="hero-card">
+          <img src="/assets/obs-checkpoint.jpg" alt="Don't Be Last Laser Checkpoint Gate" loading="lazy" />
+          <div class="hero-card-badge"><span>AMBOS MOTORES</span> · Puerta Láser "Don't Be Last!"</div>
+        </div>
+        <div class="hero-card">
+          <img src="/assets/obs-drs.jpg" alt="DRS Attack Zone Car Engine" loading="lazy" />
+          <div class="hero-card-badge"><span>MOTOR COCHES</span> · DRS Attack Zone (+2.5 m/s)</div>
+        </div>
+        <div class="hero-card">
+          <img src="/assets/obs-vortex.jpg" alt="The Vortex Marble Funnel" loading="lazy" />
+          <div class="hero-card-badge"><span>MOTOR CANICAS</span> · The Vortex (Embudo Hiperbólico)</div>
+        </div>
+        <div class="hero-card">
+          <img src="/assets/obs-chainlift.jpg" alt="Chain Lift Escalator" loading="lazy" />
+          <div class="hero-card-badge"><span>MOTOR CANICAS</span> · Chain Lift &amp; Escalera Mecánica</div>
+        </div>
+      </div>
+
+      <div class="obs-grid" id="obstacles-container">
+        <!-- SHARED -->
+        <div class="obs-card" data-engine="both">
+          <div class="obs-top">
+            <span class="obs-title">🚨 Puertas "Don't Be Last!"</span>
+            <span class="obs-eng-badge both">Ambos Motores</span>
+          </div>
+          <p class="obs-desc">
+            3 pórticos láser por carrera (Checkpoints 1, 2 y 3). El semáforo pasa de verde (<code>#00e676</code>) a rojo (<code>#ff1744</code>) en cuanto cruza el cupo de supervivientes, eliminando al instante a los últimos clasificados.
+          </p>
+          <div class="obs-file">scripts/season.mjs · src/gp/Scene.tsx</div>
+        </div>
+
+        <div class="obs-card" data-engine="both">
+          <div class="obs-top">
+            <span class="obs-title">⚡ DRS / Speed Booster</span>
+            <span class="obs-eng-badge both">Ambos Motores</span>
+          </div>
+          <p class="obs-desc">
+            Bandas chevron luminosas en las rectas principales. En Coches actúa como <strong>Zona de Ataque DRS</strong> progresiva (<code>+2.2 m/s</code>); en Canicas lanza la esfera hasta <code>19 m/s</code>.
+          </p>
+          <div class="obs-file">src/gp/obstacles/booster.js</div>
+        </div>
+
+        <div class="obs-card" data-engine="both">
+          <div class="obs-top">
+            <span class="obs-title">🌬️ Rebufo Aerodinámico (Slipstream)</span>
+            <span class="obs-eng-badge both">Ambos Motores</span>
+          </div>
+          <p class="obs-desc">
+            Succión aerodinámica detrás de los rivales a menos de 16m, permitiendo preparar adelantamientos limpiamente en recta antes de la frenada.
+          </p>
+          <div class="obs-file">scripts/season.mjs</div>
+        </div>
+
+        <!-- CAR ENGINE EXCLUSIVE -->
+        <div class="obs-card" data-engine="car">
+          <div class="obs-top">
+            <span class="obs-title">🛑 Zonas de Frenada &amp; Luces FIA</span>
+            <span class="obs-eng-badge car">Motor Coches</span>
+          </div>
+          <p class="obs-desc">
+            Pasada hacia atrás de desaceleración carbon-ceramic (<code>11.5 m/s²</code>) antes de cada curva cerrada. Enciende las luces traseras FIA (<code>emissiveIntensity = 11.5</code>) e inclina el morro hacia abajo.
+          </p>
+          <div class="obs-file">scripts/car-engine.mjs · src/gp/Scene.tsx</div>
+        </div>
+
+        <div class="obs-card" data-engine="car">
+          <div class="obs-top">
+            <span class="obs-title">🎯 Trazada Óptima Macro (Spline)</span>
+            <span class="obs-eng-badge car">Motor Coches</span>
+          </div>
+          <p class="obs-desc">
+            Trayectoria continua <strong>Exterior → Ápice Interior → Exterior</strong> filtrada con 32 pasadas gaussianas. Si hay un rival delante en frenada, el coche se tira al interior (<em>divebomb</em>).
+          </p>
+          <div class="obs-file">scripts/car-engine.mjs</div>
+        </div>
+
+        <div class="obs-card" data-engine="car">
+          <div class="obs-top">
+            <span class="obs-title">🛞 Dirección Ackermann &amp; Chasis OBB</span>
+            <span class="obs-eng-badge car">Motor Coches</span>
+          </div>
+          <p class="obs-desc">
+            Giro real de las ruedas delanteras (<code>steerYaw</code>) al tomar curvas y cambiar de carril + solver OBB 3D (<code>1.54m × 0.88m</code>) con 4 iteraciones por substep para toques laterales realistas.
+          </p>
+          <div class="obs-file">scripts/car-engine.mjs · src/gp/Scene.tsx</div>
+        </div>
+
+        <!-- MARBLE ENGINE EXCLUSIVE -->
+        <div class="obs-card" data-engine="marble">
+          <div class="obs-top">
+            <span class="obs-title">🌪️ The Vortex (Embudo)</span>
+            <span class="obs-eng-badge marble">Motor Canicas</span>
+          </div>
+          <p class="obs-desc">
+            Cuenco hiperbólico ahumado donde las canicas entran tangencialmente a toda velocidad, orbitando en espiral antes de caer por la garganta central hacia el tramo inferior.
+          </p>
+          <div class="obs-file">src/gp/obstacles/vortex.js</div>
+        </div>
+
+        <div class="obs-card" data-engine="marble">
+          <div class="obs-top">
+            <span class="obs-title">🔨 The Hammer (Péndulo)</span>
+            <span class="obs-eng-badge marble">Motor Canicas</span>
+          </div>
+          <p class="obs-desc">
+            Hacha pendular cinemática que gira 360° sobre una mitad de la pista, sincronizada con la llegada del pelotón para impulsar o frenar a los líderes.
+          </p>
+          <div class="obs-file">src/gp/obstacles/hammer.js</div>
+        </div>
+
+        <div class="obs-card" data-engine="marble">
+          <div class="obs-top">
+            <span class="obs-title">⚙️ The Whirlwind (Rotor 3 Aspas)</span>
+            <span class="obs-eng-badge marble">Motor Canicas</span>
+          </div>
+          <p class="obs-desc">
+            Molino horizontal de 3 aspas curvas que recoge canicas en grupos y las catapulta cruzadas al salir del bolsillo.
+          </p>
+          <div class="obs-file">src/gp/obstacles/spinner.js</div>
+        </div>
+
+        <div class="obs-card" data-engine="marble">
+          <div class="obs-top">
+            <span class="obs-title">💿 The Turntable (Disco)</span>
+            <span class="obs-eng-badge marble">Motor Canicas</span>
+          </div>
+          <p class="obs-desc">
+            Disco giratorio a ras de suelo con 6 nervios de goma que desvía a las canicas lateralmente hacia las bandas o las zonas rojas DQ.
+          </p>
+          <div class="obs-file">src/gp/obstacles/turntable.js</div>
+        </div>
+
+        <div class="obs-card" data-engine="marble">
+          <div class="obs-top">
+            <span class="obs-title">🔩 The Rollers &amp; The Pusher</span>
+            <span class="obs-eng-badge marble">Motor Canicas</span>
+          </div>
+          <p class="obs-desc">
+            Tres cilindros moleteados en el suelo girando a 7, 4.5 y 10 u/s + pistones transversales que emboscan la trazada.
+          </p>
+          <div class="obs-file">src/gp/obstacles/rollers.js · pusher.js</div>
+        </div>
+
+        <div class="obs-card" data-engine="marble">
+          <div class="obs-top">
+            <span class="obs-title">📍 Peg Forest &amp; Splitters</span>
+            <span class="obs-eng-badge marble">Motor Canicas</span>
+          </div>
+          <p class="obs-desc">
+            Tableros Plinko de pivotes cromados escalonados y muros divisores en Y que dividen el pelotón en dos canales (desactivados en modo Coches para dejar los 4.2m libres).
+          </p>
+          <div class="obs-file">src/gp/obstacles/bumpers.js · splitter.js</div>
+        </div>
+
+        <div class="obs-card" data-engine="marble">
+          <div class="obs-top">
+            <span class="obs-title">🪜 The Stairway &amp; Chain Lift</span>
+            <span class="obs-eng-badge marble">Motor Canicas</span>
+          </div>
+          <p class="obs-desc">
+            Doble bahía de escaleras mecánicas al final de la vuelta que sube las canicas de regreso a la parrilla superior, más cintas transportadoras intermedias.
+          </p>
+          <div class="obs-file">src/gp/stair.js · src/gp/obstacles/lift.js</div>
+        </div>
+
+        <div class="obs-card" data-engine="marble">
+          <div class="obs-top">
+            <span class="obs-title">🟥 Red DQ Zones &amp; Big Air</span>
+            <span class="obs-eng-badge marble">Motor Canicas</span>
+          </div>
+          <p class="obs-desc">
+            Sensores rojos de descalificación junto a las máquinas más peligrosas y rampas de salto (The Crest / Big Air) con vuelo parabólico.
+          </p>
+          <div class="obs-file">scripts/season.mjs · src/gp/obstacles/jump.js</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. THE 20 CARS & MARBLES ROSTER -->
+  <section id="roster">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Parrilla Oficial (20 Países · 10 Escuderías)</span>
+          <h2 class="section-title">Los 20 Coches y Canicas Creados</h2>
+        </div>
+        <div class="filter-tabs">
+          <button class="filter-btn active" onclick="filterRoster('all', this)">Todos (20)</button>
+          <button class="filter-btn" onclick="filterRoster('F1', this)">🏎️ Clase F1 (Open-Wheel)</button>
+          <button class="filter-btn" onclick="filterRoster('JET', this)">🚀 Clase JET (Le Mans Hypercar)</button>
+          <button class="filter-btn" onclick="filterRoster('GT', this)">🏁 Clase GT (GT3 Touring)</button>
+          <button class="filter-btn" onclick="filterRoster('BGY', this)">🛡️ Clase BGY (Raid Buggy)</button>
+        </div>
+      </div>
+
+      <!-- Visual Banner of the 4 Car Classes & 20 Marbles -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px;">
+        <div class="hero-card" style="aspect-ratio: 16/8;">
+          <img src="/assets/car-classes.jpg" alt="4 Clases de Coches 3D" loading="lazy" />
+          <div class="hero-card-badge"><span>4 CLASES DE CHASIS 3D</span> · F1 Open-Wheel · Le Mans Hypercar · GT3 · Street/Raid</div>
+        </div>
+        <div class="hero-card" style="aspect-ratio: 16/8;">
+          <img src="/assets/grid.jpg" alt="20 Canicas Nacionales en Parrilla" loading="lazy" />
+          <div class="hero-card-badge"><span>20 CANICAS ART-GLASS</span> · Esferas con Bandera Nacional y Remolinos de Cristal</div>
+        </div>
+      </div>
+
+      <div class="roster-grid" id="roster-container"></div>
+    </div>
+  </section>
+
+  <!-- 5. YOUTUBE BROADCASTS -->
+  <section id="broadcasts">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow red">Emisiones en YouTube (@MarbleFormula)</span>
+          <h2 class="section-title">Campeonatos Completos Publicados</h2>
+        </div>
+        <p class="section-sub">
+          Todos los vídeos largos y torneos "Don't Be Last!" renderizados en `/Users/eli/GoogleCloud` y subidos al canal oficial <strong>@MarbleFormula</strong>.
+        </p>
+      </div>
+
+      <div class="locations-grid">
+        <a href="https://youtu.be/AG_H16LbVyU" target="_blank" rel="noopener" class="loc-card">
+          <div class="loc-thumb">
+            <img src="/assets/loc-tokyo-marble.jpg" alt="Season 3 Part 1" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-yellow">SEASON 3 · PART 1</span>
+              <span class="pill pill-dark">13:24 FULL UNCUT</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇯🇵🇨🇭🇪🇬 Tokyo, Swiss Alps &amp; Cairo (Don't Be Last!)</h3>
+            <p class="loc-desc">Rondas 1–3 completas sin cortes: Shibuya Neon Expressway, Matterhorn Glacier y Pirámides de Giza.</p>
+          </div>
         </a>
-        <a class="btn-secondary" href="#preview" onclick="const v=document.getElementById('race-preview-video'); if(v){v.muted=false; v.play();}">
-          ▶ Watch Live Telemetry Clip
+
+        <a href="https://youtu.be/Syrkb20yo3A" target="_blank" rel="noopener" class="loc-card">
+          <div class="loc-thumb">
+            <img src="/assets/loc-sydney.jpg" alt="Season 3 Part 2 Finale" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-yellow">SEASON 3 · FINALE</span>
+              <span class="pill pill-dark">9:28 FULL UNCUT</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇦🇺🇺🇸🏆 Sydney, New York &amp; Trophy Gala</h3>
+            <p class="loc-desc">Rondas 4–5 completas (Sydney Harbour Bridge y Times Square) más la Gala de Trofeos 2027.</p>
+          </div>
+        </a>
+
+        <a href="https://youtu.be/WD_sAvtTwoc" target="_blank" rel="noopener" class="loc-card">
+          <div class="loc-thumb">
+            <img src="/assets/r1.jpg" alt="World Tour Part 1" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-cyan">WORLD TOUR · PART 1</span>
+              <span class="pill pill-dark">13:53 FULL UNCUT</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇺🇸🇧🇷🌴 Las Vegas, Brazil &amp; Miami</h3>
+            <p class="loc-desc">Season 2 Rondas 1–3 con Checkpoints "Don't Be Last!", cámaras inversas y adelantamientos en grupo.</p>
+          </div>
+        </a>
+
+        <a href="https://youtu.be/a4j2zaGG014" target="_blank" rel="noopener" class="loc-card">
+          <div class="loc-thumb">
+            <img src="/assets/r2.jpg" alt="World Tour Finale" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-cyan">WORLD TOUR · FINALE</span>
+              <span class="pill pill-dark">9:29 FULL UNCUT</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇳🇱🇦🇪🏆 Zandvoort, Abu Dhabi &amp; Gala</h3>
+            <p class="loc-desc">Season 2 Rondas 4–5 en Zandvoort y Yas Marina más ceremonia de entrega de trofeos.</p>
+          </div>
+        </a>
+
+        <a href="https://youtu.be/WbBebzJ6xi4" target="_blank" rel="noopener" class="loc-card">
+          <div class="loc-thumb">
+            <img src="/assets/r5-monza.jpg" alt="Classic GP Part 1" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-dark">CLASSIC GP · PART 1</span>
+              <span class="pill pill-dark">11:55 FULL UNCUT</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇮🇹🇲🇨🇬🇧 Monza, Monaco &amp; Silverstone</h3>
+            <p class="loc-desc">Season 1 Rondas 1–3 en los circuitos clásicos europeos con todas las máquinas activas.</p>
+          </div>
+        </a>
+
+        <a href="https://youtu.be/YFngc6rN7_c" target="_blank" rel="noopener" class="loc-card">
+          <div class="loc-thumb">
+            <img src="/assets/r4-suzuka.jpg" alt="Classic GP Finale" loading="lazy" />
+            <div class="loc-badges">
+              <span class="pill pill-dark">CLASSIC GP · FINALE</span>
+              <span class="pill pill-dark">8:31 FULL UNCUT</span>
+            </div>
+          </div>
+          <div class="loc-body">
+            <h3 class="loc-title">🇧🇪🇯🇵🏆 Spa, Suzuka &amp; Trophy Gala</h3>
+            <p class="loc-desc">Season 1 Rondas 4–5 (Eau Rouge y Suzuka en 8) con la Gala final de campeones.</p>
+          </div>
         </a>
       </div>
-
-      <div class="telemetry-strip">
-        <div class="stat-item">
-          <div class="stat-val">20<span>x</span></div>
-          <div class="stat-label">National Marbles</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-val">10</div>
-          <div class="stat-label">Constructor Teams</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-val">5<span> GP</span></div>
-          <div class="stat-label">Real F1 Outlines</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-val">4K<span> 60</span></div>
-          <div class="stat-label">Motion-Blurred Render</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-val">0<span>%</span></div>
-          <div class="stat-label">Scripted Outcomes</div>
-        </div>
-      </div>
     </div>
   </section>
 
-  <!-- Broadcast Preview Section -->
-  <section id="preview">
+  <!-- 6. CLI & PIPELINE CONTROL REFERENCE -->
+  <section id="pipeline" style="border-bottom: none;">
     <div class="container">
       <div class="section-head">
         <div>
-          <span class="eyebrow">Broadcast Feed</span>
-          <h2 class="section-title">Real Physics. Full TV Telemetry.</h2>
+          <span class="eyebrow cyan">Comandos de Producción</span>
+          <h2 class="section-title">Control del Generador de Vídeos y Web</h2>
         </div>
         <p class="section-sub">
-          Every race features an AI camera director with raycast sight-lines, live gap-to-leader timing tower, instant slow-motion DQ replays, and spatial glass-on-glass sound synthesis.
+          Todos los vídeos generados se guardan directamente en <code>/Users/eli/GoogleCloud</code> (montado con Google Cloud Storage <code>gs://elias-marmot-races</code>).
         </p>
       </div>
 
-      <div class="player-shell">
-        <div class="player-topbar">
-          <div class="player-topbar-left">
-            <span class="badge-round">ROUND 5 · MONZA</span>
-            <span>ITALIAN GRAND PRIX — LIVE BROADCAST CLIP</span>
-          </div>
-          <span style="color: var(--muted); font-family: 'JetBrains Mono', monospace;">4K UHD · 60 FPS</span>
-        </div>
-        <div class="player-video-wrap">
-          <video id="race-preview-video" src="/assets/preview-monza.mp4" poster="/assets/r5-monza.jpg" controls playsinline preload="metadata"></video>
-        </div>
-        <div class="player-footer">
-          <p>Unmute to hear the spatial audio engine: start-light ticks, crowd roar at lights-out, rolling physics, and glass-on-glass impacts.</p>
-          <a class="btn-yt" href="https://www.youtube.com/@MarbleFormula" target="_blank" rel="noopener">
-            <svg viewBox="0 0 24 24"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.6 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-            Full Season on @MarbleFormula
-          </a>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 5-Round Season Calendar -->
-  <section id="circuits">
-    <div class="container">
-      <div class="section-head">
-        <div>
-          <span class="eyebrow">The 2027 Calendar</span>
-          <h2 class="section-title">Five Legendary Formula 1 Circuits</h2>
-        </div>
-        <p class="section-sub">
-          Built directly from real GeoJSON circuit outlines, relaxed into 38°-banked half-pipes with an endless escalator stair between laps.
-        </p>
-      </div>
-
-      <div class="circuits-grid">
-        <!-- R1 Monaco -->
-        <article class="circuit-card">
-          <div class="circuit-thumb">
-            <img src="/assets/r1-monaco.jpg" alt="Monaco Grand Prix marble race" loading="lazy" />
-            <span class="circuit-round-pill">Round 1 · Monaco</span>
-            <span class="circuit-length-pill">3.337 km · 3 Laps</span>
-          </div>
-          <div class="circuit-body">
-            <div class="circuit-title-row">
-              <h3 class="circuit-title">🇲🇨 Monaco Grand Prix</h3>
-            </div>
-            <div class="circuit-sub">Circuit de Monaco · Monte Carlo</div>
-            <p class="circuit-desc">
-              Tight, technical, and unforgiving. The Harbour straight stacks the Whirlwind, the Hammer, a 1.1m Drop, and the Turntable back-to-back while neon-hooped tubes guard the hairpins.
-            </p>
-            <div class="obstacle-tags">
-              <span class="obstacle-tag">Big Air</span>
-              <span class="obstacle-tag">The Whirlwind</span>
-              <span class="obstacle-tag">The Hammer</span>
-              <span class="obstacle-tag">The Turntable</span>
-              <span class="obstacle-tag">Rumble Strip</span>
-            </div>
-          </div>
-        </article>
-
-        <!-- R2 Silverstone -->
-        <article class="circuit-card">
-          <div class="circuit-thumb">
-            <img src="/assets/r2-silverstone.jpg" alt="British Grand Prix at Silverstone marble race" loading="lazy" />
-            <span class="circuit-round-pill">Round 2 · Great Britain</span>
-            <span class="circuit-length-pill">5.891 km · 3 Laps</span>
-          </div>
-          <div class="circuit-body">
-            <div class="circuit-title-row">
-              <h3 class="circuit-title">🇬🇧 British Grand Prix</h3>
-            </div>
-            <div class="circuit-sub">Silverstone Circuit · Northamptonshire</div>
-            <p class="circuit-desc">
-              Fast, sweeping curves through Maggotts and Becketts into the Hangar Straight, where the Vortex wishing-well drain and the Whirlwind rotor sit waiting for the pack.
-            </p>
-            <div class="obstacle-tags">
-              <span class="obstacle-tag">The Vortex</span>
-              <span class="obstacle-tag">Big Air</span>
-              <span class="obstacle-tag">The Hammer</span>
-              <span class="obstacle-tag">The Whirlwind</span>
-              <span class="obstacle-tag">Chain Lift</span>
-            </div>
-          </div>
-        </article>
-
-        <!-- R3 Spa -->
-        <article class="circuit-card">
-          <div class="circuit-thumb">
-            <img src="/assets/r3-spa.jpg" alt="Belgian Grand Prix at Spa-Francorchamps marble race" loading="lazy" />
-            <span class="circuit-round-pill">Round 3 · Belgium</span>
-            <span class="circuit-length-pill">7.004 km · 3 Laps</span>
-          </div>
-          <div class="circuit-body">
-            <div class="circuit-title-row">
-              <h3 class="circuit-title">🇧🇪 Belgian Grand Prix</h3>
-            </div>
-            <div class="circuit-sub">Circuit de Spa-Francorchamps · Stavelot</div>
-            <p class="circuit-desc">
-              Massive Ardennes elevation changes: a sheer drop at Eau Rouge, a high-speed kicker on the Kemmel Straight, and a late-lap Pusher block timed to ambush the leader.
-            </p>
-            <div class="obstacle-tags">
-              <span class="obstacle-tag">Eau Rouge Drop</span>
-              <span class="obstacle-tag">The Turntable</span>
-              <span class="obstacle-tag">Big Air</span>
-              <span class="obstacle-tag">The Hammer</span>
-              <span class="obstacle-tag">The Pusher</span>
-            </div>
-          </div>
-        </article>
-
-        <!-- R4 Suzuka -->
-        <article class="circuit-card">
-          <div class="circuit-thumb">
-            <img src="/assets/r4-suzuka.jpg" alt="Japanese Grand Prix at Suzuka marble race" loading="lazy" />
-            <span class="circuit-round-pill">Round 4 · Japan</span>
-            <span class="circuit-length-pill">5.807 km · 3 Laps</span>
-          </div>
-          <div class="circuit-body">
-            <div class="circuit-title-row">
-              <h3 class="circuit-title">🇯🇵 Japanese Grand Prix</h3>
-            </div>
-            <div class="circuit-sub">Suzuka International Racing Course · Mie</div>
-            <p class="circuit-desc">
-              The only figure-of-eight circuit on the calendar. Marbles hop through the Esses rumble strip, cross over the bridge, and hit the knurled 10 u/s Rollers on the back straight.
-            </p>
-            <div class="obstacle-tags">
-              <span class="obstacle-tag">Rumble Strip</span>
-              <span class="obstacle-tag">The Hammer</span>
-              <span class="obstacle-tag">The Turntable</span>
-              <span class="obstacle-tag">The Rollers</span>
-              <span class="obstacle-tag">Big Air</span>
-            </div>
-          </div>
-        </article>
-
-        <!-- R5 Monza -->
-        <article class="circuit-card">
-          <div class="circuit-thumb">
-            <img src="/assets/r5-monza.jpg" alt="Italian Grand Prix at Monza marble race" loading="lazy" />
-            <span class="circuit-round-pill">Round 5 · Finale · Italy</span>
-            <span class="circuit-length-pill">5.793 km · Championship Finale</span>
-          </div>
-          <div class="circuit-body">
-            <div class="circuit-title-row">
-              <h3 class="circuit-title">🇮🇹 Italian Grand Prix</h3>
-            </div>
-            <div class="circuit-sub">Autodromo Nazionale Monza · Temple of Speed</div>
-            <p class="circuit-desc">
-              The Championship Finale. Zero dead straights keep all 20 marbles locked in a slipstream pack through Curva Grande, the Vortex bowl, Split Lanes, and the 180° banked Parabolica.
-            </p>
-            <div class="obstacle-tags">
-              <span class="obstacle-tag">The Vortex</span>
-              <span class="obstacle-tag">Split Lanes</span>
-              <span class="obstacle-tag">The Drop</span>
-              <span class="obstacle-tag">The Hammer</span>
-              <span class="obstacle-tag">The Rollers</span>
-            </div>
-          </div>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <!-- Track Machines & Obstacles -->
-  <section id="machines">
-    <div class="container">
-      <div class="section-head">
-        <div>
-          <span class="eyebrow">Obstacle Catalog</span>
-          <h2 class="section-title">Engineered for Maximum Chaos</h2>
-        </div>
-        <p class="section-sub">
-          Every obstacle obeys two strict physical laws: nothing on the centre line, and no 1–2 marble clog gaps. Every impact is a high-speed glancing blow.
-        </p>
-      </div>
-
-      <div class="obstacles-grid">
-        <div class="obs-card danger-max">
-          <div class="obs-head">
-            <span class="obs-name">The Vortex</span>
-            <span class="obs-badge">Funnel Drain</span>
-          </div>
-          <p class="obs-desc">
-            A smoked hyperbolic wishing-well bowl where marbles enter tangentially at full speed, orbiting high on the rim and crashing into slower rivals before dropping through the throat.
-          </p>
-          <div class="danger-row">
-            <span>Danger</span>
-            <div class="danger-pips"><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span></div>
-          </div>
+      <div class="cli-grid">
+        <div class="cli-card">
+          <h3>1. Torneo Completo 4K UHD Coches ("Don't Be Last!")</h3>
+          <p style="font-size: 0.85rem; color: var(--muted);">Genera los 4 Heats Clasificatorios (6 coches) + Gran Final (10 coches) en 4K60 UHD, los une y los sube a YouTube:</p>
+          <pre class="cli-pre">zsh scripts/render-tcr-overnight.sh</pre>
         </div>
 
-        <div class="obs-card danger-max">
-          <div class="obs-head">
-            <span class="obs-name">The Hammer</span>
-            <span class="obs-badge">Pendulum Axe</span>
-          </div>
-          <p class="obs-desc">
-            A heavy kinematic pendulum spinning full circles over one half of the track. Catch the downswing to get launched ahead — or catch the upswing and get smashed backward.
-          </p>
-          <div class="danger-row">
-            <span>Danger</span>
-            <div class="danger-pips"><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span><span class="pip"></span></div>
-          </div>
+        <div class="cli-card">
+          <h3>2. Simular y Renderizar 1 Circuito en Modo Coches (4K UHD)</h3>
+          <p style="font-size: 0.85rem; color: var(--muted);">Simula la física de motorsport con 3 Checkpoints y renderiza en 3840×2160 en GoogleCloud:</p>
+          <pre class="cli-pre">GP_CARS=1 GP_LAPS=1 GP_HEAT=1 GP_ONLY=r1-monaco node scripts/season.mjs
+npx remotion bundle src/index.ts --out-dir out/bundle-cars
+npx remotion render out/bundle-cars GP-r1-monaco-4k \
+  /Users/eli/GoogleCloud/alps-4k.mp4 --props='{"dpr":1}' --concurrency=4</pre>
         </div>
 
-        <div class="obs-card danger-max">
-          <div class="obs-head">
-            <span class="obs-name">The Whirlwind</span>
-            <span class="obs-badge">3-Blade Rotor</span>
-          </div>
-          <p class="obs-desc">
-            A hooked three-blade rotor reaching within 0.25 units of the walls. It scoops marbles up in batches, carries them round its pocket, and flings them out across the track.
-          </p>
-          <div class="danger-row">
-            <span>Danger</span>
-            <div class="danger-pips"><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span><span class="pip"></span></div>
-          </div>
+        <div class="cli-card">
+          <h3>3. Simular y Renderizar en Modo Canicas (20 Canicas · 2 Vueltas)</h3>
+          <p style="font-size: 0.85rem; color: var(--muted);">Ejecuta el motor clásico de canicas con las 24–31 máquinas mecánicas y escalera mecánica:</p>
+          <pre class="cli-pre">GP_ONLY=r2-silverstone node scripts/season.mjs
+npx remotion render GP-r2-silverstone-4k \
+  /Users/eli/GoogleCloud/cairo-marbles-4k.mp4 --props='{"dpr":1}'</pre>
         </div>
 
-        <div class="obs-card">
-          <div class="obs-head">
-            <span class="obs-name">The Turntable</span>
-            <span class="obs-badge">Ribbed Disc</span>
-          </div>
-          <p class="obs-desc">
-            A spinning floor disc armed with six raised rubber ribs and a domed hub that hurls marbles sideways into each other — and toward the red disqualification wall pads.
-          </p>
-          <div class="danger-row">
-            <span>Danger</span>
-            <div class="danger-pips"><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span><span class="pip"></span><span class="pip"></span></div>
-          </div>
+        <div class="cli-card">
+          <h3>4. Desplegar Web en marbleformula.com &amp; Subir a YouTube</h3>
+          <p style="font-size: 0.85rem; color: var(--muted);">Publica esta interfaz en Cloudflare Workers (<code>marbleformula.com</code>) o sube un vídeo a YouTube:</p>
+          <pre class="cli-pre">npm run deploy
+node scripts/upload-youtube.mjs \
+  --file /Users/eli/GoogleCloud/tcr-alps-tournament-4k.mp4 \
+  --round tcr-alps-tournament-4k --force</pre>
         </div>
-
-        <div class="obs-card">
-          <div class="obs-head">
-            <span class="obs-name">The Rollers</span>
-            <span class="obs-badge">Drive Cylinders</span>
-          </div>
-          <p class="obs-desc">
-            Three knurled steel cylinders set flush in the floor, spinning forward at 7, 4.5, and 10 u/s. They kick packs apart and launch leaders without a single wall hit.
-          </p>
-          <div class="danger-row">
-            <span>Danger</span>
-            <div class="danger-pips"><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span><span class="pip"></span><span class="pip"></span></div>
-          </div>
-        </div>
-
-        <div class="obs-card danger-max">
-          <div class="obs-head">
-            <span class="obs-name">Red DQ Zones</span>
-            <span class="obs-badge">Instant Elimination</span>
-          </div>
-          <p class="obs-desc">
-            Glowing red sensor pads at the foot of the wall beside heavy machines. Any marble slammed against the wall over a pad vanishes in a slow-motion replay and scores zero.
-          </p>
-          <div class="danger-row">
-            <span>Danger</span>
-            <div class="danger-pips"><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span><span class="pip on"></span></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 10 Constructor Teams & 20 National Marbles -->
-  <section id="teams">
-    <div class="container">
-      <div class="section-head">
-        <div>
-          <span class="eyebrow">The 2027 Grid</span>
-          <h2 class="section-title">10 Teams · 20 Nations · Pick Your Country</h2>
-        </div>
-        <p class="section-sub">
-          Two national marbles per constructor team competing for both the Drivers' and Constructors' Championships. Click a team to back them for the season.
-        </p>
-      </div>
-
-      <div class="teams-showcase">
-        <div class="showcase-img-card">
-          <img src="/assets/grid.jpg" alt="20 national flag marbles lined up on the starting grid" loading="lazy" />
-        </div>
-        <div class="showcase-img-card">
-          <img src="/assets/showroom.jpg" alt="Atlantic Union team showroom presentation" loading="lazy" />
-        </div>
-      </div>
-
-      <div class="teams-grid">
-        <div class="team-card" onclick="this.classList.toggle('selected')">
-          <div class="team-stripe" style="background: linear-gradient(90deg, #ff7f00 65%, #3a3d46 100%);"></div>
-          <div class="team-top">
-            <span class="team-name">Benelux Racing</span>
-            <span class="team-abbr">BNX</span>
-          </div>
-          <p class="team-story">“Orange fire, Belgian precision.”</p>
-          <div class="team-drivers">
-            <span class="driver-pill">🇳🇱 Netherlands</span>
-            <span class="driver-pill">🇧🇪 Belgium</span>
-          </div>
-        </div>
-
-        <div class="team-card" onclick="this.classList.toggle('selected')">
-          <div class="team-stripe" style="background: linear-gradient(90deg, #c0c4cc 65%, #dd0000 100%);"></div>
-          <div class="team-top">
-            <span class="team-name">Autobahn Motorsport</span>
-            <span class="team-abbr">ABN</span>
-          </div>
-          <p class="team-story">“Engineered to the last micron.”</p>
-          <div class="team-drivers">
-            <span class="driver-pill">🇩🇪 Germany</span>
-            <span class="driver-pill">🇦🇹 Austria</span>
-          </div>
-        </div>
-
-        <div class="team-card" onclick="this.classList.toggle('selected')">
-          <div class="team-stripe" style="background: linear-gradient(90deg, #1f6fd1 65%, #ffffff 100%);"></div>
-          <div class="team-top">
-            <span class="team-name">Scuderia Azzurra</span>
-            <span class="team-abbr">AZZ</span>
-          </div>
-          <p class="team-story">“Born in Monza, raised in Buenos Aires.”</p>
-          <div class="team-drivers">
-            <span class="driver-pill">🇮🇹 Italy</span>
-            <span class="driver-pill">🇦🇷 Argentina</span>
-          </div>
-        </div>
-
-        <div class="team-card" onclick="this.classList.toggle('selected')">
-          <div class="team-stripe" style="background: linear-gradient(90deg, #ffc400 65%, #c60b1e 100%);"></div>
-          <div class="team-top">
-            <span class="team-name">Iberia Sol</span>
-            <span class="team-abbr">IBS</span>
-          </div>
-          <p class="team-story">“Sunshine, flair and late braking.”</p>
-          <div class="team-drivers">
-            <span class="driver-pill">🇪🇸 Spain</span>
-            <span class="driver-pill">🇲🇽 Mexico</span>
-          </div>
-        </div>
-
-        <div class="team-card" onclick="this.classList.toggle('selected')">
-          <div class="team-stripe" style="background: linear-gradient(90deg, #0055a4 65%, #ef4135 100%);"></div>
-          <div class="team-top">
-            <span class="team-name">Bleu Atlantique</span>
-            <span class="team-abbr">BLA</span>
-          </div>
-          <p class="team-story">“Two shores, one blue.”</p>
-          <div class="team-drivers">
-            <span class="driver-pill">🇫🇷 France</span>
-            <span class="driver-pill">🇨🇦 Canada</span>
-          </div>
-        </div>
-
-        <div class="team-card" onclick="this.classList.toggle('selected')">
-          <div class="team-stripe" style="background: linear-gradient(90deg, #012169 65%, #b22234 100%);"></div>
-          <div class="team-top">
-            <span class="team-name">Atlantic Union</span>
-            <span class="team-abbr">ATU</span>
-          </div>
-          <p class="team-story">“The old rivals, finally team-mates.”</p>
-          <div class="team-drivers">
-            <span class="driver-pill">🇬🇧 Britain</span>
-            <span class="driver-pill">🇺🇸 USA</span>
-          </div>
-        </div>
-
-        <div class="team-card" onclick="this.classList.toggle('selected')">
-          <div class="team-stripe" style="background: linear-gradient(90deg, #9fd8ff 65%, #006aa7 100%);"></div>
-          <div class="team-top">
-            <span class="team-name">Nordic Ice</span>
-            <span class="team-abbr">NRD</span>
-          </div>
-          <p class="team-story">“Cool heads, cold glass.”</p>
-          <div class="team-drivers">
-            <span class="driver-pill">🇸🇪 Sweden</span>
-            <span class="driver-pill">🇩🇰 Denmark</span>
-          </div>
-        </div>
-
-        <div class="team-card" onclick="this.classList.toggle('selected')">
-          <div class="team-stripe" style="background: linear-gradient(90deg, #009c3b 65%, #ffdf00 100%);"></div>
-          <div class="team-top">
-            <span class="team-name">Verde Racing</span>
-            <span class="team-abbr">VRD</span>
-          </div>
-          <p class="team-story">“Samba and shamrocks.”</p>
-          <div class="team-drivers">
-            <span class="driver-pill">🇧🇷 Brazil</span>
-            <span class="driver-pill">🇮🇪 Ireland</span>
-          </div>
-        </div>
-
-        <div class="team-card" onclick="this.classList.toggle('selected')">
-          <div class="team-stripe" style="background: linear-gradient(90deg, #ff9933 65%, #bc002d 100%);"></div>
-          <div class="team-top">
-            <span class="team-name">Saffron Sun</span>
-            <span class="team-abbr">SAF</span>
-          </div>
-          <p class="team-story">“Patience first, then the strike.”</p>
-          <div class="team-drivers">
-            <span class="driver-pill">🇯🇵 Japan</span>
-            <span class="driver-pill">🇮🇳 India</span>
-          </div>
-        </div>
-
-        <div class="team-card" onclick="this.classList.toggle('selected')">
-          <div class="team-stripe" style="background: linear-gradient(90deg, #de2910 65%, #f4f4f2 100%);"></div>
-          <div class="team-top">
-            <span class="team-name">Crimson Dynamics</span>
-            <span class="team-abbr">CRM</span>
-          </div>
-          <p class="team-story">“Red on red: never quiet.”</p>
-          <div class="team-drivers">
-            <span class="driver-pill">🇵🇱 Poland</span>
-            <span class="driver-pill">🇨🇳 China</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Final CTA -->
-  <section style="border-bottom: none;">
-    <div class="container">
-      <div class="cta-banner">
-        <span class="eyebrow">Lights Out &amp; Away We Go</span>
-        <h2>Pick Your Country Before the Lights Go Out 🏁</h2>
-        <p>
-          Watch full 4K 60fps Grand Prix races and vertical final-lap Shorts on the official Marble Formula YouTube channel.
-        </p>
-        <a class="btn-primary" href="https://www.youtube.com/@MarbleFormula" target="_blank" rel="noopener">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.6 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-          Watch @MarbleFormula on YouTube
-        </a>
       </div>
     </div>
   </section>
 
   <footer>
     <div class="container">
-      Marble Formula Championship 2027 · Simulated with Rapier 3D &amp; rendered in 4K with Remotion + Three.js ·
-      <a href="https://www.youtube.com/@MarbleFormula" target="_blank" rel="noopener">YouTube</a>
+      Marble Formula Studio Hub · Dual Engine 3D Physics (Marbles &amp; Motorsport Cars) · Rapier 3D + Three.js + Remotion ·
+      <a href="https://www.youtube.com/@MarbleFormula" target="_blank" rel="noopener">@MarbleFormula en YouTube</a>
     </div>
   </footer>
 
+  <script>
+    const RACERS = [
+      { name: "Spain", abbr: "ESP", emoji: "🇪🇸", heat: "Heat 1", color: "#ffc400", swirl: "#c60b1e", cls: "GT", chassis: "GT3 Touring Car", team: "Iberia Sol / Vortex Cyber-GT", vel: 3, est: 3, int: 4, perk: "🧠 TACTICAL IQ · Trazada limpia y adelantamientos tempranos" },
+      { name: "Brazil", abbr: "BRA", emoji: "🇧🇷", heat: "Heat 1", color: "#009c3b", swirl: "#ffdf00", cls: "F1", chassis: "F1 Open-Wheel", team: "Verde Racing / Apex Neural F1", vel: 4, est: 2, int: 4, perk: "🧠 APEX MASTER · Alta velocidad y paso por curva agresivo" },
+      { name: "Argentina", abbr: "ARG", emoji: "🇦🇷", heat: "Heat 1", color: "#74acdf", swirl: "#ffffff", cls: "BGY", chassis: "Titan Raid Buggy", team: "Scuderia Azzurra / Titan Raid", vel: 2, est: 5, int: 3, perk: "🛡️ HEAVY BRUISER · Máxima estabilidad y frenada tardía" },
+      { name: "Austria", abbr: "AUT", emoji: "🇦🇹", heat: "Heat 1", color: "#ed2939", swirl: "#ffffff", cls: "JET", chassis: "Le Mans Hypercar", team: "Autobahn Motorsport / Hyperion", vel: 5, est: 3, int: 2, perk: "⚡ TOP SPEED ROCKET · Velocidad punta máxima en recta y DRS" },
+      { name: "Japan", abbr: "JPN", emoji: "🇯🇵", heat: "Heat 1", color: "#bc002d", swirl: "#ffffff", cls: "F1", chassis: "F1 Open-Wheel", team: "Saffron Sun / Shibuya Aero F1", vel: 4, est: 2, int: 4, perk: "🧠 APEX MASTER · Ligero, ágil y letal en el rebufo" },
+      { name: "Germany", abbr: "DEU", emoji: "🇩🇪", heat: "Heat 1 & 2", color: "#ffce00", swirl: "#dd0000", cls: "GT", chassis: "GT3 Touring Car", team: "Autobahn Motorsport / Iron Panzer", vel: 3, est: 5, int: 2, perk: "🛡️ ARMORED TANK · Agarre total en curva y choques rueda a rueda" },
+      { name: "Italy", abbr: "ITA", emoji: "🇮🇹", heat: "Heat 2", color: "#009246", swirl: "#ce2b37", cls: "F1", chassis: "F1 Open-Wheel", team: "Scuderia Azzurra / Scuderia Corsa", vel: 4, est: 3, int: 3, perk: "⚡ APEX SPEEDSTER · Equilibrio perfecto entre recta y curva" },
+      { name: "Britain", abbr: "GBR", emoji: "🇬🇧", heat: "Heat 2", color: "#c8102e", swirl: "#012169", cls: "F1", chassis: "F1 Open-Wheel", team: "Atlantic Union / Apex Neural F1", vel: 4, est: 2, int: 4, perk: "🧠 APEX MASTER · Especialista en divebombs por el interior" },
+      { name: "Mexico", abbr: "MEX", emoji: "🇲🇽", heat: "Heat 2", color: "#006847", swirl: "#ce1126", cls: "BGY", chassis: "Titan Raid Buggy", team: "Iberia Sol / Titan Raid Buggy", vel: 2, est: 5, int: 3, perk: "🛡️ HEAVY BRUISER · Domina el contacto chasis-a-chasis" },
+      { name: "Netherlands", abbr: "NLD", emoji: "🇳🇱", heat: "Heat 2", color: "#ff7f00", swirl: "#21468b", cls: "GT", chassis: "GT3 Touring Car", team: "Benelux Racing / Vortex Cyber-GT", vel: 3, est: 3, int: 4, perk: "🧠 TACTICAL IQ · Aprovecha cada metro de rebufo" },
+      { name: "France", abbr: "FRA", emoji: "🇫🇷", heat: "Heat 2 & 3", color: "#0055a4", swirl: "#ef4135", cls: "F1", chassis: "F1 Open-Wheel", team: "Bleu Atlantique / Scuderia Corsa", vel: 4, est: 3, int: 3, perk: "⚡ APEX SPEEDSTER · Gran tracción a la salida del ápice" },
+      { name: "USA", abbr: "USA", emoji: "🇺🇸", heat: "Heat 3", color: "#3c3b6e", swirl: "#b22234", cls: "GT", chassis: "GT3 Touring Car", team: "Atlantic Union / Iron Panzer GT", vel: 3, est: 5, int: 2, perk: "🛡️ ARMORED TANK · Chasis pesado inamovible en la trazada" },
+      { name: "Belgium", abbr: "BEL", emoji: "🇧🇪", heat: "Heat 3", color: "#fdda24", swirl: "#ef3340", cls: "JET", chassis: "Le Mans Hypercar", team: "Benelux Racing / Hyperion Jet", vel: 5, est: 3, int: 2, perk: "⚡ TOP SPEED ROCKET · Cohete en zonas DRS" },
+      { name: "Sweden", abbr: "SWE", emoji: "🇸🇪", heat: "Heat 3", color: "#006aa7", swirl: "#fecc02", cls: "JET", chassis: "Le Mans Hypercar", team: "Nordic Ice / Nordic Turbine", vel: 5, est: 2, int: 3, perk: "⚡ TURBINE MISSILE · Velocidad explosiva en tramos rápidos" },
+      { name: "Canada", abbr: "CAN", emoji: "🇨🇦", heat: "Heat 3 & 4", color: "#ff0000", swirl: "#ffffff", cls: "BGY", chassis: "Titan Raid Buggy", team: "Bleu Atlantique / Outback Raid", vel: 3, est: 5, int: 2, perk: "🛡️ ARMORED RAID · Frenada carbon-ceramic ultra estable" },
+      { name: "China", abbr: "CHN", emoji: "🇨🇳", heat: "Heat 3 & 4", color: "#de2910", swirl: "#ffde00", cls: "GT", chassis: "GT3 Touring Car", team: "Crimson Dynamics / Dragon GT", vel: 3, est: 3, int: 4, perk: "🧠 TACTICAL IQ · Lectura inteligente de cambios de línea" },
+      { name: "Poland", abbr: "POL", emoji: "🇵🇱", heat: "Heat 4", color: "#dc143c", swirl: "#ffffff", cls: "BGY", chassis: "Titan Raid Buggy", team: "Crimson Dynamics / Outback Raid", vel: 3, est: 5, int: 2, perk: "🛡️ ARMORED RAID · Fuerte en curvas peraltadas" },
+      { name: "Ireland", abbr: "IRL", emoji: "🇮🇪", heat: "Heat 4", color: "#169b62", swirl: "#ff883e", cls: "JET", chassis: "Le Mans Hypercar", team: "Verde Racing / Nordic Turbine", vel: 5, est: 2, int: 3, perk: "⚡ TURBINE MISSILE · Máxima aceleración en salida" },
+      { name: "Denmark", abbr: "DNK", emoji: "🇩🇰", heat: "Heat 4", color: "#c8102e", swirl: "#ffffff", cls: "JET", chassis: "Le Mans Hypercar", team: "Nordic Ice / Hyperion Jet", vel: 5, est: 3, int: 2, perk: "⚡ TOP SPEED ROCKET · Especialista en rectas largas" },
+      { name: "India", abbr: "IND", emoji: "🇮🇳", heat: "Heat 4", color: "#ff9933", swirl: "#138808", cls: "BGY", chassis: "Titan Raid Buggy", team: "Saffron Sun / Titan Raid Buggy", vel: 2, est: 5, int: 3, perk: "🛡️ HEAVY BRUISER · Resistencia total a impactos laterales" }
+    ];
+
+    function renderRoster(filterCls = "all") {
+      const container = document.getElementById("roster-container");
+      const list = filterCls === "all" ? RACERS : RACERS.filter(r => r.cls === filterCls);
+      container.innerHTML = list.map((r, idx) => `
+        <article class="racer-card">
+          <div class="racer-head">
+            <div class="racer-id">
+              <div class="racer-avatar" style="background: radial-gradient(circle at 30% 30%, #fff 0%, ${r.color} 45%, ${r.swirl} 85%, #050608 100%);"></div>
+              <div>
+                <div class="racer-name">${r.emoji} ${r.name} <span style="color:var(--muted); font-family:'JetBrains Mono',monospace; font-size:0.8rem;">(${r.abbr})</span></div>
+                <div class="racer-sub">${r.team}</div>
+              </div>
+            </div>
+            <span class="class-badge">${r.cls} · ${r.heat}</span>
+          </div>
+
+          <div style="font-size: 0.77rem; color: #94a3b8; display:flex; justify-content:space-between;">
+            <span>🏎️ Chasis: <strong style="color:#fff;">${r.chassis}</strong></span>
+            <span>🔮 Canica: <strong style="color:#fff;">Art-Glass Swirl</strong></span>
+          </div>
+
+          <div class="stat-bars">
+            <div class="stat-row">
+              <span style="color:var(--yellow);">VEL (Recta)</span>
+              <div class="stat-track"><div class="stat-fill" style="width:${r.vel * 20}%; background:var(--yellow);"></div></div>
+              <span>${r.vel}/5</span>
+            </div>
+            <div class="stat-row">
+              <span style="color:var(--cyan);">EST (Agarre)</span>
+              <div class="stat-track"><div class="stat-fill" style="width:${r.est * 20}%; background:var(--cyan);"></div></div>
+              <span>${r.est}/5</span>
+            </div>
+            <div class="stat-row">
+              <span style="color:var(--green);">INT (Trazada)</span>
+              <div class="stat-track"><div class="stat-fill" style="width:${r.int * 20}%; background:var(--green);"></div></div>
+              <span>${r.int}/5</span>
+            </div>
+          </div>
+
+          <div class="racer-perk">${r.perk}</div>
+        </article>
+      `).join("");
+    }
+
+    function filterRoster(cls, btn) {
+      btn.parentElement.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderRoster(cls);
+    }
+
+    function filterLocations(season, btn) {
+      btn.parentElement.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.querySelectorAll("#locations-container .loc-card").forEach(card => {
+        card.style.display = (season === "all" || card.dataset.season === season) ? "flex" : "none";
+      });
+    }
+
+    function filterObstacles(engine, btn) {
+      btn.parentElement.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.querySelectorAll("#obstacles-container .obs-card").forEach(card => {
+        card.style.display = (engine === "all" || card.dataset.engine === engine) ? "flex" : "none";
+      });
+    }
+
+    renderRoster("all");
+  </script>
 </body>
 </html>

@@ -24,40 +24,77 @@ import { TEAMS, teamOf } from "../src/gp/teams.js";
 import { introPlan, TEAM_FRAMES } from "../src/gp/intro-plan.js";
 import { STAIR, stairLocal, stairLoop } from "../src/gp/stair.js";
 import { BANK_PIVOT, buildTrackMesh, liftCleatPose, pointInFrame, pointOnTrack, surfaceHeight as surfaceHeightAt, TRACK, TRACK_DEPTH } from "../src/gp/trackMesh.js";
+import { buildCarTelemetryProfile, carSoundtrack, sanitizeCarFeatures, solveCarChassisCollisions } from "./car-engine.mjs";
 
 // --- Season ------------------------------------------------------------------------
 // The circuits and their designs live in src/gp/circuits/ (one file each).
 // GP_SEEDS=<file.json> ({ "r1-monaco": 7, ... }) overrides the design files' seeds (the factory's picks).
 const SEED_OVERRIDE = process.env.GP_SEEDS ? JSON.parse(readFileSync(process.env.GP_SEEDS, "utf8")) : {};
 const ROUNDS = CIRCUITS.map((c) => (SEED_OVERRIDE[c.id] !== undefined ? { ...c, seed: SEED_OVERRIDE[c.id] } : c));
-const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+const POINTS = [25, 20, 16, 13, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
-// Each marble carries a national flag (drawn in src/gp/flags.ts); `color` is a
-// distinctive fallback tint for places where a flag can't be drawn.
-const MARBLES = [
-  { name: "Spain", abbr: "ESP", flag: "ESP", color: "#ffc400" },
-  { name: "Italy", abbr: "ITA", flag: "ITA", color: "#009246" },
-  { name: "France", abbr: "FRA", flag: "FRA", color: "#0055a4" },
-  { name: "Germany", abbr: "DEU", flag: "DEU", color: "#ffce00" },
-  { name: "Britain", abbr: "GBR", flag: "GBR", color: "#c8102e" },
-  { name: "USA", abbr: "USA", flag: "USA", color: "#3c3b6e" },
-  { name: "Brazil", abbr: "BRA", flag: "BRA", color: "#009c3b" },
-  { name: "Japan", abbr: "JPN", flag: "JPN", color: "#bc002d" },
-  { name: "Argentina", abbr: "ARG", flag: "ARG", color: "#74acdf" },
-  { name: "Mexico", abbr: "MEX", flag: "MEX", color: "#006847" },
-  { name: "Netherlands", abbr: "NLD", flag: "NLD", color: "#ff7f00" },
-  { name: "Belgium", abbr: "BEL", flag: "BEL", color: "#fdda24" },
-  { name: "Austria", abbr: "AUT", flag: "AUT", color: "#ed2939" },
-  { name: "Poland", abbr: "POL", flag: "POL", color: "#dc143c" },
-  { name: "Ireland", abbr: "IRL", flag: "IRL", color: "#169b62" },
-  { name: "Sweden", abbr: "SWE", flag: "SWE", color: "#006aa7" },
-  { name: "Denmark", abbr: "DNK", flag: "DNK", color: "#c8102e" },
-  { name: "Canada", abbr: "CAN", flag: "CAN", color: "#ff0000" },
-  { name: "China", abbr: "CHN", flag: "CHN", color: "#de2910" },
-  { name: "India", abbr: "IND", flag: "IND", color: "#ff9933" },
+// Each marble/car carries a national flag (drawn in src/gp/flags.ts), `color`, and a 10-Point Constructor Power Budget:
+//   vel (Velocidad 1-5) + est (Estabilidad/Peso 1-5) + int (Inteligencia/Atajos 1-5) === 10 Puntos de Poder!
+const ALL_MARBLES = [
+  { name: "Spain", abbr: "ESP", flag: "ESP", color: "#ffc400", stats: { cls: "GT", teamName: "Vortex Cyber-GT", vel: 3, est: 3, int: 4, strength: "🧠 TACTICAL IQ · Takes Guided Shortcuts & Overtakes Early" } },
+  { name: "Brazil", abbr: "BRA", flag: "BRA", color: "#009c3b", stats: { cls: "F1", teamName: "Apex Neural F1", vel: 4, est: 2, int: 4, strength: "🧠 SHORTCUT MASTER · High Speed + High Shortcut IQ" } },
+  { name: "Argentina", abbr: "ARG", flag: "ARG", color: "#74acdf", stats: { cls: "BGY", teamName: "Titan Raid Buggy", vel: 2, est: 5, int: 3, strength: "🛡️ HEAVY BRUISER · Max Weight Wins Side-by-Side Hits" } },
+  { name: "Austria", abbr: "AUT", flag: "AUT", color: "#ed2939", stats: { cls: "JET", teamName: "Hyperion Jet", vel: 5, est: 3, int: 2, strength: "⚡ TOP SPEED ROCKET · Max Straight & Booster Thrust" } },
+  { name: "Japan", abbr: "JPN", flag: "JPN", color: "#bc002d", stats: { cls: "F1", teamName: "Shibuya Aero F1", vel: 4, est: 2, int: 4, strength: "🧠 SHORTCUT MASTER · High Speed + High Shortcut IQ" } },
+  { name: "Germany", abbr: "DEU", flag: "DEU", color: "#ffce00", stats: { cls: "GT", teamName: "Iron Panzer GT", vel: 3, est: 5, int: 2, strength: "🛡️ ARMORED TANK · Unshakable Stability & Corner Grip" } },
+  { name: "Italy", abbr: "ITA", flag: "ITA", color: "#009246", stats: { cls: "F1", teamName: "Scuderia Corsa", vel: 4, est: 3, int: 3, strength: "⚡ APEX SPEEDSTER · High Top Speed + Balanced Grip" } },
+  { name: "Britain", abbr: "GBR", flag: "GBR", color: "#c8102e", stats: { cls: "F1", teamName: "Apex Neural F1", vel: 4, est: 2, int: 4, strength: "🧠 SHORTCUT MASTER · High Speed + High Shortcut IQ" } },
+  { name: "Mexico", abbr: "MEX", flag: "MEX", color: "#006847", stats: { cls: "BGY", teamName: "Titan Raid Buggy", vel: 2, est: 5, int: 3, strength: "🛡️ HEAVY BRUISER · Max Weight Wins Side-by-Side Hits" } },
+  { name: "Netherlands", abbr: "NLD", flag: "NLD", color: "#ff7f00", stats: { cls: "GT", teamName: "Vortex Cyber-GT", vel: 3, est: 3, int: 4, strength: "🧠 TACTICAL IQ · Takes Guided Shortcuts & Overtakes Early" } },
+  { name: "France", abbr: "FRA", flag: "FRA", color: "#0055a4", stats: { cls: "F1", teamName: "Scuderia Corsa", vel: 4, est: 3, int: 3, strength: "⚡ APEX SPEEDSTER · High Top Speed + Balanced Grip" } },
+  { name: "USA", abbr: "USA", flag: "USA", color: "#3c3b6e", stats: { cls: "GT", teamName: "Iron Panzer GT", vel: 3, est: 5, int: 2, strength: "🛡️ ARMORED TANK · Unshakable Stability & Corner Grip" } },
+  { name: "Belgium", abbr: "BEL", flag: "BEL", color: "#fdda24", stats: { cls: "JET", teamName: "Hyperion Jet", vel: 5, est: 3, int: 2, strength: "⚡ TOP SPEED ROCKET · Max Straight & Booster Thrust" } },
+  { name: "Sweden", abbr: "SWE", flag: "SWE", color: "#006aa7", stats: { cls: "JET", teamName: "Nordic Turbine", vel: 5, est: 2, int: 3, strength: "⚡ TURBINE MISSILE · Explosive Straight-Line Velocity" } },
+  { name: "Canada", abbr: "CAN", flag: "CAN", color: "#ff0000", stats: { cls: "BGY", teamName: "Outback Raid", vel: 3, est: 5, int: 2, strength: "🛡️ ARMORED RAID · Heavy Chassis Dominates Chicanes" } },
+  { name: "China", abbr: "CHN", flag: "CHN", color: "#de2910", stats: { cls: "GT", teamName: "Dragon Cyber-GT", vel: 3, est: 3, int: 4, strength: "🧠 TACTICAL IQ · Takes Guided Shortcuts & Overtakes Early" } },
+  { name: "Poland", abbr: "POL", flag: "POL", color: "#dc143c", stats: { cls: "BGY", teamName: "Outback Raid", vel: 3, est: 5, int: 2, strength: "🛡️ ARMORED RAID · Heavy Chassis Dominates Chicanes" } },
+  { name: "Ireland", abbr: "IRL", flag: "IRL", color: "#169b62", stats: { cls: "JET", teamName: "Nordic Turbine", vel: 5, est: 2, int: 3, strength: "⚡ TURBINE MISSILE · Explosive Straight-Line Velocity" } },
+  { name: "Denmark", abbr: "DNK", flag: "DNK", color: "#c8102e", stats: { cls: "JET", teamName: "Hyperion Jet", vel: 5, est: 3, int: 2, strength: "⚡ TOP SPEED ROCKET · Max Straight & Booster Thrust" } },
+  { name: "India", abbr: "IND", flag: "IND", color: "#ff9933", stats: { cls: "BGY", teamName: "Titan Raid Buggy", vel: 2, est: 5, int: 3, strength: "🛡️ HEAVY BRUISER · Max Weight Wins Side-by-Side Hits" } },
 ];
-// The grid: ten lanes, two rows (a marble per lane per row).
-const GRID = { lanes: 10, rows: 2, rowGap: 1.0 };
+// In TCR Car Mode (GP_CARS=1):
+//   GP_HEAT=1..4 selects a 6-car Qualifying Heat (Top 2 Advance to Grand Final!)
+//   GP_HEAT=final selects the 10-car Grand Final (populated from the actual qualifiers of Heats 1-4!)
+const MARBLES = (() => {
+  if (process.env.GP_CARS !== "1") return ALL_MARBLES;
+  const heat = process.env.GP_HEAT ?? "1";
+  if (heat === "final") {
+    try {
+      const qPath = new URL("../src/gp/races/tcr-qualifiers.json", import.meta.url);
+      const qData = JSON.parse(readFileSync(qPath, "utf8"));
+      const direct = [];
+      const wildcards = [];
+      for (const h of ["1", "2", "3", "4"]) {
+        if (qData[h]?.top2) direct.push(...qData[h].top2);
+        if (qData[h]?.third) wildcards.push(qData[h].third);
+      }
+      wildcards.sort((a, b) => (a.time ?? 9999) - (b.time ?? 9999));
+      const finalAbbrs = [...new Set([...direct, ...wildcards.map((w) => w.abbr)])];
+      for (const m of ALL_MARBLES) {
+        if (finalAbbrs.length >= 10) break;
+        if (!finalAbbrs.includes(m.abbr)) finalAbbrs.push(m.abbr);
+      }
+      return finalAbbrs.slice(0, 10).map((ab) => ALL_MARBLES.find((m) => m.abbr === ab)).filter(Boolean);
+    } catch {
+      return ALL_MARBLES.slice(0, 10);
+    }
+  }
+  const hIdx = Math.max(0, Math.min(3, (parseInt(heat, 10) || 1) - 1));
+  const starts = [0, 5, 10, 14];
+  const start = starts[hIdx] ?? 0;
+  return ALL_MARBLES.slice(start, start + 6);
+})();
+// The grid: in Car Mode, 1 dedicated lane per car (6 lanes for 6 cars, 10 lanes for 10 cars, 1 row).
+// In Marble Mode, ten lanes, two rows (20 marbles).
+const GRID =
+  process.env.GP_CARS === "1"
+    ? { lanes: MARBLES.length, rows: 1, rowGap: 1.4 }
+    : { lanes: 10, rows: 2, rowGap: 1.0 };
 // Disqualification zones: a red pad at the foot of one wall beside each
 // machine. A marble that rolls over it (its centre within DQ.reach of the
 // wall, i.e. pressed against it, on the floor) is out of the race. Narrow and
@@ -84,7 +121,8 @@ const RUNOFF = 16; // (single-lap layouts) track after the finish line
 // Laps: the track ends `cabin` units short of the grid's start (the same spot
 // in plan, a lap's descent lower) and a lift cabin carries the field back up
 // to the grid. The finish line is just before the cabin on the last lap.
-const LAPS = Number(process.env.GP_LAPS ?? 2);
+// Laps: in Car Mode, race a single continuous Grand Prix course (LAPS = 1, no marble scoop lift!).
+const LAPS = Number(process.env.GP_LAPS ?? (process.env.GP_CARS === "1" ? 1 : 2));
 // Cabin 4.2 × 4.4: the whole field fits in one layer; walls 2.4 so a pile
 // arriving at speed cannot climb out.
 // It goes by arrivals: a short hold after the first marble aboard (or a third
@@ -98,7 +136,7 @@ const SAMPLE = 0.5; // centreline sample spacing
 // Gravity is scaled up from 9.81: at real gravity a 0.7-unit marble behaves like
 // a 70 cm ball (slow, floaty bounces). Stronger gravity makes it look and move
 // like a small, quick marble.
-const GRAVITY = 22;
+const GRAVITY = 25;
 // Every curve is banked (up to 22°) so the marbles carry their speed through it.
 // Steep banking: the marbles carry their speed round the bends instead of piling into the outer wall.
 // (Through an S-bend the rate limit below decides how fast it can flip.)
@@ -109,14 +147,14 @@ const MAX_BANK = (Number(process.env.GP_MAX_BANK ?? 28) * Math.PI) / 180;
 // traps marbles. At 0.8 the low edge still descends, at a fifth of the slope.
 const BANK_FLIP = Number(process.env.GP_BANK_FLIP ?? 1.0); // ×slope: above 1 the low edge may climb briefly in an S
 const BANK_RATE = (Math.tan(SLOPE) * BANK_FLIP) / (TRACK.width / 2); // radians per unit
-const DAMPING = 0.055; // rolling resistance + air: caps the speed of a marble (0.075 felt sluggish)
-// Marble–marble contacts average the two marbles' restitution: 0.75, glass on
-// glass, lively. Everything else (track, obstacles, machines) uses the Min
+const DAMPING = 0.046; // rolling resistance + air: fast Marbula-One downhill pace
+// Marble–marble contacts average the two marbles' restitution: 0.48, heavy glass on
+// glass without pinball hopping. Everything else (track, obstacles, machines) uses the Min
 // combine rule, so its own value is the effective one: a head-on hit must not
 // send a marble back up the slope to oscillate against the obstacle for seconds.
-const MARBLE_RESTITUTION = 0.75;
-const TRACK_RESTITUTION = 0.4;
-const OBSTACLE_RESTITUTION = { bumper: 0.65, spinner: 0.35, fin: 0.5, splitter: 0.3, divider: 0.3, hammer: 0.5, cleat: 0.1, guard: 0.3, pusher: 0.2, turntable: 0.1, roller: 0.2, vortex: 0.2 };
+const MARBLE_RESTITUTION = 0.48;
+const TRACK_RESTITUTION = 0.12;
+const OBSTACLE_RESTITUTION = { bumper: 0.45, spinner: 0.28, fin: 0.32, splitter: 0.22, divider: 0.22, hammer: 0.35, cleat: 0.08, guard: 0.2, pusher: 0.18, turntable: 0.08, roller: 0.15, vortex: 0.12 };
 const GUARD = { height: 1.4, segment: 1 }; // default; zones that throw marbles higher say so
 // Clear guard panels over the stretches where marbles can fly: a jump's kicker,
 // flight and landing, and every machine that can throw one.
@@ -126,12 +164,12 @@ const GUARD_ZONES = Object.fromEntries(OBSTACLES.filter((o) => o.guard).map((o) 
 // A steeper launch out of the lanes, so the race starts with a punch.
 const START_STEEP = { until: 25, slope: Math.tan((8 * Math.PI) / 180) };
 const BRAKE_DAMPING = 1.8; // after the chequered flag
-const LIGHT_TIMES = [1.2, 1.8, 2.4, 3.0, 3.6]; // seconds; then a random hold before lights out
+const LIGHT_TIMES = process.env.GP_CARS === "1" ? [1.2, 2.2, 3.2, 4.2, 5.2] : [0.6, 1.05, 1.5, 1.95, 2.4]; // seconds; in Car Mode allow 6s for Constructor Strengths presentation
 const LINGER = Math.round(1 * FPS);
-const GATE = { swing: (105 * Math.PI) / 180, time: 0.35 }; // flap opening: angle, seconds
+const GATE = { swing: (105 * Math.PI) / 180, time: 0.16 }; // flap opening: angle, seconds
 const REPLAY_SPEED = 0.35;
-// Mid-race instant replays: up to `count` of the hardest obstacle hits.
-const HIGHLIGHTS = { count: 3, minGap: 9, before: 0.8, after: 1.0, speed: 0.4 };
+// Mid-race instant replays: up to `count` of the most spectacular overtakes & obstacle hits.
+const HIGHLIGHTS = { count: 4, minGap: 11, before: 0.9, after: 1.05, speed: 0.4 };
 
 const GROUP_TRACK = (0x0001 << 16) | 0x0002;
 const GROUP_MARBLE = (0x0002 << 16) | 0x0007;
@@ -165,38 +203,37 @@ const arr = (v) => [r3(v.x), r3(v.y), r3(v.z)];
 const FEATURES = Object.fromEntries(OBSTACLES.map((o) => [o.type, { before: o.place.before, after: o.place.after, label: o.label, maxCurv: o.place.maxCurv, ...(o.place.once ? { once: true } : {}) }]));
 // Kicker: a 10° run-up (so even a slow marble arrives with enough speed to clear
 // the lip: v²/2g must exceed `lip`), the ramp up to the lip, then the fall.
-const JUMP = { runup: 4, runupSlope: Math.tan((10 * Math.PI) / 180), lip: 0.45, ramp: 2.0, drop: 2.0 };
+const JUMP = { runup: 4, runupSlope: Math.tan((10 * Math.PI) / 180), lip: 0.30, ramp: 2.0, drop: 2.0 };
 const MIN_DROPS = 2;
 const MIN_JUMPS = 3;
 // The machine: a chain lift carries the marbles up a steep belt (placed apart
 // from the cycling obstacles; one per circuit, on its longest straight).
 const LIFT = { angle: (22 * Math.PI) / 180, len: 9, lead: 2.4, rise: 1.2, speed: 3.2, spacing: 1.5, count: 10, before: 4, after: 13 };
 const TWIST = { amp: (42 * Math.PI) / 180, length: 14 };
-const DROP_HEIGHT = 1.1;
-const BUMP = { amp: 0.13, length: 1.6, count: 4 };
+const DROP_HEIGHT = 0.85;
+const BUMP = { amp: 0.075, length: 1.6, count: 4 };
 // Crests at the bends' apexes: a mini kicker (run-up, lip, small drop): fast marbles take off in the bend.
 const VORTEX_SWIRL = { accel: 9, share: 0.9 };
 // Obstacles that get their own locked camera (the small ones are seen in passing: too many cuts otherwise).
 // Long enough that its tip sweeps to within 0.4 of each wall: whichever side it closes, the marbles go to the other bay.
 const FIN_CHANNEL = 2.2;
 const EVERYWHERE_GUARD = 1.0; // height of the invisible guard along the whole lap
-/** The last u any obstacle may reach: after it come the guide fins, the distributor flap and the stair bays. */
-const bayReserve = (L) => L - GRID_LENGTH - ELEVATOR.cabin - 18;
+/** The last u any obstacle may reach: after it come the finish line (END - 20), guide fins, distributor flap and stair bays. */
+const bayReserve = (L) => L - GRID_LENGTH - ELEVATOR.cabin - 24;
 /** Feature types the planner never picks (placed by the bake itself, or retired). */
 const PLANNER_SKIP = ["crest", "booster", "tube", "switch", "regroup"];
 const FLIPPER = { length: 4.0, amp: (25 * Math.PI) / 180, period: 2.4 };
 const STAIR_SHOT_MAX = 7 * 60; // frames
-const NO_STAIR_SPLITS = true; // the stair is shown only from above, and only when P1 is riding it
+const NO_STAIR_SPLITS = false; // show brief 6.5s split-screen windows of the Twin-Chain Scoop Lift carrying marbles up
 const FOCUS_HOLD = 5 * 60; // frames: the director follows a group at least this long
 const STAIR_CAM = { above: 16, fov: 46 };
-// Only the vortex (where marbles orbit for ~6-8 s) gets a static camera; every other obstacle is
-// filmed smoothly in passing by the forward-tracking cameras so cuts never disorient the viewer.
-const CAM_FEATURES = ["vortex"];
+// Action obstacles get dedicated close-up cameras when the pack hits them, mixed with lead/chase/side tracking cams.
+const CAM_FEATURES = ["vortex", "hammer", "spinner", "bumpers", "turntable", "pusher", "rollers", "jump"];
 const TUBES = { minCurv: 0.17, height: 1.7 };
-const LAUNCHES = { max: 2, gap: 12 };
-const FANS = { extra: 3, spacing: 60 };
-const BOOSTERS = { spacing: 22, max: Number(process.env.GP_BOOSTERS ?? 8) };
-const CREST = { runup: 2.5, runupSlope: Math.tan((14 * Math.PI) / 180), ramp: 1.2, lip: 0.22, drop: 0.25, minCurv: 0.035, maxCurv: 0.16, spacing: 18, max: 8 };
+const LAUNCHES = { max: 3, gap: 12 };
+const FANS = { extra: 3, spacing: 55 };
+const BOOSTERS = { spacing: 20, max: Number(process.env.GP_BOOSTERS ?? 9) };
+const CREST = { runup: 2.5, runupSlope: Math.tan((14 * Math.PI) / 180), ramp: 1.2, lip: 0.13, drop: 0.18, minCurv: 0.035, maxCurv: 0.16, spacing: 18, max: 8 };
 
 function hashString(str) {
   let h = 2166136261;
@@ -217,9 +254,9 @@ export function featureRule(type) {
 export function placementRules(curv) {
   const straightAt = (u, maxCurv) => {
     const k0 = Math.round((u + GRID_LENGTH) / SAMPLE);
-    for (let j = -10; j <= 10; j++) {
+    for (let j = -4; j <= 4; j++) {
       const c = curv[Math.max(0, Math.min(curv.length - 1, k0 + j))];
-      if (Math.abs(c) > maxCurv) return false;
+      if (Math.abs(c) > maxCurv * 2.2) return false;
     }
     return true;
   };
@@ -236,7 +273,7 @@ export function placementRules(curv) {
  * placement is checked: straight enough, inside the lap, clear of its
  * neighbours (4 units between spans). Errors name the entry and where it could go.
  */
-function placeLayout(layout, curv, L, id) {
+function placeLayout(layout, curv, L, id, scale = 1) {
   const { clear } = placementRules(curv);
   const features = [];
   const overlaps = (u, f) => features.some((g) => !(u + f.after + 4 < g.u - g.span[0] || u - f.before - 4 > g.u + g.span[1]));
@@ -246,7 +283,7 @@ function placeLayout(layout, curv, L, id) {
   for (const [k, entry] of layout.entries()) {
     const [type, at] = Array.isArray(entry) ? entry : [entry.type, entry.u];
     const f = featureRule(type);
-    let u = at;
+    let u = at !== undefined && at !== null ? Math.round(at * scale) : at;
     if (u === undefined || u === null) {
       u = null;
       for (let x = Math.ceil(cursor); x + f.after <= bayReserve(L); x += 1)
@@ -262,9 +299,13 @@ function placeLayout(layout, curv, L, id) {
       const near = [];
       for (let d = 1; d < 80 && near.length < 2; d += 1)
         for (const x of [Math.round(u) - d, Math.round(u) + d]) if (near.length < 2 && legal(x, f)) near.push(x);
-      const why = u < 12 + START.funnel || u + f.after > bayReserve(L) ? "outside the lap's usable part (the last stretch is the stair bays' run-in)" : !clear(u, f) ? `the track is not straight enough from ${(u - f.before).toFixed(0)} to ${(u + f.after).toFixed(0)}` : "too close to another obstacle";
-      errors.push(`#${k + 1} ${type} at u=${u}: ${why}${near.length ? `; legal nearby: ${near.join(", ")}` : ""}`);
-      continue;
+      if (scale !== 1 && near.length) {
+        u = near[0];
+      } else {
+        const why = u < 12 + START.funnel || u + f.after > bayReserve(L) ? "outside the lap's usable part (the last stretch is the stair bays' run-in)" : !clear(u, f) ? `the track is not straight enough from ${(u - f.before).toFixed(0)} to ${(u + f.after).toFixed(0)}` : "too close to another obstacle";
+        errors.push(`#${k + 1} ${type} at u=${u}: ${why}${near.length ? `; legal nearby: ${near.join(", ")}` : ""}`);
+        continue;
+      }
     }
     features.push({ type, u: r3(u), label: f.label, span: [f.before, f.after] });
     cursor = u + f.after + 4;
@@ -277,15 +318,25 @@ function placeLayout(layout, curv, L, id) {
 function planFeatures(us, curv, L, rand) {
   const straightAt = (u, maxCurv) => {
     const k0 = Math.round((u + GRID_LENGTH) / SAMPLE);
-    for (let j = -10; j <= 10; j++) {
+    for (let j = -4; j <= 4; j++) {
       const c = curv[Math.max(0, Math.min(curv.length - 1, k0 + j))];
-      if (Math.abs(c) > maxCurv) return false;
+      if (Math.abs(c) > maxCurv * 2.2) return false;
     }
     return true;
   };
   const clear = (u, f) => {
     for (let x = u - f.before; x <= u + f.after; x += 1) if (!straightAt(x, f.maxCurv)) return false;
     return true;
+  };
+  const curvScoreAt = (u, f) => {
+    let worst = 0;
+    for (let x = u - f.before; x <= u + f.after; x += 1) {
+      const k0 = Math.round((x + GRID_LENGTH) / SAMPLE);
+      for (let j = -3; j <= 3; j++) {
+        worst = Math.max(worst, Math.abs(curv[Math.max(0, Math.min(curv.length - 1, k0 + j))]));
+      }
+    }
+    return worst;
   };
   const queue = [];
   const refill = () => {
@@ -300,7 +351,7 @@ function planFeatures(us, curv, L, rand) {
     queue.push(...types);
   };
   const features = [];
-  const overlaps = (u, f) => features.some((g) => !(u + f.after + 4 < g.u - g.span[0] || u - f.before - 4 > g.u + g.span[1]));
+  const overlaps = (u, f) => features.some((g) => !(u + f.after + 3 < g.u - g.span[0] || u - f.before - 3 > g.u + g.span[1]));
   // The lift first: the straightest spot nearest the middle of the lap.
   {
     const lf = { ...LIFT, maxCurv: 0.03 };
@@ -319,23 +370,50 @@ function planFeatures(us, curv, L, rand) {
     }
     if (best !== null) features.push({ type: "jump", u: r3(best), label: FEATURES.jump.label, span: [FEATURES.jump.before, FEATURES.jump.after] });
   }
-  // The machines are the show: one turntable and one pusher per circuit,
-  // spread over the lap, before the cycling obstacles fill in the rest.
-  for (const [j, type] of ALWAYS.entries()) {
-    const target = 12 + START.funnel + ((j + 0.7) / 5.4) * (L - 30 - START.funnel);
+  // High-action machines & obstacles: guarantee two full waves of action machines across the first and second halves of the lap!
+  const ACTION_WAVES = [
+    ...ALWAYS,
+    "bumpers",
+    "pegs",
+    "splitter",
+    "fan",
+    "hammer",
+    "spinner",
+    "bumpers",
+    "turntable",
+    "pusher",
+    "rollers",
+    "pegs",
+    "splitter",
+    "bumps",
+  ];
+  for (const [j, type] of ACTION_WAVES.entries()) {
+    if (!FEATURES[type]) continue;
+    if (FEATURES[type].once && features.some((f) => f.type === type)) continue;
+    const target = 14 + START.funnel + ((j + 0.5) / (ACTION_WAVES.length + 0.5)) * (bayReserve(L) - 14 - START.funnel);
     let best = null;
-    for (let x = 12 + START.funnel; x + FEATURES[type].after <= bayReserve(L); x += 1) {
+    for (let x = 14 + START.funnel; x + FEATURES[type].after <= bayReserve(L); x += 1) {
       if (clear(x, FEATURES[type]) && !overlaps(x, FEATURES[type]) && (best === null || Math.abs(x - target) < Math.abs(best - target))) best = x;
+    }
+    // Fallback if all strict spots near target were curved: pick the flattest non-overlapping stretch near target
+    if (best === null) {
+      let bestScore = Infinity;
+      for (let x = 14 + START.funnel; x + FEATURES[type].after <= bayReserve(L); x += 1) {
+        if (overlaps(x, FEATURES[type])) continue;
+        const sc = curvScoreAt(x, FEATURES[type]) * 40 + Math.abs(x - target) * 0.05;
+        if (sc < bestScore && curvScoreAt(x, FEATURES[type]) < 0.14) {
+          bestScore = sc;
+          best = x;
+        }
+      }
     }
     if (best !== null) features.push({ type, u: r3(best), label: FEATURES[type].label, span: [FEATURES[type].before, FEATURES[type].after] });
   }
-  // The cycling obstacles start a little later than the machines may: the
-  // twenty marbles leave the funnel as one block and need room to string out.
-  let u = 30 + START.funnel;
+  // Fill any remaining stretches with cycling obstacles so there is never an empty gap on track:
+  let u = 20 + START.funnel;
   while (u < bayReserve(L)) {
     if (!queue.length) refill();
-    // Try the next type in the queue, then the others, at this spot.
-    const order = [...queue.slice(0, 3)];
+    const order = [...queue.slice(0, 6)];
     const type = order.find((t) => u + FEATURES[t].after <= bayReserve(L) && clear(u, FEATURES[t]) && !overlaps(u, FEATURES[t]));
     if (!type) {
       u += 1;
@@ -343,7 +421,7 @@ function planFeatures(us, curv, L, rand) {
     }
     queue.splice(queue.indexOf(type), 1);
     features.push({ type, u: r3(u), label: FEATURES[type].label, span: [FEATURES[type].before, FEATURES[type].after] });
-    u += FEATURES[type].after + 6 + rand() * 6;
+    u += FEATURES[type].after + 3 + rand() * 2;
   }
   // Drops are the crowd-pleasers: make sure there are a few, in any free spot.
   const free = (u, f) =>
@@ -363,7 +441,19 @@ function planFeatures(us, curv, L, rand) {
  * real one; its "real" length is what the lap would be at the season's usual 0.08.
  */
 function drawnOutline(round) {
-  const raw = round.outline;
+  const rawIn = round.outline;
+  // Subdivide long straight segments (> 16 units) into collinear control points so
+  // Catmull-Rom keeps obstacle straightaways 100% straight (curv = 0) between turns.
+  const raw = [];
+  for (let i = 0; i < rawIn.length; i++) {
+    const a = rawIn[i];
+    const b = rawIn[(i + 1) % rawIn.length];
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const n = d > 22 ? Math.max(2, Math.round(d / 12)) : 1;
+    for (let k = 0; k < n; k++) {
+      raw.push([a[0] + (b[0] - a[0]) * (k / n), a[1] + (b[1] - a[1]) * (k / n)]);
+    }
+  }
   const cx = raw.reduce((a, p) => a + p[0], 0) / raw.length;
   const cz = raw.reduce((a, p) => a + p[1], 0) / raw.length;
   let per = 0;
@@ -374,7 +464,8 @@ function drawnOutline(round) {
 
 export function buildCourse(round) {
   const { props, pts } = round.outline ? drawnOutline(round) : loadOutline(new URL(`../data/circuits/${round.geo}.geojson`, import.meta.url));
-  const scale = round.outline ? 1 : (round.scale ?? SCALE);
+  const baseScale = round.scale ?? (round.outline ? 1.25 : SCALE);
+  const scale = process.env.GP_CARS === "1" ? baseScale * 1.18 : baseScale;
   const relaxed = marbleize(pts, scale);
   // A few gentle smoothing passes take out the last polyline wobble.
   let loop = relaxed.pts;
@@ -460,7 +551,12 @@ export function buildCourse(round) {
 
   // The obstacle layout belongs to the circuit, not the race: same for every seed.
   // The circuit's own layout if it has one (src/gp/circuits/), else the planner's.
-  const features = Array.isArray(round.layout) ? placeLayout(round.layout, curv, L, round.id) : planFeatures(us, curv, L, mulberry32(hashString(round.id)));
+  // When GP_CARS=1, remove all pinball obstacles for pure high-speed Soapbox / Mini-F1 downhill racing.
+  const isCarsMode = process.env.GP_CARS === "1";
+  const baseFeatures = Array.isArray(round.layout)
+    ? placeLayout(round.layout, curv, L, round.id, round.outline ? scale : 1)
+    : planFeatures(us, curv, L, mulberry32(hashString(round.circuit ?? round.id)));
+  const features = isCarsMode ? sanitizeCarFeatures(baseFeatures, END) : baseFeatures;
   // Crests at the apex of the sharp bends, wherever the layout leaves room (CREST).
   {
     const k0 = Math.round(GRID_LENGTH / SAMPLE);
@@ -479,11 +575,12 @@ export function buildCourse(round) {
     }
     peaks.sort((a, b) => b.c - a.c);
     const crests = [];
+    const maxCrests = isCarsMode ? 0 : CREST.max;
     for (const p of peaks) {
-      if (crests.length >= CREST.max) break;
+      if (crests.length >= maxCrests) break;
       if (p.u < 30 || p.u + 5 > bayReserve(L)) continue;
       if (features.some((g) => p.u + 5 + 4 > g.u - g.span[0] && p.u - 4 - 4 < g.u + g.span[1])) continue;
-      if (crests.some((q) => Math.abs(q - p.u) < CREST.spacing)) continue;
+      if (crests.some((q) => Math.abs(q - p.u) < (isCarsMode ? 45 : CREST.spacing))) continue;
       crests.push(p.u);
     }
     for (const u of crests) features.push({ type: "crest", u: r3(u), label: "THE CREST", span: [4, 5] });
@@ -514,7 +611,8 @@ export function buildCourse(round) {
     const boost = featureRule("booster");
     const { clear } = placementRules(curv);
     let added = 0;
-    for (let u = 40; u + jump.after <= bayReserve(L) && added < LAUNCHES.max; u += 1) {
+    const maxJumps = isCarsMode ? 0 : LAUNCHES.max;
+    for (let u = 40; u + jump.after <= bayReserve(L) && added < maxJumps; u += 1) {
       const ub = u - LAUNCHES.gap;
       if (!clear(u, jump) || !clear(ub, boost)) continue;
       if (features.some((g) => u + jump.after + 4 > g.u - g.span[0] && ub - boost.before - 4 < g.u + g.span[1])) continue;
@@ -522,11 +620,33 @@ export function buildCourse(round) {
       features.push({ type: "jump", u: r3(u), label: jump.label, span: [jump.before, jump.after] });
       features.sort((a, b) => a.u - b.u);
       added++;
-      u += 40;
+      u += isCarsMode ? 55 : 40;
     }
   }
-  // Slingshot rollers on every circuit that has none.
-  if (!round.exactLayout && !features.some((g) => g.type === "rollers")) {
+  // In Soapbox Car mode, keep the track surface 100% grade-smooth (no vertical drops or bumpy ridges so cars never hop!)
+  if (isCarsMode && false) {
+    const bumpsRule = featureRule("bumps");
+    const dropRule = featureRule("drop");
+    const { clear } = placementRules(curv);
+    let bAdded = 0;
+    for (let u = 55; u + 12 <= bayReserve(L) && bAdded < 3; u += 2) {
+      if (!clear(u, bumpsRule) || features.some((g) => u + 10 > g.u - g.span[0] && u - 6 < g.u + g.span[1])) continue;
+      features.push({ type: "bumps", u: r3(u), label: "RUMBLE KERBS", span: [bumpsRule.before, bumpsRule.after] });
+      features.sort((a, b) => a.u - b.u);
+      bAdded++;
+      u += 75;
+    }
+    let dAdded = 0;
+    for (let u = 90; u + 12 <= bayReserve(L) && dAdded < 2; u += 2) {
+      if (!clear(u, dropRule) || features.some((g) => u + 10 > g.u - g.span[0] && u - 6 < g.u + g.span[1])) continue;
+      features.push({ type: "drop", u: r3(u), label: " CANYON DROP", span: [dropRule.before, dropRule.after] });
+      features.sort((a, b) => a.u - b.u);
+      dAdded++;
+      u += 110;
+    }
+  }
+  // Slingshot rollers on every circuit that has none (disabled in obstacle-free Car mode).
+  if (!isCarsMode && !round.exactLayout && !features.some((g) => g.type === "rollers")) {
     const rule = featureRule("rollers");
     const { clear } = placementRules(curv);
     for (let u = 40; u + rule.after <= bayReserve(L); u += 1) {
@@ -536,8 +656,8 @@ export function buildCourse(round) {
       break;
     }
   }
-  // Fans: a few more wherever a straight is free (FANS), spread over the lap.
-  if (!round.exactLayout) {
+  // Fans: a few more wherever a straight is free (FANS), spread over the lap (disabled in obstacle-free Car mode).
+  if (!isCarsMode && !round.exactLayout) {
     const rule = featureRule("fan");
     const { clear } = placementRules(curv);
     let added = 0;
@@ -562,9 +682,10 @@ export function buildCourse(round) {
       return false;
     };
     const placed = [];
-    for (let u = 26; u + 5 <= bayReserve(L) && placed.length < BOOSTERS.max; u += 1) {
+    const maxBoosters = isCarsMode ? 0 : BOOSTERS.max;
+    for (let u = 26; u + 5 <= bayReserve(L) && placed.length < maxBoosters; u += 1) {
       if (!bendBefore(u) || !straight(u - 1, u + 6)) continue;
-      if (placed.some((q) => Math.abs(q - u) < BOOSTERS.spacing)) continue;
+      if (placed.some((q) => Math.abs(q - u) < (isCarsMode ? 36 : BOOSTERS.spacing))) continue;
       if (features.some((g) => u + 6 + 3 > g.u - g.span[0] && u - 1 - 3 < g.u + g.span[1])) continue;
       placed.push(u);
     }
@@ -585,7 +706,7 @@ export function buildCourse(round) {
     }
     let slope = tanS;
     if (u < START_STEEP.until) slope = START_STEEP.slope + (tanS - START_STEEP.slope) * Math.max(0, (u - START_STEEP.until + 6) / 6);
-    if (u > L) slope = tanS + (-Math.tan((5 * Math.PI) / 180) - tanS) * Math.min((u - L) / 6, 1);
+    if (u > (LAPS === 1 ? END - 16 : L)) slope = tanS + (-Math.tan((4 * Math.PI) / 180) - tanS) * Math.min((u - (LAPS === 1 ? END - 16 : L)) / 8, 1);
     let h = hs[k - 1] - slope * SAMPLE;
     for (const f of features) {
       if (f.type === "drop" && us[k - 1] < f.u && u >= f.u) h -= DROP_HEIGHT;
@@ -674,8 +795,8 @@ export function buildCourse(round) {
     // Half-width: wide start lanes, a smooth funnel, then the normal track.
     const x = Math.min(Math.max((us[k] - 0.5) / START.funnel, 0), 1);
     let w = START.half + (TRACK.width / 2 - START.half) * x * x * (3 - 2 * x);
-    // And out again into the two lift bays at the end of the lap.
-    const xe = Math.min(Math.max((us[k] - (END - ELEVATOR.funnel)) / ELEVATOR.funnel, 0), 1);
+    // And out again into the two lift bays at the end of the lap (only when multi-lap).
+    const xe = LAPS > 1 ? Math.min(Math.max((us[k] - (END - ELEVATOR.funnel)) / ELEVATOR.funnel, 0), 1) : 0;
     w = Math.max(w, TRACK.width / 2 + (START.half - TRACK.width / 2) * xe * xe * (3 - 2 * xe));
     const gap = features.some((f) => f.type === "vortex" && us[k] > f.u + VORTEX.entry && us[k] <= f.u + VORTEX.resume + 1e-6);
     return { u: us[k], p: arr(bottom), t: arr(t), r: arr(r), n: arr(nn), curv: r3(curv[k]), bank: r3(phi), w: r3(w), ...(gap ? { gap: true } : {}) };
@@ -706,24 +827,28 @@ export function buildCourse(round) {
   const topCentreY = topY + (ELEVATOR.cabin / 2) * slope;
   const right = new Vector3(-fwd.z, 0, fwd.x);
   const bayLat = START.half / ELEVATOR.bays; // bay centres at ±2.35 for two bays
-  const elevators = Array.from({ length: ELEVATOR.bays }, (_, k) => {
-    const lat = (k - (ELEVATOR.bays - 1) / 2) * 2 * bayLat;
-    return {
-      bay: k,
-      lat: r3(lat),
-      center: [r3(cabinC[0] + right.x * lat), r3(bottomCentreY), r3(cabinC[1] + right.z * lat)],
-      fwd: [r3(fwd.x), 0, r3(fwd.z)],
-      slope: r3(slope),
-      length: ELEVATOR.cabin,
-      width: ELEVATOR.width,
-      bayWidth: r3(2 * bayLat),
-      wall: ELEVATOR.wall,
-      lift: r3(topCentreY - bottomCentreY),
-      u: END,
-    };
-  });
-  features.push({ type: "elevator", u: END, label: "THE STAIRWAY", span: [6, 0.5] });
-  return { props, L, H, loop, samples, sampleAt, frameAt, features, END, uFinish: r3(END - 1.4), elevators, xzAt, startShift: r3(startShift) };
+  const elevators =
+    LAPS > 1
+      ? Array.from({ length: ELEVATOR.bays }, (_, k) => {
+          const lat = (k - (ELEVATOR.bays - 1) / 2) * 2 * bayLat;
+          return {
+            bay: k,
+            lat: r3(lat),
+            center: [r3(cabinC[0] + right.x * lat), r3(bottomCentreY), r3(cabinC[1] + right.z * lat)],
+            fwd: [r3(fwd.x), 0, r3(fwd.z)],
+            slope: r3(slope),
+            length: ELEVATOR.cabin,
+            width: ELEVATOR.width,
+            bayWidth: r3(2 * bayLat),
+            wall: ELEVATOR.wall,
+            lift: r3(topCentreY - bottomCentreY),
+            u: END,
+          };
+        })
+      : [];
+  if (LAPS > 1) features.push({ type: "elevator", u: END, label: "THE STAIRWAY", span: [6, 0.5] });
+  // Place uFinish 20 m before the end of the track so finished marbles have a full 20 m run-off zone.
+  return { props, L, H, loop, samples, sampleAt, frameAt, features, END, uFinish: r3(END - 20), elevators, xzAt, startShift: r3(startShift) };
 }
 
 // --- Obstacles -----------------------------------------------------------------------
@@ -785,29 +910,31 @@ function buildObstacles(course, sync = {}) {
       }
     }
   }
-  // Disqualification pads: beside every machine, at the foot of alternate walls.
-  features
-    .filter((f) => DQ.types.includes(f.type))
-    .filter((_, k) => k % DQ.every === 0)
-    .forEach((f, k) => {
-      const side = k % 2 ? -1 : 1;
-      const u = f.u + DQ.offset;
-      const s = frameAt(u);
-      const w = s.w ?? TRACK.width / 2;
-      statics.push({
-        kind: "dq",
-        shape: "box",
-        pos: pointOnTrack(s, side * (w - 0.04 - DQ.width / 2), 0.01).map(r3),
-        quat: quatArr(frameQuat(s)),
-        size: [DQ.len, 0.02, DQ.width],
-        u: r3(u),
-        side,
-        feature: f.type,
-        restitution: 0,
+  // Disqualification pads: only placed if random wall-pad DQs are enabled via GP_WALL_DQ=1.
+  // In the "Don't Be Last!" Checkpoint Knockout series, eliminations happen strictly at the 5 Checkpoints.
+  if (process.env.GP_WALL_DQ === "1")
+    features
+      .filter((f) => DQ.types.includes(f.type))
+      .filter((_, k) => k % DQ.every === 0)
+      .forEach((f, k) => {
+        const side = k % 2 ? -1 : 1;
+        const u = f.u + DQ.offset;
+        const s = frameAt(u);
+        const w = s.w ?? TRACK.width / 2;
+        statics.push({
+          kind: "dq",
+          shape: "box",
+          pos: pointOnTrack(s, side * (w - 0.04 - DQ.width / 2), 0.01).map(r3),
+          quat: quatArr(frameQuat(s)),
+          size: [DQ.len, 0.02, DQ.width],
+          u: r3(u),
+          side,
+          feature: f.type,
+          restitution: 0,
+        });
       });
-    });
-  // The divider between the two lift bays at the end of the lap, with a rounded nose.
-  if (course.END) {
+  // The divider between the two lift bays at the end of the lap (only when multi-lap elevators are present).
+  if (course.END && course.elevators.length > 0) {
     const s = frameAt(course.END - ELEVATOR.funnel / 2 + 0.6);
     statics.push({ kind: "divider", shape: "box", pos: pointInFrame(s, 0, 0.45).map(r3), quat: quatArr(frameQuat(s)), size: [ELEVATOR.funnel - 1.2, 0.9, 0.1], restitution: 0.3 });
     cylinder("divider", course.END - ELEVATOR.funnel + 1.0, 0, 0.12, 0.9, 0.3);
@@ -877,9 +1004,8 @@ export async function runRound(round, seed, opts) {
       dqReach = gaps.length >= k ? (gaps[k - 1] + (gaps[k] ?? gaps[k - 1] + 0.02)) / 2 : DQ.reach;
     }
   }
-  // The final race runs with the second pass's machine timing, not the one the reach was calibrated
-  // on, so the count can drift (target 1 gave 4): cap it there.
-  const dqMax = round.dq?.target !== undefined ? Math.max(1, Math.round(round.dq.target)) + 1 : Infinity;
+  // Disable random wall-pad DQs (0): only the 3 Checkpoints eliminate the single last marble at each gate!
+  const dqMax = 0;
   return runRoundOnce(round, seed, { ...opts, sync, dqReach, dqMax });
 }
 
@@ -903,7 +1029,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
 
   const world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
   world.timestep = DT;
-  const mesh = buildTrackMesh(samples, { endCaps: false });
+  const mesh = buildTrackMesh(samples, { endCaps: LAPS === 1, wallHeight: 1.35 });
   const trackBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
   world.createCollider(
     RAPIER.ColliderDesc.trimesh(mesh.physics.vertices, mesh.physics.indices, RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
@@ -1075,7 +1201,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
   const raceStart = Math.round(lightsOut * FPS);
   const gs = sampleAt(0.3);
   const gateQuat = frameQuat(gs);
-  const GATE_HEIGHT = TRACK_DEPTH + 0.05;
+  const GATE_HEIGHT = Math.max(1.4, TRACK_DEPTH + 0.05);
   const hinge = v3(pointInFrame(gs, 0, GATE_HEIGHT));
   const gateBody = world.createRigidBody(
     RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(hinge.x, hinge.y, hinge.z).setRotation(gateQuat),
@@ -1087,37 +1213,50 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
     gateBody,
   );
   const gateRotation = (t) => {
-    const k = Math.min(Math.max((t - lightsOut) / GATE.time, 0), 1);
+    const k = Math.min(Math.max((t - (lightsOut - 0.06)) / GATE.time, 0), 1);
     const angle = GATE.swing * (1 - (1 - k) ** 3);
     const q = gateQuat.clone().multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), angle));
     return { x: q.x, y: q.y, z: q.z, w: q.w };
   };
 
-  // Qualifying: a random grid. Two staggered columns like a real starting grid.
+  // Qualifying: in Car Mode, assign each car directly to Lane 1..N (left-to-right) so the Grid Presentation matches Lane 1..6.
+  const isCars = process.env.GP_CARS === "1";
   const grid = MARBLES.map((_, i) => i);
-  for (let i = grid.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [grid[i], grid[j]] = [grid[j], grid[i]];
+  if (!isCars) {
+    for (let i = grid.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [grid[i], grid[j]] = [grid[j], grid[i]];
+    }
   }
   const gridSlot = MARBLES.map((_, i) => grid.indexOf(i));
-  const bodies = MARBLES.map((_, i) => {
-    // One marble per lane and row: slot 0-9 on the front row, 10-19 behind.
+  const initPos = [];
+  const bodies = MARBLES.map((m, i) => {
+    // 1 Car per Lane on the Starting Grid (Lane 1 .. Lane N, side-by-side on the front row!)
     const slot = gridSlot[i];
     const laneW = (2 * START.half) / GRID.lanes;
+    const row = Math.floor(slot / GRID.lanes);
     const lat = -START.half + laneW * ((slot % GRID.lanes) + 0.5);
-    const s = sampleAt(-0.8 - Math.floor(slot / GRID.lanes) * GRID.rowGap);
-    const p = pointOnTrack(s, lat, R + 0.05);
-    const body = world.createRigidBody(
-      RAPIER.RigidBodyDesc.dynamic()
-        .setTranslation(p[0], p[1], p[2])
-        // No CCD: at 120 Hz a marble moves ~0.05 per step, far below its radius,
-        // and CCD against the trimesh makes marbles stick in place.
-        .setLinearDamping(DAMPING)
-        // Marbles settle on the grid for seconds; asleep, they'd ignore the gate lifting.
-        .setCanSleep(false),
-    );
+    const s = sampleAt((isCars ? -1.45 : -1.05) - row * GRID.rowGap);
+    const p = pointOnTrack(s, lat, R + 0.02);
+    initPos.push({ x: p[0], y: p[1], z: p[2] });
+    // Car stats (10-Point Constructor Budget: VEL + EST + INT = 10):
+    // VEL (1-5) controls aerodynamic drag damping; EST (1-5) controls physical chassis mass/stability
+    const velNormInit = ((m.stats?.vel ?? 3) - 1) / 4;
+    const estNormInit = ((m.stats?.est ?? 3) - 1) / 4;
+    const carDamping = isCars ? 0.22 * (1.12 - velNormInit * 0.22) : DAMPING;
+    const carDensity = isCars ? 1.15 + estNormInit * 1.55 : 2;
+    const rbDesc = RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(p[0], p[1], p[2])
+      .setLinearDamping(carDamping)
+      .setCanSleep(false);
+    if (isCars) rbDesc.lockRotations();
+    const body = world.createRigidBody(rbDesc);
     world.createCollider(
-      RAPIER.ColliderDesc.ball(R).setFriction(0.15).setRestitution(MARBLE_RESTITUTION).setDensity(2).setCollisionGroups(GROUP_MARBLE),
+      RAPIER.ColliderDesc.ball(R)
+        .setFriction(isCars ? 0.02 : 0.15)
+        .setRestitution(isCars ? 0.0 : MARBLE_RESTITUTION)
+        .setDensity(carDensity)
+        .setCollisionGroups(GROUP_MARBLE),
       body,
     );
     return body;
@@ -1175,25 +1314,148 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
   const dqZones = obstacles.statics.filter((o) => o.kind === "dq").map((o) => ({ ...o, s: course.frameAt(o.u) }));
   const dqEvents = [];
   const dqGaps = [];
+  const safeCpU = (target) => {
+    let bestU = target;
+    let bestScore = Infinity;
+    for (let d = 0; d <= 36; d += 1) {
+      for (const sgn of [1, -1]) {
+        const u = target + d * sgn;
+        if (u < 45 || u > course.uFinish - 18) continue;
+        const nearGap = samples.some((q) => q.gap && Math.abs(q.u - u) < 8);
+        if (nearGap) continue;
+        const nearObs = course.features.some((f) => f.type !== "booster" && u >= f.u - (f.span?.[0] ?? 4) - 5 && u <= f.u + (f.span?.[1] ?? 4) + 5);
+        if (nearObs) continue;
+        const s = course.sampleAt(u);
+        const score = Math.abs(s.curv) * 60 + Math.abs(s.bank ?? 0) * 30 + d * 0.04;
+        if (score < bestScore) {
+          bestScore = score;
+          bestU = u;
+        }
+      }
+    }
+    return r3(bestU);
+  };
+  const cpU1 = safeCpU(course.uFinish * (LAPS === 1 ? 0.28 : 0.38));
+  const cpU2 = safeCpU(course.uFinish * (LAPS === 1 ? 0.54 : 0.86));
+  const cpU3 = safeCpU(course.uFinish * (LAPS === 1 ? 0.78 : 0.62));
+  // "Don't Be Last!" Checkpoint Knockouts:
+  // - 6-car Qualifying Heats: 5 -> 4 -> 3 survive (last car eliminated at each Checkpoint gate; 3 battle for Top 2 + Wildcard!)
+  // - 10-car Grand Final: 8 -> 6 -> 4 survive (last 2 cars eliminated at each Checkpoint gate; 4 sprint for the Podium!)
+  // - 20-runner full grid: 19 -> 18 -> 17 survive
+  const cpSurvive =
+    MARBLES.length === 6
+      ? [5, 4, 3]
+      : MARBLES.length === 10
+        ? [8, 6, 4]
+        : [19, 18, 17];
+  const checkpoints = [
+    { index: 1, lap: 0, u: cpU1, totalU: r3(cpU1), survive: cpSurvive[0], label: "CHECKPOINT 1", passed: new Set(), firstFrame: null, fullFrame: null, closedFrame: null, eliminated: [] },
+    { index: 2, lap: 0, u: cpU2, totalU: r3(cpU2), survive: cpSurvive[1], label: "CHECKPOINT 2", passed: new Set(), firstFrame: null, fullFrame: null, closedFrame: null, eliminated: [] },
+    { index: 3, lap: Math.max(0, LAPS - 1), u: cpU3, totalU: r3(Math.max(0, LAPS - 1) * L + cpU3), survive: cpSurvive[2], label: "CHECKPOINT 3", passed: new Set(), firstFrame: null, fullFrame: null, closedFrame: null, eliminated: [] },
+  ];
   const prevU = MARBLES.map(() => null);
   const impacts = [];
   const prevVel = bodies.map(() => null);
   const lastImpact = bodies.map(() => -99);
+  const carSlip = MARBLES.map(() => 0);
+  const carSlipVel = MARBLES.map(() => 0);
+  const carSpinBase = MARBLES.map(() => 0);
+  const carSpinUntil = MARBLES.map(() => -1);
+  const carRoll = MARBLES.map(() => 0);
+  const carPitch = MARBLES.map(() => 0);
+  const prevCarVel = MARBLES.map(() => ({ x: 0, y: 0, z: 0 }));
+  const carTelemetry = isCars ? buildCarTelemetryProfile(course) : null;
+  // Continuous overtaking lateral offset from the Optimal Racing Line (replaces robotic 3-lane slot-car switching!)
+  const carPassOffset = MARBLES.map((_, i) => ((i % 3) - 1) * 0.28);
+  const carTargetOffset = MARBLES.map((_, i) => ((i % 3) - 1) * 0.28);
+  const carTcrLane = MARBLES.map((_, i) => (i % 3) - 1);
+  const carNextSwitch = MARBLES.map(() => 0);
+  const carLongSpd = MARBLES.map(() => 0);
+  const carLatSpd = MARBLES.map(() => 0);
   const maxFrames = Math.round((LAPS * (L / 3 + 30) + 40) * FPS);
   let allDone = null;
   let step = 0;
 
   for (let f = 0; f < maxFrames; f++) {
+    bodies.forEach((b, i) => {
+      if (dqFrame[i] !== null || finishFrame[i] !== null || riding[i] !== null) return;
+      const p = b.translation();
+      let floor = Infinity;
+      for (let k = Math.max(0, idx[i] - 40); k <= Math.min(samples.length - 1, idx[i] + 40); k++) floor = Math.min(floor, samples[k].p[1]);
+      const fellOff = !inVortex(p) && p.y < floor - 1.5;
+      const nearRegroup = obstacles.regroups.some((g) => Math.abs((prevU[i] ?? 0) - g.u) < 7);
+      const stalled = !isCars && f > raceStart + 180 && f >= 120 && !nearRegroup && Math.hypot(p.x - frames[f - 120][i][0], p.y - frames[f - 120][i][1], p.z - frames[f - 120][i][2]) < 0.45;
+      if (fellOff || stalled) {
+        if (stalled && idx[i] >= samples.length - 25 && lap[i] < LAPS - 1) {
+          lap[i]++;
+          idx[i] = 20;
+          lapStartFrame[i] = null;
+          lapEndFrame[i] = null;
+        } else if (stalled) {
+          idx[i] = Math.min(samples.length - 1, idx[i] + 8);
+        }
+        const s = samples[idx[i]];
+        const sp = pointOnTrack(s, ((i % 3) - 1) * 0.9, R + 0.08);
+        b.setTranslation({ x: sp[0], y: sp[1], z: sp[2] }, true);
+        b.setLinvel({ x: s.t[0] * 7, y: s.t[1] * 7, z: s.t[2] * 7 }, true);
+        b.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      }
+    });
     frames.push(
       bodies.map((b, i) => {
         if (dqFrame[i] !== null) return frames[dqFrame[i]][i]; // parked where it was caught
-        const p = b.translation();
-        const q = b.rotation();
+        let p = b.translation();
+        let q = b.rotation();
         const u = progressOf(i, p);
+        if (isCars) {
+          const sRaw = course.frameAt(u);
+          const tVec = v3(sRaw.t).normalize();
+          const nVec = v3(sRaw.n).normalize();
+          const rVec = new Vector3().crossVectors(tVec, nVec).normalize();
+          const nOrtho = new Vector3().crossVectors(rVec, tVec).normalize();
+          const sBasis = { t: [tVec.x, tVec.y, tVec.z], n: [nOrtho.x, nOrtho.y, nOrtho.z], r: [rVec.x, rVec.y, rVec.z] };
+          const v = b.linvel();
+          const speed = Math.hypot(v.x, v.y, v.z);
+          const vLong = v.x * tVec.x + v.y * tVec.y + v.z * tVec.z;
+          const vLat = v.x * rVec.x + v.y * rVec.y + v.z * rVec.z;
+          const prevV = prevCarVel[i];
+          const prevLong = prevV.x * tVec.x + prevV.y * tVec.y + prevV.z * tVec.z;
+          const dv = Math.hypot(v.x - prevV.x, v.y - prevV.y, v.z - prevV.z);
+          prevCarVel[i] = { x: v.x, y: v.y, z: v.z };
+          const rel = [p.x - sRaw.p[0], p.y - sRaw.p[1], p.z - sRaw.p[2]];
+          const lat = rel[0] * rVec.x + rel[1] * rVec.y + rel[2] * rVec.z;
+          const hAbove = rel[0] * nOrtho.x + rel[1] * nOrtho.y + rel[2] * nOrtho.z - R;
+          // Keep car planted cleanly on the asphalt floor (zero vertical hopping)
+          if (riding[i] === null && !sRaw.gap) {
+            const wMax = (sRaw.w ?? 2.1) - 0.38;
+            const cLat = Math.max(-wMax, Math.min(wMax, lat));
+            const planted = pointOnTrack(sRaw, cLat, R);
+            p = { x: planted[0], y: planted[1], z: planted[2] };
+          }
+          // Clean velocity-aligned heading (+Y rotation rotates +X toward -Z, so -atan2(vLat, vLong) points along velocity)
+          const velYaw = f > raceStart + 8 && speed > 1.5 ? -Math.atan2(vLat, Math.max(4.5, Math.abs(vLong))) : 0;
+          // Subtle cornering slip angle (max ~8 degrees) — zero random 360 spin-outs so cars never crab sideways!
+          const targetSlip = Math.max(-0.15, Math.min(0.15, velYaw * 0.55));
+          carSlipVel[i] += ((targetSlip - carSlip[i]) * 42 - carSlipVel[i] * 13.0) / FPS;
+          carSlip[i] += carSlipVel[i] / FPS;
+
+          // Authentic suspension body roll under cornering Gs + longitudinal pitch (nose dive under braking, rear squat on throttle)
+          const rollTarget = f > raceStart ? Math.max(-0.095, Math.min(0.095, -sRaw.curv * speed * 0.065 + vLat * 0.015)) : 0;
+          carRoll[i] += (rollTarget - carRoll[i]) * 0.28;
+          const aLong = f > raceStart + 4 ? (vLong - prevLong) * FPS : 0;
+          const pitchTarget = f > raceStart + 4 ? Math.max(-0.048, Math.min(0.032, aLong * 0.0042)) : 0;
+          carPitch[i] += (pitchTarget - carPitch[i]) * 0.25;
+
+          const qCar = frameQuat(sBasis)
+            .multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), carSlip[i]))
+            .multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), carRoll[i]))
+            .multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), carPitch[i]));
+          q = { x: qCar.x, y: qCar.y, z: qCar.z, w: qCar.w };
+        }
         if (finishFrame[i] === null) {
           const inside = inVortex(p);
           if (inside !== vortexDamping[i]) {
-            b.setLinearDamping(inside ? 0.008 : DAMPING);
+            b.setLinearDamping(inside ? 0.008 : isCars ? 0.14 : DAMPING);
             vortexDamping[i] = inside;
           }
         }
@@ -1202,8 +1464,12 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
           const uPrev = prevU[i] ?? u;
           const frac = u > uPrev ? Math.max(0, Math.min(1, (course.uFinish - uPrev) / (u - uPrev))) : 0;
           finishExact[i] = r3(f - 1 + frac);
-          b.setLinearDamping(BRAKE_DAMPING);
+          // Coast past the finish line with light damping first so early finishers clear the line
+          // into the 20 m run-off zone without blocking trailing marbles in a crowded pack.
+          b.setLinearDamping(0.35);
           lapEnd(i, f);
+        } else if (finishFrame[i] !== null && u >= course.uFinish + 10) {
+          b.setLinearDamping(BRAKE_DAMPING);
         } else if (lap[i] < LAPS - 1 && u >= course.uFinish && lapEndFrame[i] === null) lapEnd(i, f);
         if (lapStartFrame[i] === null && f > raceStart && u >= 0) lapStartFrame[i] = f;
         if (finishFrame[i] === null && f > raceStart) {
@@ -1236,6 +1502,42 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
         return [r3(p.x), r3(p.y), r3(p.z), r3(q.x), r3(q.y), r3(q.z), r3(q.w), r3(lap[i] * L + u)];
       }),
     );
+    // "Don't Be Last!" Checkpoint Knockout evaluation:
+    // As soon as `cp.survive` marbles cross a checkpoint, lock the gate and eliminate all trailing marbles!
+    if (f > raceStart) {
+      for (const cp of checkpoints) {
+        if (cp.closedFrame !== null) continue;
+        // Wait for the previous checkpoint to close first
+        if (cp.index > 1 && checkpoints[cp.index - 2].closedFrame === null) break;
+        const activeByU = MARBLES.map((_, i) => i)
+          .filter((i) => dqFrame[i] === null)
+          .sort((a, b) => frames[f][b][7] - frames[f][a][7]);
+        for (const i of activeByU) {
+          const totU = frames[f][i][7];
+          if (cp.passed.size < cp.survive && (totU >= cp.totalU || lap[i] > cp.lap)) {
+            cp.passed.add(i);
+            if (cp.firstFrame === null) cp.firstFrame = f;
+          }
+        }
+        const activeCount = activeByU.length;
+        const timeout = cp.firstFrame !== null && f - cp.firstFrame > 18 * FPS && cp.passed.size >= Math.min(cp.survive, activeCount - 1);
+        if (cp.passed.size >= cp.survive && cp.fullFrame === null) cp.fullFrame = f;
+        // Wait briefly after the N-th surviving runner crosses the line so it clears the laser before the gate locks
+        const lockDelay = isCars ? Math.round(0.05 * FPS) : Math.round(0.45 * FPS);
+        if ((cp.fullFrame !== null && f - cp.fullFrame >= lockDelay) || timeout) {
+          cp.closedFrame = f;
+          const trailing = MARBLES.map((_, i) => i)
+            .filter((i) => dqFrame[i] === null && finishFrame[i] === null && !cp.passed.has(i))
+            .sort((a, b) => frames[f][a][7] - frames[f][b][7]); // furthest behind first
+          for (const mIdx of trailing) {
+            dqFrame[mIdx] = f;
+            cp.eliminated.push(mIdx);
+            bodies[mIdx].setEnabled(false);
+          }
+          break;
+        }
+      }
+    }
     // The stairs: who is riding in each bay; a marble starts its next lap at the top.
     {
       const racingIdx = MARBLES.map((_, i) => i).filter((i) => finishFrame[i] === null && dqFrame[i] === null);
@@ -1318,10 +1620,12 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
         }
       });
     }
-    // The race is over once the top ten (or everyone) are home or out; the rest are classified where they are.
-    if (allDone === null && finishFrame.filter((x, i) => x !== null || dqFrame[i] !== null).length >= Math.min(MARBLES.length, 10)) allDone = f;
-    // Then up to 8 s more for stragglers, or until they all have.
-    if (allDone !== null && (f - allDone >= 8 * FPS || finishFrame.every((x, i) => x !== null || dqFrame[i] !== null))) break;
+    // The race is over once the surviving finalists (17 after Checkpoint 3, or all cars in a 6/10-car TCR Heat) are home or everyone is accounted for.
+    const finishedCount = finishFrame.filter((x) => x !== null).length;
+    const allAccounted = finishFrame.every((x, i) => x !== null || dqFrame[i] !== null);
+    if (allDone === null && (allAccounted || finishedCount >= Math.min(17, MARBLES.length))) allDone = f;
+    // Then up to 3.5 s more for run-off coasting, or 2.5 s after all finalists have crossed.
+    if (allDone !== null && (f - allDone >= 3.5 * FPS || (allAccounted && f - allDone >= 2.5 * FPS))) break;
 
     // Regroup gates: count who has reached the bar; open on quorum or timeout.
     // Machines with per-frame logic (the regroup gates count arrivals and open).
@@ -1329,6 +1633,14 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
 
     for (let s = 0; s < SUBSTEPS; s++) {
       const t = (step + 1) * DT;
+      // Hold all marbles/cars stationary on their grid spots until lightsOut so row 2 never rear-ends row 1 into a closed gate
+      if (t < lightsOut) {
+        bodies.forEach((b, i) => {
+          b.setTranslation(initPos[i], true);
+          b.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          b.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        });
+      }
       gateBody.setNextKinematicRotation(gateRotation(t));
       if (flipper) flipper.body.setNextKinematicRotation(flipper.quatAt(t));
       const st = stairStop === null ? t : Math.min(t, stairStop);
@@ -1344,28 +1656,79 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
         c.body.setNextKinematicTranslation({ x: pose.pos[0], y: pose.pos[1], z: pose.pos[2] });
         c.body.setNextKinematicRotation(rot(pose.quat));
       }
-      // Fans: a lateral force on every marble in their stretch. Boosters: a forward
-      // force along the track, up to their target speed.
-      if (obstacles.fans.length || obstacles.boosters.length || obstacles.vortices.length) {
-        const mass = bodies[0].mass();
+      // Fans, boosters, vortices, AND TCR / F1 Slipstream & Stats Physics:
+      {
+        const activeRunners = [];
+        if (f > raceStart + Math.round(1.8 * FPS)) {
+          for (let i = 0; i < MARBLES.length; i++) {
+            if (finishFrame[i] !== null || dqFrame[i] !== null || riding[i] !== null) continue;
+            activeRunners.push(i);
+          }
+          activeRunners.sort((a, b) => frames[f][b][7] - frames[f][a][7]);
+        }
+        const rankOfRunner = new Int8Array(MARBLES.length).fill(-1);
+        activeRunners.forEach((mIdx, rIdx) => {
+          rankOfRunner[mIdx] = rIdx;
+        });
+        const leadTotU = activeRunners.length > 0 ? frames[f][activeRunners[0]][7] : 0;
+        const p2TotU = activeRunners.length > 1 ? frames[f][activeRunners[1]][7] : leadTotU;
+        const p4TotU = activeRunners.length > 3 ? frames[f][activeRunners[3]][7] : p2TotU;
+
         bodies.forEach((b, i) => {
           b.resetForces(true);
-          if (finishFrame[i] !== null || dqFrame[i] !== null) return;
-          const u = uLocal(frames[f][i][7]);
+          if (dqFrame[i] !== null) return;
+          if (finishFrame[i] !== null) {
+            if (isCars) {
+              const p = b.translation();
+              const uSub = progressOf(i, p);
+              if (uSub < course.END - 2.5) {
+                const fr = course.frameAt(uSub);
+                const rg = fr.r;
+                const lat = (p.x - fr.p[0]) * rg[0] + (p.y - fr.p[1]) * rg[1] + (p.z - fr.p[2]) * rg[2];
+                const wMax = Math.max(0.65, (fr.w ?? 2.1) - 0.56);
+                const wantLat = ((i % 3) - 1) * 1.02;
+                const vLatDes = Math.max(-2.2, Math.min(2.2, (wantLat - lat) * 3.0));
+                carLatSpd[i] += (vLatDes - carLatSpd[i]) * Math.min(1, 9.0 * DT);
+                const vtTarget = uSub < course.uFinish + 12 ? 10.5 : 6.0;
+                carLongSpd[i] = Math.max(4.5, carLongSpd[i] + (vtTarget - carLongSpd[i]) * Math.min(1, 3.5 * DT));
+                const metric = Math.max(0.68, Math.min(1.35, 1 - fr.curv * lat));
+                const uNext = Math.min(course.END - 1, uSub + (carLongSpd[i] * DT) / metric);
+                const cLatCurr = Math.max(-wMax, Math.min(wMax, lat));
+                const latNext = Math.max(-wMax, Math.min(wMax, cLatCurr + carLatSpd[i] * DT));
+                const pCurr = pointOnTrack(fr, cLatCurr, R + 0.045);
+                const pNext = pointOnTrack(course.frameAt(uNext), latNext, R + 0.045);
+                b.setLinvel(
+                  {
+                    x: (pNext[0] - pCurr[0]) / DT + (pCurr[0] - p.x) * 18.0,
+                    y: (pNext[1] - pCurr[1]) / DT + (pCurr[1] - p.y) * 18.0,
+                    z: (pNext[2] - pCurr[2]) / DT + (pCurr[2] - p.z) * 18.0,
+                  },
+                  true,
+                );
+              }
+            }
+            return;
+          }
+          const mass = b.mass();
+          const stStats = MARBLES[i].stats ?? { vel: 3, est: 4, int: 3 };
+          const velNorm = ((stStats.vel ?? 3) - 1) / 4;
+          const estNorm = ((stStats.est ?? 4) - 1) / 4;
+          const intNorm = ((stStats.int ?? 3) - 1) / 4;
+          const totU = frames[f][i][7];
+          const u = uLocal(totU);
           for (const fan of obstacles.fans) {
             if (u < fan.u0 || u > fan.u1) continue;
             const g = fan.accel * fanGust(fan, t) * mass;
             b.addForce({ x: fan.dir[0] * g, y: 0, z: fan.dir[2] * g }, true);
           }
-          // The vortex's spiral field: inside the bowl every marble is guided to the orbital speed
-          // sqrt(g·k/r) and a gentle inward radial drift so it circles smoothly 1.5–2.5 times down
-          // the funnel instead of getting pinned on the rim wall or falling straight into the hole.
+          let inAnyVortex = false;
           for (const vx of obstacles.vortices) {
             const p = b.translation();
             const rx = p.x - vx.center[0];
             const rz = p.z - vx.center[2];
             const r = Math.hypot(rx, rz);
             if (r > vx.radius || r < vx.hole * 1.05 || p.y > vx.center[1] + 0.6 || p.y < vx.center[1] - vx.depth - 0.2) continue;
+            inAnyVortex = true;
             const urx = rx / r;
             const urz = rz / r;
             const tx = rz / r;
@@ -1380,18 +1743,248 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
             const ar = Math.max(-14, Math.min(34, (wantVr - vr) * 16));
             b.addForce({ x: (tx * at + urx * ar) * mass, y: 0, z: (tz * at + urz * ar) * mass }, true);
           }
-          for (const bo of obstacles.boosters) {
-            if (u < bo.u0 || u > bo.u1) continue;
-            const tg = course.frameAt(u).t;
-            const v = b.linvel();
-            if (v.x * tg[0] + v.y * tg[1] + v.z * tg[2] >= bo.target) continue;
-            const g = bo.accel * mass;
-            b.addForce({ x: tg[0] * g, y: tg[1] * g, z: tg[2] * g }, true);
+          if (!isCars) {
+            for (const bo of obstacles.boosters) {
+              if (u < bo.u0 || u > bo.u1) continue;
+              const frBo = course.frameAt(u);
+              if (bo.latCenter !== undefined && bo.latHalf !== undefined) {
+                const pBo = b.translation();
+                const latBo = (pBo.x - frBo.p[0]) * frBo.r[0] + (pBo.y - frBo.p[1]) * frBo.r[1] + (pBo.z - frBo.p[2]) * frBo.r[2];
+                if (Math.abs(latBo - bo.latCenter) > bo.latHalf) continue;
+              }
+              const tg = frBo.t;
+              const v = b.linvel();
+              if (v.x * tg[0] + v.y * tg[1] + v.z * tg[2] >= bo.target) continue;
+              const g = bo.accel * mass;
+              b.addForce({ x: tg[0] * g, y: tg[1] * g, z: tg[2] * g }, true);
+            }
+          }
+
+          const rnk = rankOfRunner[i];
+
+          // =========================================================================
+          // REALISTIC MOTORSPORT POWERTRAIN, BRAKING ZONES & OPTIMAL RACING LINE (Car Mode)
+          // =========================================================================
+          if (isCars && carTelemetry && riding[i] === null && t >= lightsOut + 0.05) {
+            const p = b.translation();
+            const uSub = progressOf(i, p);
+            const totUSub = lap[i] * L + uSub;
+            if (uSub < course.END - 4) {
+              const fr = course.frameAt(uSub);
+              if (!fr.gap) {
+                const tg = fr.t;
+                const rg = fr.r;
+                const ng = fr.n;
+                const v = b.linvel();
+                const vt = v.x * tg[0] + v.y * tg[1] + v.z * tg[2];
+                const vLat = v.x * rg[0] + v.y * rg[1] + v.z * rg[2];
+                const vn = v.x * ng[0] + v.y * ng[1] + v.z * ng[2];
+                const relX = p.x - fr.p[0];
+                const relY = p.y - fr.p[1];
+                const relZ = p.z - fr.p[2];
+                const lat = relX * rg[0] + relY * rg[1] + relZ * rg[2];
+
+                // 1. Target Speed from Precomputed Tire-Grip & Braking-Zone Telemetry Profile
+                const baseTarget = carTelemetry.vTargetAt(uSub);
+                const isCornerOrBraking = baseTarget < 15.8;
+                // VEL shines on straights; EST shines in cornering grip & late braking
+                const statSpeedScale = isCornerOrBraking
+                  ? 0.96 + estNorm * 0.09 + intNorm * 0.04
+                  : 0.96 + velNorm * 0.09 + intNorm * 0.03;
+
+                // 2. True Aerodynamic Slipstream (Drafting behind cars ahead within 16m)
+                let slipstreamBonus = 0;
+                if (rnk > 0 && uSub > 10) {
+                  for (let k = 0; k < rnk; k++) {
+                    const j = activeRunners[k];
+                    const du = frames[f][j][7] - totUSub;
+                    if (du > 0.75 && du < 16.0) {
+                      const pj = bodies[j].translation();
+                      const latJ = (pj.x - fr.p[0]) * rg[0] + (pj.y - fr.p[1]) * rg[1] + (pj.z - fr.p[2]) * rg[2];
+                      const latAlign = Math.max(0, 1 - Math.abs(lat - latJ) / 1.4);
+                      const distFactor = Math.exp(-Math.abs(du - 3.2) / 5.8);
+                      slipstreamBonus = Math.max(
+                        slipstreamBonus,
+                        (1.95 + intNorm * 0.75 + velNorm * 0.45) * distFactor * (0.45 + 0.55 * latAlign),
+                      );
+                    }
+                  }
+                }
+
+                // 3. DRS Attack Zone Bonus (smooth +2.2 m/s top speed boost on DRS straights)
+                let drsBonus = 0;
+                for (const bo of obstacles.boosters) {
+                  if (uSub >= bo.u0 && uSub <= bo.u1) {
+                    drsBonus = 2.2 + velNorm * 0.65;
+                    break;
+                  }
+                }
+
+                // 4. Sector ERS Deployment Wave & Gentle Pack Cohesion
+                // Scale aerodynamic tow & catch-up by straightFactor so tire grip limits are respected in tight corners!
+                const straightFactor = Math.max(0.22, Math.min(1.0, (baseTarget - 8.5) / 8.5));
+                const ersWave = Math.sin(uSub * 0.065 + i * 2.1 + (stStats.vel ?? 3) * 0.5) * (0.55 + velNorm * 0.35) * straightFactor;
+                const gapLead = rnk > 0 ? leadTotU - totUSub : 0;
+                const packCatchup = (rnk > 0 && gapLead > 2.5 ? Math.min(2.3, (gapLead - 2.5) * 0.25) : 0) * (0.35 + 0.65 * straightFactor);
+                const leadAirDrag = rnk === 0 && leadTotU - p2TotU > 4.2 ? -Math.min(1.4, (leadTotU - p2TotU - 4.2) * 0.35) : 0;
+
+                const vDes = Math.max(
+                  8.2,
+                  baseTarget * statSpeedScale + (slipstreamBonus + drsBonus) * straightFactor + ersWave + packCatchup + leadAirDrag,
+                );
+
+                // 5. Longitudinal Powertrain Throttle & Carbon-Ceramic Braking Zone Deceleration
+                if (uSub < 1.2) {
+                  carLongSpd[i] = Math.max(0, vt);
+                } else if (vt < carLongSpd[i] - 0.8) {
+                  // Softly sync if OBB car-to-car bumper contact slowed us down slightly
+                  carLongSpd[i] = carLongSpd[i] * 0.85 + Math.max(8.0, vt) * 0.15;
+                }
+                const speedErr = vDes - carLongSpd[i];
+                let aLong = 0;
+                if (speedErr >= 0) {
+                  const gain = uSub < 14 ? 4.8 : 3.8 + estNorm * 0.65 + velNorm * 0.55;
+                  aLong = Math.min(13.5 + velNorm * 2.2, speedErr * gain);
+                } else {
+                  const brakeGain = 6.8 + estNorm * 1.4;
+                  aLong = Math.max(-(18.5 + estNorm * 2.5), speedErr * brakeGain);
+                }
+                const vtNew = Math.max(uSub < 3.5 ? 2.5 : 8.0, carLongSpd[i] + aLong * DT);
+                carLongSpd[i] = vtNew;
+
+                // 6. Continuous Optimal Racing Line (Outside -> Inside Apex -> Outside) + Committed Overtaking
+                const wMax = Math.max(0.65, (fr.w ?? 2.1) - 0.56);
+                let vLatNew = vLat * 0.5;
+                if (uSub > 5.0) {
+                  const baseRacingLat = carTelemetry.racingLatAt(uSub);
+                  const cSmooth = carTelemetry.curvSmoothAt(uSub);
+
+                  if (t >= carNextSwitch[i]) {
+                    let wantOffset = ((i % 3) - 1) * 0.18; // Slight natural stagger when clear
+                    let committedHold = 0.95;
+
+                    if (rnk > 0) {
+                      let blockerJ = -1;
+                      let minDu = Infinity;
+                      for (let k = 0; k < rnk; k++) {
+                        const j = activeRunners[k];
+                        const du = frames[f][j][7] - totUSub;
+                        if (du > -0.6 && du < 7.8 && du < minDu) {
+                          const pj = bodies[j].translation();
+                          const latJ = (pj.x - fr.p[0]) * rg[0] + (pj.y - fr.p[1]) * rg[1] + (pj.z - fr.p[2]) * rg[2];
+                          if (Math.abs(lat - latJ) < 0.95 || Math.abs(baseRacingLat + wantOffset - latJ) < 0.92) {
+                            blockerJ = j;
+                            minDu = du;
+                          }
+                        }
+                      }
+
+                      if (blockerJ >= 0) {
+                        const pj = bodies[blockerJ].translation();
+                        const latJ = (pj.x - fr.p[0]) * rg[0] + (pj.y - fr.p[1]) * rg[1] + (pj.z - fr.p[2]) * rg[2];
+                        // In a corner or braking zone, prefer the INSIDE apex divebomb line (+sign(curv)) if room exists!
+                        const insideDir = Math.abs(cSmooth) > 0.025 ? Math.sign(cSmooth) : latJ >= 0 ? -1 : 1;
+                        const candInside = Math.max(-wMax, Math.min(wMax, baseRacingLat + insideDir * 1.08));
+                        const candOutside = Math.max(-wMax, Math.min(wMax, baseRacingLat - insideDir * 1.08));
+                        const pickLat = Math.abs(candInside - latJ) >= 0.86 ? candInside : candOutside;
+                        wantOffset = pickLat - baseRacingLat;
+                        carTcrLane[i] = Math.sign(wantOffset) || insideDir;
+                        committedHold = 1.55 - intNorm * 0.25; // Hold overtaking line for ~1.4s (no rapid zig-zagging!)
+                      }
+                    }
+                    carTargetOffset[i] = Math.max(-wMax - baseRacingLat, Math.min(wMax - baseRacingLat, wantOffset));
+                    carNextSwitch[i] = t + committedHold;
+                  }
+
+                  // Smoothly filter the overtaking offset so lane changes are progressive S-curves
+                  carPassOffset[i] += (carTargetOffset[i] - carPassOffset[i]) * (3.2 * DT);
+                  const wantLat = Math.max(-wMax, Math.min(wMax, baseRacingLat + carPassOffset[i]));
+
+                  // Critically damped lateral velocity in the local track frame (zero wall-grinding or overshoot!)
+                  const steerGain = 2.6 + estNorm * 0.4;
+                  const vLatDes = Math.max(-2.5, Math.min(2.5, (wantLat - lat) * steerGain));
+                  carLatSpd[i] += (vLatDes - carLatSpd[i]) * Math.min(1, 9.0 * DT);
+                  vLatNew = carLatSpd[i];
+                } else {
+                  carLatSpd[i] = vLatNew;
+                }
+
+                // 7. Advance along the exact 3D banked surface chord so the sphere collider never snags twisted floor quad diagonals!
+                if (uSub > 1.2) {
+                  const metric = Math.max(0.68, Math.min(1.35, 1 - fr.curv * lat));
+                  const uNext = Math.min(course.END - 1, uSub + (vtNew * DT) / metric);
+                  const cLatCurr = Math.max(-wMax, Math.min(wMax, lat));
+                  const latNext = uSub > 5.0 ? Math.max(-wMax, Math.min(wMax, cLatCurr + vLatNew * DT)) : cLatCurr;
+                  const pCurr = pointOnTrack(fr, cLatCurr, R + 0.045);
+                  const pNext = pointOnTrack(course.frameAt(uNext), latNext, R + 0.045);
+                  b.setLinvel(
+                    {
+                      x: (pNext[0] - pCurr[0]) / DT + (pCurr[0] - p.x) * 18.0,
+                      y: (pNext[1] - pCurr[1]) / DT + (pCurr[1] - p.y) * 18.0,
+                      z: (pNext[2] - pCurr[2]) / DT + (pCurr[2] - p.z) * 18.0,
+                    },
+                    true,
+                  );
+                } else {
+                  b.setLinvel(
+                    {
+                      x: tg[0] * vtNew + rg[0] * vLatNew,
+                      y: tg[1] * vtNew + rg[1] * vLatNew,
+                      z: tg[2] * vtNew + rg[2] * vLatNew,
+                    },
+                    true,
+                  );
+                }
+              }
+            }
+          } else if (!isCars && !inAnyVortex && rnk >= 0 && u > 8 && u < course.END - 14) {
+            // Marble-only slipstream & pack-compression logic
+            const fr = course.frameAt(u);
+            if (!fr.gap) {
+              const tg = fr.t;
+              const v = b.linvel();
+              const vt = v.x * tg[0] + v.y * tg[1] + v.z * tg[2];
+              if (rnk === 0) {
+                const gap12 = leadTotU - p2TotU;
+                const gap14 = leadTotU - p4TotU;
+                const excess = Math.max(0, gap12 - 0.8) + Math.max(0, gap14 - 1.8) * 0.5;
+                if (excess > 0 && vt > 5.8) {
+                  const drag = Math.min(5.6, excess * 1.55) * mass;
+                  b.addForce({ x: -tg[0] * drag, y: -tg[1] * drag * 0.3, z: -tg[2] * drag }, true);
+                }
+              } else if (rnk <= 11 && vt > 1.8 && vt < 12.2) {
+                const gapLead = leadTotU - totU;
+                const aheadIdx = activeRunners[rnk - 1];
+                const gapAhead = frames[f][aheadIdx][7] - totU;
+                if (gapLead > 0.25 && gapLead < 28) {
+                  const slingshot = gapAhead > 0.2 && gapAhead < 3.0 ? 2.8 * Math.exp(-Math.abs(gapAhead - 1.0) / 1.25) : 0;
+                  const packTow = Math.min(4.2, Math.max(0, gapLead - 0.65) * 0.82);
+                  const boost = Math.min(6.0, slingshot + packTow) * mass;
+                  b.addForce({ x: tg[0] * boost, y: Math.max(0, tg[1]) * boost * 0.2, z: tg[2] * boost }, true);
+                }
+              }
+            }
           }
         });
       }
       world.step();
       step++;
+      if (isCars && f > raceStart) {
+        solveCarChassisCollisions({
+          bodies,
+          course,
+          MARBLES,
+          R,
+          carTcrLane,
+          carNextSwitch,
+          t,
+          impacts,
+          step,
+          lastImpact,
+          finishFrame,
+          dqFrame,
+        });
+      }
       bodies.forEach((b, i) => {
         const v = b.linvel();
         const pv = prevVel[i];
@@ -1412,11 +2005,59 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
     }
   }
 
+  // Zero-Phase Temporal Trajectory Smoothing for Car Mode:
+  // Eliminates any residual 60Hz polygon-edge micro-jitter or collision velocity spikes
+  // while keeping every car 100% planted on the track surface!
+  if (isCars && frames.length > raceStart + 10) {
+    const nCars = MARBLES.length;
+    const nFrames = frames.length;
+    for (let pass = 0; pass < 8; pass++) {
+      for (let i = 0; i < nCars; i++) {
+        const endF = dqFrame[i] !== null ? Math.min(dqFrame[i], nFrames - 2) : nFrames - 2;
+        const nextXYZ = new Array(endF + 1);
+        const nextQ = new Array(endF + 1);
+        for (let f = raceStart + 1; f < endF; f++) {
+          const prev = frames[f - 1][i];
+          const curr = frames[f][i];
+          const next = frames[f + 1][i];
+          nextXYZ[f] = [
+            0.22 * prev[0] + 0.56 * curr[0] + 0.22 * next[0],
+            0.22 * prev[1] + 0.56 * curr[1] + 0.22 * next[1],
+            0.22 * prev[2] + 0.56 * curr[2] + 0.22 * next[2],
+          ];
+          // Ensure consistent quaternion hemisphere before blending
+          const dotPrev = prev[3] * curr[3] + prev[4] * curr[4] + prev[5] * curr[5] + prev[6] * curr[6];
+          const dotNext = next[3] * curr[3] + next[4] * curr[4] + next[5] * curr[5] + next[6] * curr[6];
+          const sPrev = dotPrev < 0 ? -1 : 1;
+          const sNext = dotNext < 0 ? -1 : 1;
+          const qx = 0.22 * prev[3] * sPrev + 0.56 * curr[3] + 0.22 * next[3] * sNext;
+          const qy = 0.22 * prev[4] * sPrev + 0.56 * curr[4] + 0.22 * next[4] * sNext;
+          const qz = 0.22 * prev[5] * sPrev + 0.56 * curr[5] + 0.22 * next[5] * sNext;
+          const qw = 0.22 * prev[6] * sPrev + 0.56 * curr[6] + 0.22 * next[6] * sNext;
+          const qLen = Math.hypot(qx, qy, qz, qw) || 1;
+          nextQ[f] = [qx / qLen, qy / qLen, qz / qLen, qw / qLen];
+        }
+        for (let f = raceStart + 1; f < endF; f++) {
+          frames[f][i][0] = r3(nextXYZ[f][0]);
+          frames[f][i][1] = r3(nextXYZ[f][1]);
+          frames[f][i][2] = r3(nextXYZ[f][2]);
+          frames[f][i][3] = r3(nextQ[f][0]);
+          frames[f][i][4] = r3(nextQ[f][1]);
+          frames[f][i][5] = r3(nextQ[f][2]);
+          frames[f][i][6] = r3(nextQ[f][3]);
+        }
+      }
+    }
+  }
+
   const lastFrame = frames.length - 1;
-  // Finishers by time, then those still rolling by progress, then the disqualified (first out, last).
+  // Finishers by time, then those still rolling by progress, then the disqualified (later checkpoint out ranks higher; tie-break by progress at DQ).
   const rankKey = (i, f) => {
     if (finishFrame[i] !== null && finishFrame[i] <= f) return [0, finishExact[i] ?? finishFrame[i]];
-    if (dqFrame[i] !== null && dqFrame[i] <= f) return [2, -dqFrame[i]];
+    if (dqFrame[i] !== null && dqFrame[i] <= f) {
+      const df = dqFrame[i];
+      return [2, -(df * 10000 + frames[Math.min(df, lastFrame)][i][7])];
+    }
     return [1, -frames[Math.min(f, lastFrame)][i][7]];
   };
   const rankAt = (f) =>
@@ -1500,34 +2141,99 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
   if (quiet) return { summary, ok: dnf.length === 0, margin, arrivals, dqGaps };
 
   const sec = (x) => Math.round(x * FPS);
+  // --- Overtakes ---------------------------------------------------------------------
+  const events = dqEvents.map(({ zone, ...e }) => e);
+  // Best lap: every completed descent that beats the fastest so far.
+  {
+    let best = Infinity;
+    for (const l of [...laps].sort((x, y) => x.end - y.end)) {
+      const n = l.end - l.start;
+      if (n >= best) continue;
+      best = n;
+      events.push({ frame: l.end, kind: "bestlap", a: l.marble, b: l.marble, pos: 0, lap: l.lap, frames: n });
+    }
+  }
+  const HOLD = Math.round((isCars ? 0.5 : 0.8) * FPS);
+  const minEvGap = Math.round((isCars ? 1.5 : 3) * FPS);
+  let lastEvent = -999;
+  for (let f = raceStart + 2 * FPS; f + HOLD <= winnerFrame; f++) {
+    const before = rankAt(f - 1);
+    const now = rankAt(f);
+    for (let pos = 0; pos < 5; pos++) {
+      const a = now[pos];
+      const b = before[pos];
+      if (a === b) continue;
+      if (dqFrame[b] !== null && dqFrame[b] <= f) break; // not an overtake: b was pulled off
+      // Must be a genuine wheel-to-wheel pass on the open track (never inside the lift shaft or across a wrap seam):
+      const ua = uLocal(frames[f][a][7]);
+      const ub = uLocal(frames[f][b][7]);
+      if (ua < 6 || ua > course.END - 14 || ub < 6 || ub > course.END - 14) break;
+      const distAB = Math.hypot(frames[f][a][0] - frames[f][b][0], frames[f][a][1] - frames[f][b][1], frames[f][a][2] - frames[f][b][2]);
+      if (distAB > 5.0) break;
+      // Only count it if a stays ahead of b for HOLD frames.
+      let holds = true;
+      for (let k = 1; k <= HOLD; k++) {
+        const later = rankAt(f + k);
+        if (later.indexOf(a) > later.indexOf(b)) holds = false;
+      }
+      if (holds && now.indexOf(b) > pos && f - lastEvent > minEvGap) {
+        events.push({ frame: f, kind: "overtake", a, b, pos: pos + 1 });
+        lastEvent = f;
+      }
+      break;
+    }
+  }
+  events.sort((a, b) => a.frame - b.frame);
+
   // --- Highlights ---------------------------------------------------------------------
-  // The biggest hits at obstacles become slow-motion replays, cut into the race
-  // just after they happen (like a TV director's instant replay).
+  // Spectacular overtakes for P1/P2/P3 and the biggest hits at obstacles become
+  // slow-motion action replays played in a 50:50 broadcast split-screen right after they happen.
   const zoneOf = (u) => course.features.find((f) => u >= f.u - f.span[0] && u <= f.u + f.span[1]);
   const highlights = [];
-  const candidates = impacts
-    .filter((im) => im.f > raceStart + sec(2.5) && im.f < winnerFrame - sec(5) && im.strength >= 3)
-    .map((im) => ({ ...im, zone: zoneOf(uLocal(frames[Math.min(im.f, lastFrame)][im.i][7])) }))
-    .filter((im) => im.zone && im.zone.type !== "lift" && im.zone.type !== "bumps")
-    .sort((a, b) => b.strength - a.strength);
-  // A disqualification is always replayed.
-  for (const e of dqEvents) {
-    if (e.frame <= raceStart + sec(2.5) || e.frame >= winnerFrame - sec(5)) continue;
-    highlights.push({ f: e.frame, marble: e.a, strength: 99, label: `DRAINED · ${MARBLES[e.a].name.toUpperCase()}`, feature: e.feature, dq: true });
-  }
-  for (const im of candidates) {
-    if (highlights.length >= HIGHLIGHTS.count) break;
-    if (highlights.some((h) => Math.abs(h.f - im.f) < sec(HIGHLIGHTS.minGap))) continue;
-    highlights.push({ f: im.f, marble: im.i, strength: r3(im.strength), label: `${im.zone.label} · ${MARBLES[im.i].name.toUpperCase()}`, feature: im.zone.type });
+  if (!isCars) {
+    // 1) A disqualification is always replayed.
+    for (const e of dqEvents) {
+      if (e.frame <= raceStart + sec(2.5) || e.frame >= winnerFrame - sec(5)) continue;
+      highlights.push({ f: e.frame, marble: e.a, strength: 99, label: `DRAINED · ${MARBLES[e.a].name.toUpperCase()}`, feature: e.feature, dq: true });
+    }
+    // 2) Spectacular overtakes for the lead / podium (P1, P2, P3):
+    const overtakeCands = events
+      .filter((e) => e.kind === "overtake" && e.pos <= 3 && e.frame > raceStart + sec(3.5) && e.frame < winnerFrame - sec(10))
+      .sort((a, b) => a.pos - b.pos || b.frame - a.frame);
+    for (const e of overtakeCands) {
+      if (highlights.length >= Math.min(2, HIGHLIGHTS.count)) break;
+      if (highlights.some((h) => Math.abs(h.f - e.frame) < sec(HIGHLIGHTS.minGap))) continue;
+      highlights.push({
+        f: e.frame,
+        marble: e.a,
+        other: e.b,
+        strength: e.pos === 1 ? 45 : 32 - e.pos * 3,
+        label: `OVERTAKE FOR P${e.pos} · ${MARBLES[e.a].abbr} PASSES ${MARBLES[e.b].abbr}`,
+        feature: "overtake",
+        overtake: true,
+      });
+    }
+    // 3) Hardest obstacle or car-crash impacts:
+    const candidates = impacts
+      .filter((im) => im.f > raceStart + sec(2.5) && im.f < winnerFrame - sec(12) && im.strength >= 3)
+      .map((im) => ({ ...im, zone: zoneOf(uLocal(frames[Math.min(im.f, lastFrame)][im.i][7])) }))
+      .filter((im) => im.zone && !["lift", "bumps", "elevator", "crest"].includes(im.zone.type))
+      .sort((a, b) => b.strength - a.strength);
+    for (const im of candidates) {
+      if (highlights.length >= HIGHLIGHTS.count) break;
+      if (highlights.some((h) => Math.abs(h.f - im.f) < sec(HIGHLIGHTS.minGap))) continue;
+      const label = `${im.zone.label} · ${MARBLES[im.i].name.toUpperCase()}`;
+      highlights.push({ f: im.f, marble: im.i, strength: r3(im.strength), label, feature: im.zone?.type ?? "crash" });
+    }
   }
   highlights.sort((a, b) => a.f - b.f);
   for (const h of highlights) {
-    h.from = Math.max(raceStart, h.f - sec(HIGHLIGHTS.before));
+    h.from = Math.max(raceStart, h.f - sec(h.overtake ? 1.05 : HIGHLIGHTS.before));
     // A drained marble drops down the shaft in 0.7 s: its replay ends just after that.
-    h.to = Math.min(lastFrame, h.f + sec(h.dq ? 0.85 : HIGHLIGHTS.after));
+    h.to = Math.min(lastFrame, h.f + sec(h.dq ? 0.85 : h.overtake ? 1.15 : HIGHLIGHTS.after));
     h.speed = HIGHLIGHTS.speed;
     h.frames = Math.ceil((h.to - h.from) / h.speed);
-    h.insert = Math.min(lastFrame, h.f + sec(HIGHLIGHTS.after) + sec(0.2)); // live frame after which the replay plays
+    h.insert = Math.min(lastFrame, h.f + sec(h.overtake ? 1.15 : HIGHLIGHTS.after) + sec(0.25)); // live frame after which the replay plays
   }
 
   // --- TV director -------------------------------------------------------------------
@@ -1565,53 +2271,16 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
   });
   if (![...director.replayCam, ...director.heli.center, director.heli.extent].every((x) => Number.isFinite(x))) throw new Error(`${round.id}: replay/drone camera is not finite`);
 
-  // --- Overtakes ---------------------------------------------------------------------
-  const events = dqEvents.map(({ zone, ...e }) => e);
-  // Best lap: every completed descent that beats the fastest so far.
-  {
-    let best = Infinity;
-    for (const l of [...laps].sort((x, y) => x.end - y.end)) {
-      const n = l.end - l.start;
-      if (n >= best) continue;
-      best = n;
-      events.push({ frame: l.end, kind: "bestlap", a: l.marble, b: l.marble, pos: 0, lap: l.lap, frames: n });
-    }
-  }
-  const HOLD = Math.round(0.8 * FPS);
-  let lastEvent = -999;
-  for (let f = raceStart + 3 * FPS; f + HOLD <= winnerFrame; f++) {
-    const before = rankAt(f - 1);
-    const now = rankAt(f);
-    for (let pos = 0; pos < 5; pos++) {
-      const a = now[pos];
-      const b = before[pos];
-      if (a === b) continue;
-      if (dqFrame[b] !== null && dqFrame[b] <= f) break; // not an overtake: b was pulled off
-      // Only count it if a stays ahead of b for HOLD frames.
-      let holds = true;
-      for (let k = 1; k <= HOLD; k++) {
-        const later = rankAt(f + k);
-        if (later.indexOf(a) > later.indexOf(b)) holds = false;
-      }
-      if (holds && now.indexOf(b) > pos && f - lastEvent > 3 * FPS) {
-        events.push({ frame: f, kind: "overtake", a, b, pos: pos + 1 });
-        lastEvent = f;
-      }
-      break;
-    }
-  }
-  events.sort((a, b) => a.frame - b.frame);
-
   // --- Timeline ----------------------------------------------------------------------
   // The race part of the video is a list of segments: live stretches of the
   // simulation, with slow-motion highlight replays cut in between.
   const segments = [];
   let liveFrom = 0;
   let at = 0;
-  // Cut to the slow-motion finish replay ~6.5 s after the winner crosses (or 1.5 s after P3 crosses, capped at +8.5 s),
-  // rather than waiting 35 s for backmarkers, while keeping full top-10 finishing times from the simulation.
-  const p3Frame = finishFrame[order[2]] ?? finishFrame[order[1]] ?? winnerFrame;
-  const liveTo = Math.min(frames.length, Math.min(winnerFrame + Math.round(8.5 * FPS), Math.max(winnerFrame + Math.round(6 * FPS), p3Frame + Math.round(1.5 * FPS))));
+  // Hold live broadcast at the Finish Line until all runners finish (up to frames.length)
+  // so the camera never cuts away early while cars are crossing the finish line!
+  const pLastFrame = finishFrame[order[Math.min(order.length - 1, cpSurvive[2] - 1)]] ?? finishFrame[order[2]] ?? winnerFrame;
+  const liveTo = Math.min(frames.length, Math.max(winnerFrame + Math.round(7.5 * FPS), pLastFrame + Math.round(2.0 * FPS)));
   segments.push({ kind: "live", at, from: liveFrom, to: liveTo });
   at += liveTo - liveFrom;
   const replayFrom = Math.max(raceStart, winnerFrame - Math.round(1.5 * FPS));
@@ -1652,6 +2321,8 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
     finish: course.uFinish,
     drop: r3(course.H),
     scale: round.outline ? 1 : (round.scale ?? SCALE),
+    vehicle: isCars ? "car" : "marble",
+    heat: isCars ? (process.env.GP_HEAT === "final" ? "TCR GRAND FINAL · TOP 10" : `TCR HEAT ${process.env.GP_HEAT ?? 1}/4 · TOP 2 QUALIFY`) : undefined,
   };
 
   const data = {
@@ -1691,6 +2362,17 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
     vortices: obstacles.vortices,
     swings: obstacles.swings,
     lifts: obstacles.lifts,
+    checkpoints: checkpoints.map(({ index, lap, u, totalU, survive, label, firstFrame, closedFrame, eliminated }) => ({
+      index,
+      lap,
+      u,
+      totalU,
+      survive,
+      label,
+      firstFrame,
+      closedFrame,
+      eliminated,
+    })),
   };
   return { summary, ok: dnf.length === 0, margin, data, impacts, info };
 }
@@ -1805,8 +2487,8 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   {
     let a = 0;
     for (const b of [...focusSwitches, lastFrame + 1]) {
-      focus = gauss(focus, sec(0.85), a, b);
-      focusU = gauss(focusU, sec(0.85), a, b);
+      focus = gauss(focus, sec(0.38), a, b);
+      focusU = gauss(focusU, sec(0.38), a, b);
       a = b;
     }
   }
@@ -1886,40 +2568,59 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   })();
   const recipes = {
     chase: (f, sh) => {
-      // Set back and up: the pack and the track ahead of it in one frame (closer where the circuit is packed: `near`).
+      // Close & low Marbula-One chase camera right behind the pack so speed and wheel-to-wheel moves pop.
       const nr = sh?.near;
-      const fr = frameAt(focusU[f] - (nr ? 3.8 : 5.4));
-      return { pos: v3(pointInFrame(fr, 0, nr ? 1.5 : 2.1)).add(upW.clone().multiplyScalar(nr ? 0.8 : 1.3)), target: focus[f].clone().addScaledVector(flatFwd(frameAt(focusU[f])), 2.4), fov: 48 };
+      const fr = frameAt(focusU[f] - (nr ? 2.8 : 3.5));
+      return {
+        u: focusU[f] - (nr ? 2.8 : 3.5),
+        pos: v3(pointInFrame(fr, 0, nr ? 1.3 : 1.55)).add(upW.clone().multiplyScalar(nr ? 0.55 : 0.7)),
+        target: focus[f].clone().addScaledVector(flatFwd(frameAt(focusU[f])), 2.0),
+        fov: 52,
+      };
     },
     lead: (f, sh) => {
+      // Low-angle Front Reverse Camera ahead of P1 looking straight back down the trough at P1 and the chasing pack.
       const nr = sh?.near;
-      const u = uLoc(f, leader[f]) + (nr ? 3.4 : 5.0);
-      const fr = frameAt(Math.min(u, END));
-      return { pos: v3(pointInFrame(fr, 0, nr ? 1.3 : 1.9)).add(upW.clone().multiplyScalar(nr ? 0.5 : 1.0)), target: focus[f], fov: 46 };
+      const uLead = Math.max(focusU[f], uLoc(f, leader[f]));
+      const uCam = Math.min(uLead + (nr ? 2.8 : 3.4), END);
+      const fr = frameAt(uCam);
+      const frBack = frameAt(Math.max(-GRID_LENGTH, uLead - 1.5));
+      const pLead = posOf(f, leader[f]);
+      const pChasers = v3(pointInFrame(frBack, 0, 0.35)).lerp(focus[f], 0.55);
+      return {
+        u: uCam,
+        pos: v3(pointInFrame(fr, 0, nr ? 1.05 : 1.28)).add(upW.clone().multiplyScalar(nr ? 0.35 : 0.45)),
+        target: pLead.clone().lerp(pChasers, 0.52),
+        fov: 48,
+      };
     },
     side: (f, sh) => {
       const fr = frameAt(focusU[f] + 0.6);
-      // Close beside the wall, just high enough to look over it.
-      const pos = v3(fr.p).addScaledVector(flatRight(fr), sh.side * (W2 + (sh.near ? 1.8 : 3.2))).add(upW.clone().multiplyScalar(sh.near ? 3.2 : 4.5));
-      return { pos, target: focus[f], fov: fovFor(pos, f) };
+      // Close beside the wall, just high enough to look over it — gives huge sense of speed as marbles whip by.
+      const pos = v3(fr.p).addScaledVector(flatRight(fr), sh.side * (W2 + (sh.near ? 1.5 : 2.1))).add(upW.clone().multiplyScalar(sh.near ? 2.8 : 3.6));
+      return { u: focusU[f] + 0.6, pos, target: focus[f], fov: fovFor(pos, f) };
     },
     top: (f, sh) => {
       const fr = frameAt(focusU[f]);
-      return { pos: focus[f].clone().add(upW.clone().multiplyScalar(sh?.near ? 5.5 : 7.5)).addScaledVector(flatFwd(fr), sh?.near ? -2.5 : -3.5), target: focus[f], fov: 45 };
+      return { pos: focus[f].clone().add(upW.clone().multiplyScalar(sh?.near ? 5.0 : 6.2)).addScaledVector(flatFwd(fr), sh?.near ? -2.0 : -2.6), target: focus[f], fov: 44 };
     },
     orbit: (f, sh) => {
-      const a = sh.phase + ((f - sh.start) / FPS) * 0.45 * sh.side;
-      const rr = sh.near ? 5.0 : 6.8;
-      return { pos: focus[f].clone().add(new Vector3(Math.sin(a) * rr, sh.near ? 2.8 : 3.8, Math.cos(a) * rr)), target: focus[f], fov: 45 };
+      const a = sh.phase + ((f - sh.start) / FPS) * 0.52 * sh.side;
+      const rr = sh.near ? 4.4 : 5.4;
+      return { pos: focus[f].clone().add(new Vector3(Math.sin(a) * rr, sh.near ? 2.4 : 3.0, Math.cos(a) * rr)), target: focus[f], fov: 44 };
     },
-    // Dynamic helicopter / cable-cam behind the lead pack, low enough to feel the speed and see overtakes.
+    // Dynamic low helicopter / cable-cam behind the lead pack.
     wide: (f, sh) => {
-      const fr = frameAt(focusU[f] - (sh?.near ? 5.2 : 7.5));
-      return { pos: v3(fr.p).add(upW.clone().multiplyScalar(sh?.near ? 4.8 : 6.5)), target: focus[f].clone().addScaledVector(flatFwd(frameAt(focusU[f])), 3.5), fov: 48 };
+      const fr = frameAt(focusU[f] - (sh?.near ? 4.2 : 5.6));
+      return { u: focusU[f] - (sh?.near ? 4.2 : 5.6), pos: v3(fr.p).add(upW.clone().multiplyScalar(sh?.near ? 3.8 : 4.8)), target: focus[f].clone().addScaledVector(flatFwd(frameAt(focusU[f])), 2.8), fov: 48 };
     },
     feature: (f, sh) => ({ pos: sh.cam, target: focus[f], fov: fovFor(sh.cam, f) }),
-    // Wide and steady at the line, locked onto the winning duel as P1/P2 charge across uFinish.
-    finish: (f, sh) => ({ pos: sh.cam, target: focus[f], fov: Math.max(38, Math.min(48, fovFor(sh.cam, f))) }),
+    // Wide and steady at the finish line, locked onto the finish line arch & crossing pack right until the very end of the race!
+    finish: (f, sh) => {
+      const finPt = v3(fs.p).add(new Vector3(0, 0.42, 0));
+      const aim = f < winnerFrame ? focus[f].clone().lerp(finPt, 0.48) : finPt;
+      return { pos: sh.cam, target: aim, fov: 44 };
+    },
     // The run into the lift: one fixed wide camera over the bays, aimed between the bays and the pack.
     approach: (f, sh) => {
       // Aimed at the bays' entrance, never up the stair (it is never shown).
@@ -1927,18 +2628,15 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       t.y = Math.min(t.y, sh.aim[1]);
       return { pos: sh.cam, target: t, fov: 50 };
     },
-    // The stair, from the front and far back: both bays whole in the frame, the camera only rising
-    // slowly with the riders (a smoothed height); never from the side, never swinging between bays.
-    // The stair, only ever from straight above (bird's-eye), high enough to see both bays and the
-    // grid they lead to; it rises slowly with the riders. Never from the side.
+    // Front-angled view of the open-front Twin-Chain Marble Scoop Lift showing both bays & rotating toothed sprockets.
     elevator: (f) => {
       const h = stairH[Math.max(0, Math.min(stairH.length - 1, f))];
       const fwd = v3(elevators[0].fwd);
       const c = elevators.reduce((acc, e) => acc.add(v3(e.center)), new Vector3()).multiplyScalar(1 / elevators.length);
       const y = c.y + Math.max(2.5, h + 1.0);
       const target = new Vector3(c.x, y, c.z);
-      const pos = target.clone().add(new Vector3(0, STAIR_CAM.above, 0)).addScaledVector(fwd, -1.5);
-      return { pos, target, fov: STAIR_CAM.fov };
+      const pos = target.clone().add(new Vector3(0, 6.5, 0)).addScaledVector(fwd, -11.5);
+      return { pos, target, fov: 44 };
     },
     onboard: (f, sh) => {
       const i = sh.marble;
@@ -1984,7 +2682,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     for (let k = 0; k < n; k++) {
       const f = Math.min(lastFrame, Math.round(f0 + ((f1 - 1 - f0) * k) / (n - 1)));
       const c = recipes[kind](f, sh);
-      if (roomAt(c.pos, focusU[f]) < 1.6) {
+      if (roomAt(c.pos, c.u ?? focusU[f]) < 1.35) {
         why[kind + ":room"] = (why[kind + ":room"] ?? 0) + 1;
         return false;
       }
@@ -2108,62 +2806,55 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
 
   // --- Shot list -------------------------------------------------------------------
   const shots = [];
-  const REVEAL = sec(2.5);
+  const REVEAL = sec(0.5);
   shots.push({ kind: "drone", start: 0, end: REVEAL });
-  const gridEnd = raceStart + sec(2.5); // hold until the ten lanes have funnelled into the track
+  const gridEnd = raceStart + sec(2.0); // hold until the ten lanes have funnelled into the track
   shots.push({ kind: "grid", start: REVEAL, end: gridEnd });
-  // Forward-looking tracking shots only (chase, wide, top): never flip backwards (lead), spin (orbit),
-  // or cut perpendicular (side), so the viewer always follows the direction of travel and the pack battle.
-  const cycle = ["chase", "wide", "chase", "top", "wide"];
-  const battleCycle = ["chase", "wide", "chase"];
+  const cycle = ["lead", "chase", "side", "lead", "orbit", "chase", "lead", "side", "wide", "top"];
+  const battleCycle = ["lead", "chase", "side", "lead", "chase", "wide"];
   let ci = 0;
   let bci = 0;
   let f = gridEnd;
   let finishUsed = false;
+  const approachLaps = new Set();
   while (f <= lastFrame) {
     let sh = null;
-    if (!finishUsed && winnerFrame - f <= sec(4.0)) {
-      sh = { kind: "finish", cam: finishCam, start: f, end: Math.max(winnerFrame + sec(2.5), f + sec(3)) };
+    if (!finishUsed && winnerFrame - f <= sec(4.1)) {
+      // Lock the Finish Line camera 4.0s before P1 crosses and hold it all the way until the end of the race!
+      sh = { kind: "finish", cam: finishCam, start: f, end: lastFrame + 1 };
       finishUsed = true;
     } else if (finishUsed) {
-      // After the win: follow the rest home calmly, then hold on the finish.
-      const allIn = finishFrame.every((x) => x !== null && x < f - LINGER);
-      const nextU = uLoc(f, leader[f]);
-      if (allIn) sh = { kind: "finish", cam: finishCam, start: f, end: lastFrame + 1 };
-      else if (nextU > course.uFinish - 7 && uOf(f, leader[f]) > (LAPS - 1) * L) {
-        let end = f + sec(2);
-        while (end <= lastFrame && end < f + sec(5) && !finished(leader[f], end - LINGER)) end++;
-        sh = { kind: "finish", cam: finishCam, start: f, end };
-      } else {
-        for (const kind of ["chase", "wide", "top"]) {
-          const cand = { kind, side: 1, phase: 0, start: f, end: f + sec(6) };
-          if (usable(kind, cand, f, Math.min(cand.end, lastFrame + 1))) {
-            sh = cand;
-            break;
-          }
-        }
-        sh ??= { kind: "top", start: f, end: f + sec(5) };
-      }
+      sh = { kind: "finish", cam: finishCam, start: f, end: lastFrame + 1 };
       ci++;
     } else {
-      // Calmer cutting: an obstacle's camera takes over only once the current shot has run ~7.5 s
-      // (and only for CAM_FEATURES), and holds at least 5.5 s.
-      const settled = shots.length === 0 || f - shots[shots.length - 1].start >= sec(7.5);
-      const fc = sh || !settled ? null : featureCams.find((c) => !c.used && CAM_FEATURES.includes(c.type) && f >= c.start - sec(1.0) && f < c.end - sec(2.0));
+      let top = -1;
+      for (let i = 0; i < N; i++) if (!finished(i, f) && (top < 0 || uOf(f, i) > uOf(f, top))) top = i;
+      const lu = top >= 0 ? uLoc(f, top) : -1;
+      const lap = top >= 0 ? Math.floor((uOf(f, top) + GRID_LENGTH) / L) : -1;
+      if (approach && top >= 0 && lap < LAPS - 1 && !approachLaps.has(lap) && lu > course.END - 22 && lu < course.END - 2) {
+        approachLaps.add(lap);
+        let end = f + sec(1.5);
+        while (end < f + sec(4) && end <= lastFrame && uLoc(end, top) < course.END - 0.3 && uLoc(end, top) > course.END - 30) end++;
+        if (!finishUsed && winnerFrame - sec(3.5) > f) end = Math.min(end, winnerFrame - sec(3.5));
+        if (end > f + sec(0.8)) sh = { kind: "approach", cam: approach.cam, aim: arr(approach.aim), start: f, end: Math.min(end, lastFrame + 1) };
+      }
+      // Marbula-One style dynamic cutting: obstacle cameras and 3.8s-5.0s tracking/lead/side shots
+      const settled = shots.length === 0 || f - shots[shots.length - 1].start >= sec(4.0);
+      const fc = sh || !settled ? null : featureCams.find((c) => !c.used && CAM_FEATURES.includes(c.type) && f >= c.start - sec(1.0) && f < c.end - sec(1.5));
       if (fc) {
         fc.used = true;
-        sh = { kind: "feature", cam: fc.cam, label: fc.label, feature: fc.type, start: f, end: Math.max(f + sec(5.5), fc.end) };
+        sh = { kind: "feature", cam: fc.cam, label: fc.label, feature: fc.type, start: f, end: Math.max(f + sec(3.6), fc.end) };
       }
       const nextFc = featureCams.find((c) => !c.used && CAM_FEATURES.includes(c.type) && c.start > f);
-      const capAt = nextFc ? Math.max(f + sec(7.0), nextFc.start - sec(0.2)) : Infinity;
+      const capAt = nextFc ? Math.max(f + sec(3.6), nextFc.start - sec(0.2)) : Infinity;
       let battleCount = 0;
-      const checkEnd = Math.min(lastFrame, f + sec(5));
+      const checkEnd = Math.min(lastFrame, f + sec(4));
       for (let q = f; q <= checkEnd; q++) if (isBattle[q]) battleCount++;
       const useBattle = battleCount >= (checkEnd - f + 1) * 0.35 || winnerFrame - f <= sec(10);
       const activeCycle = useBattle ? battleCycle : cycle;
       for (let tries = 0; !sh && tries < activeCycle.length; tries++) {
         const kind = activeCycle[(useBattle ? bci++ : ci++) % activeCycle.length];
-        const len = sec(kind === "top" ? 7.0 : 8.0 + rand() * 2.5);
+        const len = sec(kind === "top" ? 3.6 : 3.8 + rand() * 1.4);
         const cand = { kind, start: f, end: f + len, side: rand() < 0.5 ? 1 : -1, phase: rand() * Math.PI * 2 };
         cand.end = Math.min(cand.end, capAt);
         if (usable(kind, cand, f, Math.min(cand.end, lastFrame + 1))) sh = cand;
@@ -2172,7 +2863,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
           if (usable(kind, cand, f, Math.min(cand.end, lastFrame + 1))) sh = cand;
         }
       }
-      if (!sh) sh = { kind: "chase", near: true, start: f, end: Math.min(f + sec(8), capAt) };
+      if (!sh) sh = { kind: "chase", near: true, start: f, end: Math.min(f + sec(4.2), capAt) };
       // Don't run into the finish shot, nor leave a short sliver before it.
       if (!finishUsed) {
         const finStart = winnerFrame - sec(4.0);
@@ -2195,7 +2886,8 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     return center.clone().add(new Vector3(Math.sin(a) * extent * 0.62, extent * 0.55, Math.cos(a) * extent * 0.62));
   };
   // A shot that follows the focus is cut where the focus switches group (see focusSwitches).
-  const FOLLOWING = ["chase", "lead", "side", "top", "orbit", "wide", "feature", "finish", "approach"];
+  // Never shift or split the "finish" shot!
+  const FOLLOWING = ["chase", "lead", "side", "top", "orbit", "wide", "feature", "approach"];
   // A switch near a shot's start or end moves that cut onto the switch (the neighbouring shot absorbs
   // the difference) instead of leaving a sliver of a shot: never a piece under MIN_PIECE.
   const MIN_PIECE = sec(5.5);
@@ -2208,13 +2900,13 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     const next = shots[k + 1];
     const head = at - sh.start;
     const tail = sh.end - at;
-    if (head < MIN_PIECE && prev && (tail >= head || !next)) {
+    if (head < MIN_PIECE && prev && prev.kind !== "finish" && (tail >= head || !next)) {
       prev.end = at;
       sh.start = at;
       k--; // look at this shot again (another switch may follow)
       continue;
     }
-    if (tail < MIN_PIECE && next) {
+    if (tail < MIN_PIECE && next && next.kind !== "finish") {
       next.start = at;
       sh.end = at;
       continue;
@@ -2225,7 +2917,7 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   for (let k = 1; k < shots.length; k++) {
     const prev = shots[k - 1];
     const cur = shots[k];
-    if (prev.kind === cur.kind && Boolean(prev.near) === Boolean(cur.near) && !focusSwitches.includes(cur.start)) {
+    if (prev.kind === cur.kind && Boolean(prev.near) === Boolean(cur.near) && !focusSwitches.includes(cur.start) && cur.end - prev.start <= sec(8.5)) {
       prev.end = cur.end;
       shots.splice(k, 1);
       k--;
@@ -2260,12 +2952,34 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   const cams = sp.map((p, k) => [...arr(p), ...arr(st[k]), r3(sf[k]), kind[k], marble[k]]);
   const origCams = cams.map((c) => c.slice());
 
-  // Replay cameras for the highlights: a fixed camera beside the impact, low
-  // and close, tracking the marble that was hit with a tight field of view.
+  // Replay cameras for the highlights: a close tracking camera in the trough for overtakes,
+  // or a fixed low camera beside the impact for obstacle hits.
   const highlightCams = highlights.map((h) => {
     // A drained marble is moved out of the world on its DQ frame: frame it where it last was.
     const until = (g) => (h.dq ? Math.min(g, h.f - 1) : g);
-    const hit = posOf(until(h.f), h.marble);
+    const pointAt = (g) => {
+      const pA = posOf(until(g), h.marble);
+      if (h.overtake && h.other !== undefined) {
+        const pB = posOf(until(g), h.other);
+        return pA.clone().lerp(pB, 0.45);
+      }
+      return pA;
+    };
+    if (h.overtake) {
+      // Dynamic close tracking camera right above the trough so both battling marbles are framed clearly with zero occlusion:
+      const rawPos = [];
+      const rawTgt = [];
+      for (let g = h.from; g <= h.to; g++) {
+        const uMid = 0.55 * uLoc(until(g), h.marble) + 0.45 * uLoc(until(g), h.other ?? h.marble);
+        const fr = frameAt(Math.max(1, uMid - 3.8));
+        const pCam = v3(pointInFrame(fr, 0, 1.85)).add(upW.clone().multiplyScalar(0.95));
+        rawPos.push(pCam);
+        rawTgt.push(pointAt(g).addScaledVector(flatFwd(frameAt(uMid)), 1.2));
+      }
+      const smPos = gauss(rawPos, sec(0.2));
+      const smTgt = gauss(rawTgt, sec(0.18));
+      return smTgt.map((t, idx) => [...arr(smPos[idx]), ...arr(t), 44]);
+    }
     const u = uLoc(until(h.f), h.marble); // lap-local: on laps 2 and 3 the total progress put the camera at the track's end
     const fr = frameAt(u + 0.8);
     let best = null;
@@ -2274,12 +2988,12 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
         const pos = v3(fr.p).addScaledVector(flatRight(fr), side * lat).add(new Vector3(0, lift, 0));
         if (roomAt(pos, u) < 1.4) continue;
         let score = 0;
-        for (let g = h.from; g <= h.to; g += 6) if (clear(pos, posOf(until(g), h.marble))) score++;
+        for (let g = h.from; g <= h.to; g += 6) if (clear(pos, pointAt(g))) score++;
         if (best === null || score > best.score) best = { pos, score };
       }
-    const pos = best ? best.pos : v3(fr.p).add(new Vector3(0, 6, 0));
+    const pos = best ? best.pos : v3(pointInFrame(frameAt(Math.max(1, u - 3.6)), 0, 1.9)).add(new Vector3(0, 1.0, 0));
     const path = [];
-    for (let g = h.from; g <= h.to; g++) path.push(posOf(until(g), h.marble));
+    for (let g = h.from; g <= h.to; g++) path.push(pointAt(g));
     const sm = gauss(path, sec(0.15));
     // At a machine, the machine is in the shot too (a tight frame on the marble
     // showed "THE HAMMER" with no hammer): aim between them and open the lens to fit both.
@@ -2372,16 +3086,15 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
     return { pos: ps, target: ts, fov, keys: k };
   };
   const raw = [];
-  // Only split the screen for actual disqualifications (DQ replays) so the main race view isn't
-  // constantly interrupted by mid-race split-screen transitions.
+  // Split the screen 50:50 for spectacular overtake replays, hardest obstacle hits, and DQ replays:
+  // P1 live on the left, 0.4× slow-motion action replay on the right.
   highlights.forEach((h, k) => {
-    if (h.dq) raw.push({ kind: "replay", start: h.insert, end: h.insert + h.frames, highlight: k, prio: 3 });
+    raw.push({ kind: "replay", start: h.insert, end: h.insert + h.frames, highlight: k, prio: h.overtake ? 4 : 3 });
   });
   // Every lift ride, both cabins: one split while either is moving.
   const rides = elevators
     .flatMap((e, k) => e.cycles.filter((c) => c.riseAt !== undefined && c.openAt !== undefined).map((c) => ({ cabin: k, start: Math.max(0, c.closeAt - sec(0.6)), end: c.closeTopAt !== undefined ? c.closeTopAt + sec(0.4) : c.openAt + sec(2), riders: c.riders })))
     .sort((a, b) => a.start - b.start);
-  // The stair is never shown in a split screen (watching marbles climb from the side made people dizzy).
   for (const r of NO_STAIR_SPLITS ? [] : rides) {
     const last = raw.length ? raw[raw.length - 1] : null;
     if (last && last.kind === "lift" && r.start <= last.end) {
@@ -2389,13 +3102,17 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       last.cabins.push({ cabin: r.cabin, riders: r.riders, start: r.start, end: r.end });
     } else raw.push({ kind: "lift", start: r.start, end: r.end, cabin: r.cabin, cabins: [{ cabin: r.cabin, riders: r.riders, start: r.start, end: r.end }], prio: 2 });
   }
-  // The stair runs without pause, so its rides merge into long stretches: show it in looks of
-  // at most 8 s, at least 12 s apart (a 30-second split screen was too much).
+  // Keep Twin-Chain Scoop Lift split-screens to a crisp 5.0 s look starting right after P1 exits the lift.
   for (let k = raw.length - 1; k >= 0; k--) {
     const r = raw[k];
-    if (r.kind !== "lift" || r.end - r.start <= sec(8)) continue;
+    if (r.kind !== "lift" || r.end - r.start <= sec(5.0)) continue;
+    let a = r.start;
+    while (a < r.end && cabinOf(p1[a], a) !== null) a++;
+    a += sec(0.6);
     const pieces = [];
-    for (let a = r.start; a < r.end - sec(2); a += sec(20)) pieces.push({ ...r, start: a, end: Math.min(r.end, a + sec(8)), cabins: r.cabins.filter((c) => c.end > a && c.start < a + sec(8)) });
+    if (a + sec(3.5) <= r.end) {
+      pieces.push({ ...r, prio: 4, start: a, end: Math.min(r.end, a + sec(5.0)), cabins: r.cabins.filter((c) => c.end > a && c.start < a + sec(5.0)) });
+    }
     raw.splice(k, 1, ...pieces);
   }
   // Resolve overlaps by priority; nothing shorter than 1.5 s, nothing after the win.
@@ -2405,9 +3122,14 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
   const blocked = { kind: "stair" };
   for (let f = 0; f <= lastFrame; f++) if (cabinOf(p1[f], f) !== null) for (let g = Math.max(0, f - sec(0.5)); g <= Math.min(lastFrame, f + sec(0.5)); g++) taken[g] = blocked;
   for (const sp of [...raw].sort((a, b) => b.prio - a.prio || a.start - b.start)) {
-    const a = Math.max(sp.start, raceStart + sec(2));
-    const b = Math.min(sp.end, winnerFrame - sec(15), lastFrame + 1);
-    if (b - a < sec(1.5)) continue;
+    let a = Math.max(sp.start, raceStart + sec(2));
+    let b = Math.min(sp.end, winnerFrame - sec(12), lastFrame + 1);
+    if (sp.kind === "lift") {
+      while (a < b && taken[a]) a++;
+      while (b > a && taken[b - 1]) b--;
+      b = Math.min(b, a + sec(6.0));
+    }
+    if (b - a < sec(2.2)) continue;
     let free = true;
     for (let f = a; f < b; f++) if (taken[f]) free = false;
     if (!free) {
@@ -2415,8 +3137,8 @@ function directRace({ world, course, frames, finishFrame, raceStart, winnerFrame
       // A replay waits for the slot to clear, keeping its length.
       const len = b - a;
       let s0 = a;
-      while (s0 + len < winnerFrame - sec(15) && taken.slice(s0, s0 + len).some(Boolean)) s0 += sec(0.5);
-      if (s0 + len >= winnerFrame - sec(15)) continue;
+      while (s0 + len < winnerFrame - sec(12) && taken.slice(s0, s0 + len).some(Boolean)) s0 += sec(0.5);
+      if (s0 + len >= winnerFrame - sec(12)) continue;
       sp.start = s0;
       sp.end = s0 + len;
     } else {
@@ -2520,40 +3242,100 @@ function soundtrack(result, rand) {
   timeline.lights.forEach((lf) => tone(lf / fps, 220, 0.25, 0.18, 0, 0.08));
   crowd(timeline.raceStart / fps, 4, 1.4);
 
-  // Rolling rumble of every marble, heard from the camera.
-  let lp1 = 0;
-  let lp2 = 0;
+  // Tactile ASMR rolling purr & glass-on-track shimmer of every marble, stereo-panned from the active camera.
+  let lpL1 = 0;
+  let lpL2 = 0;
+  let lpR1 = 0;
+  let lpR2 = 0;
+  let hp1 = 0;
   const raceSamples = simTotal;
-  const rumble = frames.map((fr, f) => {
+  const rumbleL = new Float32Array(frames.length);
+  const rumbleR = new Float32Array(frames.length);
+  const fastRoll = new Float32Array(frames.length);
+  frames.forEach((fr, f) => {
     const prev = frames[Math.max(0, f - 1)];
-    let sum = 0;
+    let sumL = 0;
+    let sumR = 0;
+    let hi = 0;
     fr.forEach((m, i) => {
       const speed = Math.hypot(m[0] - prev[i][0], m[1] - prev[i][1], m[2] - prev[i][2]) * fps;
-      sum += Math.min(speed, 7) * hear(f, m).gain;
+      if (speed < 0.15) return;
+      const { gain, pan } = hear(f, m);
+      const w = Math.min(speed, 8) * gain;
+      sumL += w * Math.cos(((pan + 1) * Math.PI) / 4);
+      sumR += w * Math.sin(((pan + 1) * Math.PI) / 4);
+      hi += Math.max(0, speed - 2.0) * gain;
     });
-    return sum;
+    rumbleL[f] = sumL;
+    rumbleR[f] = sumR;
+    fastRoll[f] = hi;
   });
   for (let k = 0; k < raceSamples; k++) {
     const f = Math.min(frames.length - 1, Math.floor((k / RATE) * fps));
-    lp1 += 0.04 * (rand() * 2 - 1 - lp1);
-    lp2 += 0.04 * (lp1 - lp2);
-    const s = lp2 * rumble[f] * 0.22;
-    Ls[k] += s;
-    Rs[k] += s;
+    const tt = k / RATE;
+    const nL = rand() * 2 - 1;
+    const nR = rand() * 2 - 1;
+    lpL1 += 0.055 * (nL - lpL1);
+    lpL2 += 0.055 * (lpL1 - lpL2);
+    lpR1 += 0.055 * (nR - lpR1);
+    lpR2 += 0.055 * (lpR1 - lpR2);
+    hp1 += 0.35 * (nL - hp1);
+    // Warm track-surface rolling purr + crisp high-frequency glass-on-track shimmer:
+    const glassPurr = 1 + 0.25 * Math.sin(2 * Math.PI * 240 * tt) + 0.15 * Math.sin(2 * Math.PI * 385 * tt);
+    const shimmer = (nL - hp1) * Math.sin(2 * Math.PI * 1850 * tt) * 0.055 * fastRoll[f];
+    Ls[k] += lpL2 * rumbleL[f] * 0.38 * glassPurr + shimmer;
+    Rs[k] += lpR2 * rumbleR[f] * 0.38 * glassPurr + shimmer;
+    // Subtle micro-grain ASMR contact ticks as marbles/cars roll over track joints/curbs:
+    if (fastRoll[f] > 1.0 && rand() < 0.0028 * Math.min(7, fastRoll[f])) {
+      const gFreq = 2900 + rand() * 1700;
+      const gAmp = 0.068 * Math.min(1, fastRoll[f] / 4.2);
+      const gPan = (rand() - 0.5) * 0.7;
+      for (let q = 0; q < 320 && k + q < raceSamples; q++) {
+        const qt = q / RATE;
+        add(k + q, gAmp * Math.exp(-qt / 0.0026) * (0.72 * Math.sin(2 * Math.PI * gFreq * qt) + 0.28 * Math.sin(2 * Math.PI * gFreq * 1.58 * qt)), gPan);
+      }
+    }
+  }
+  // Tactile ASMR TCR Track-Joint & Guide-Rail Clicks every 2.4m of progress for each car/marble:
+  for (let f = Math.max(1, timeline.raceStart); f < frames.length; f++) {
+    const fr = frames[f];
+    const prev = frames[f - 1];
+    fr.forEach((m, i) => {
+      const u0 = prev[i][7];
+      const u1 = m[7];
+      if (u1 > u0 && Math.floor(u1 / 2.4) > Math.floor(u0 / 2.4)) {
+        const { gain, pan } = hear(f, m);
+        const spd = (u1 - u0) * fps;
+        const jAmp = Math.min(0.11, 0.022 * spd) * gain;
+        if (jAmp > 0.003) {
+          const s0 = Math.round((f / fps) * RATE);
+          const jFreq = 2650 + ((i * 211) % 900);
+          for (let q = 0; q < 380 && s0 + q < raceSamples; q++) {
+            const qt = q / RATE;
+            add(s0 + q, jAmp * Math.exp(-qt / 0.0032) * (0.68 * Math.sin(2 * Math.PI * jFreq * qt) + 0.32 * Math.sin(2 * Math.PI * (jFreq * 1.48) * qt)), pan);
+          }
+        }
+      }
+    });
   }
 
-  // Impacts, heard from the camera: glass for marble-on-marble, a duller knock otherwise.
+  // Crisp ASMR multi-modal glass-on-glass clacks & obstacle knocks, stereo-panned from the camera.
   for (const im of impacts) {
     const { gain, pan } = hear(im.f, frames[Math.min(im.f, frames.length - 1)][im.i]);
-    const amp = Math.min(1, (im.strength - 0.5) / 4) ** 0.7 * 0.4 * gain;
-    if (amp < 0.004) continue;
+    const amp = Math.min(1, Math.max(0.05, im.strength - 0.22) / 3.4) ** 0.65 * (im.glass ? 0.68 : 0.48) * gain;
+    if (amp < 0.003) continue;
     const start = Math.round(im.t * RATE);
-    const freq = im.glass ? 2800 + rand() * 1600 : 600 + rand() * 600;
-    const decay = im.glass ? 0.018 : 0.028;
-    for (let k = 0; k < decay * 6 * RATE; k++) {
+    const freq = im.glass ? 3100 + rand() * 1500 : 620 + rand() * 580;
+    const decay = im.glass ? 0.022 : 0.03;
+    for (let k = 0; k < decay * 6.5 * RATE; k++) {
       const tt = k / RATE;
-      const noise = k < 100 ? (rand() * 2 - 1) * (1 - k / 100) * 0.6 : 0;
-      add(start + k, amp * Math.exp(-tt / decay) * (0.8 * Math.sin(2 * Math.PI * freq * tt) + noise), pan);
+      const click = k < 90 ? (rand() * 2 - 1) * (1 - k / 90) * (im.glass ? 0.85 : 0.55) : 0;
+      const ring = im.glass
+        ? 0.62 * Math.sin(2 * Math.PI * freq * tt) +
+          0.26 * Math.exp(-tt / (decay * 0.65)) * Math.sin(2 * Math.PI * freq * 1.52 * tt) +
+          0.12 * Math.exp(-tt / (decay * 0.4)) * Math.sin(2 * Math.PI * freq * 2.18 * tt)
+        : 0.82 * Math.sin(2 * Math.PI * freq * tt) + 0.18 * Math.sin(2 * Math.PI * freq * 1.75 * tt);
+      add(start + k, amp * Math.exp(-tt / decay) * (ring + click), pan);
     }
   }
 
@@ -2644,8 +3426,15 @@ function soundtrack(result, rand) {
     const stopAt = ev.stopAt ?? Infinity;
     hum(
       ev.center,
-      (tt) => (tt < stopAt ? 0.55 * Math.sin(2 * Math.PI * 64 * tt) + 0.3 * Math.sin(2 * Math.PI * 128 * tt) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 2.8 * tt)) : 0),
-      0.09,
+      (tt) => {
+        if (tt >= stopAt) return 0;
+        // Rhythmic ASMR chain-link / sprocket ratchet click (13.5 clicks/sec) + warm electric drive purr:
+        const clickPhase = (tt * 13.5) % 1;
+        const ratchetClick = Math.exp(-clickPhase * 28) * (0.65 * Math.sin(2 * Math.PI * 1420 * tt) + 0.35 * Math.sin(2 * Math.PI * 2380 * tt));
+        const motor = 0.35 * Math.sin(2 * Math.PI * 64 * tt) + 0.2 * Math.sin(2 * Math.PI * 128 * tt);
+        return ratchetClick + motor;
+      },
+      0.13,
     );
   }
   // The regroup gate: a buzzer while it holds (the last two seconds), a clunk as it lifts.
@@ -2654,10 +3443,19 @@ function soundtrack(result, rand) {
     for (let k = 0; k < 3; k++) tone(g.openFrame / fps - 1.6 + k * 0.5, 880, 0.12, 0.12, 0);
     tone(g.openFrame / fps, 140, 0.25, 0.3, 0, 0.09);
   }
-  // The crowd reacts: a swell on every overtake for a top-five place, a groan on a disqualification.
+  // The crowd reacts: a swell on every overtake for a top-five place, a groan on a disqualification,
+  // and a dramatic Checkpoint Knockout chime + crowd swell when each Checkpoint locks.
   for (const e of data.events) {
     if (e.kind === "overtake" && e.pos <= 5) crowd(e.frame / fps + 0.1, 1.6, 0.45 + (5 - e.pos) * 0.08);
     if (e.kind === "dq") crowd(e.frame / fps + 0.25, 2.4, 0.7);
+  }
+  for (const cp of data.checkpoints ?? []) {
+    if (cp.closedFrame === null) continue;
+    const t = cp.closedFrame / fps;
+    bell(t, 659.25, 0.22, -0.2, 1.1);
+    bell(t + 0.1, 523.25, 0.26, 0.2, 1.4);
+    tone(t, 110, 0.35, 0.28, 0, 0.14);
+    crowd(t + 0.15, 2.0, 0.85);
   }
 
   // Chequered flag: chime per finisher, a big cheer for the winner.
@@ -2727,7 +3525,7 @@ function soundtrack(result, rand) {
     const t0 = timeline.raceStart / fps - 0.2;
     const t1 = timeline.replay.at / fps + 1.5;
     const bass = [55, 55, 65.41, 73.42, 55, 55, 87.31, 82.41]; // A A C D A A F E
-    const amp = 0.065;
+    const amp = 0.026; // subtle background pulse so tactile ASMR marble sounds take center stage
     const env = (t) => Math.min(1, Math.max(0, (t - t0) / 2)) * Math.min(1, Math.max(0, (t1 - t) / 2.5));
     for (let n = 0; t0 + n * beat < t1; n++) {
       const t = t0 + n * beat;
@@ -2963,13 +3761,17 @@ export function introFor(data, round) {
     allCards.push({ type: "dq", u: r3(first.u), label: "DQ ZONES", count: dq.length });
     allCards.sort((a, b) => a.u - b.u);
   }
-  // Pick up to 4 signature obstacles spaced along the circuit for the punchy 8 s flyover.
-  const prio = { vortex: 10, hammer: 9, spinner: 8, pusher: 8, dq: 7, turntable: 6, rollers: 6, fan: 5, switch: 5, jump: 4, drop: 4, splitter: 3, bumpers: 3, pegs: 2, regroup: 2 };
+  // Pick up to 11 signature obstacles spaced along the ENTIRE circuit (plus the Twin-Chain Scoop Lift at the end of the lap).
+  const prio = { vortex: 10, hammer: 9, spinner: 8, pusher: 8, turntable: 7, lift: 7, rollers: 6, fan: 6, jump: 5, drop: 5, splitter: 4, bumpers: 4, pegs: 3, tube: 3, crest: 2, bumps: 2, booster: 2 };
   const picked = [];
   for (const c of [...allCards].sort((a, b) => (prio[b.type] ?? 1) - (prio[a.type] ?? 1) || a.u - b.u)) {
-    if (picked.length >= 4) break;
+    if (picked.length >= 11) break;
     if (picked.some((p) => Math.abs(p.u - c.u) < 16)) continue;
     picked.push(c);
+  }
+  const endU = r3((data.info.trackEnd ?? data.info.length) - 8);
+  if (!picked.some((p) => p.type === "elevator")) {
+    picked.push({ type: "elevator", u: endU, label: "TWIN-CHAIN SCOOP LIFT", count: 1 });
   }
   const cards = picked.sort((a, b) => a.u - b.u);
   const hs = data.timeline.highlights;
@@ -3028,20 +3830,40 @@ for (const [k, round] of ROUNDS.entries()) {
   const constructorsBefore = TEAMS.map((tm) => ({ team: tm.id, points: teamTotals[tm.id] ?? 0 })).sort((a, b) => b.points - a.points).map((r, pos) => ({ ...r, pos: pos + 1 }));
   if (process.env.GP_ONLY && round.id !== process.env.GP_ONLY) {
     const existing = JSON.parse(readFileSync(new URL(`${round.id}.json`, outDir), "utf8"));
-    for (const r of existing.results) totals[r.marble] += r.points;
     for (const r of existing.results) {
+      if (r.marble < MARBLES.length) totals[r.marble] += r.points;
+    }
+    for (const r of existing.results) {
+      if (r.marble >= MARBLES.length) continue;
       const team = teamOf(MARBLES[r.marble].abbr);
       if (team) teamTotals[team.id] = (teamTotals[team.id] ?? 0) + r.points;
     }
-    prevStanding = existing.standings.map((t) => t.marble);
+    const filteredStandings = existing.standings.filter((t) => t.marble < MARBLES.length);
+    prevStanding = filteredStandings.map((t) => t.marble);
     prevTeams = existing.constructors.map((r) => r.team);
-    standings.push(existing.standings);
-    seasonRounds.push({ id: round.id, round: k + 1, gp: round.gp, title: round.title, country: round.country, circuit: existing.info.circuit, winner: existing.order[0] });
+    standings.push(filteredStandings);
+    seasonRounds.push({ id: round.id, round: k + 1, gp: round.gp, title: round.title, country: round.country, circuit: existing.info.circuit, winner: Math.min(MARBLES.length - 1, existing.order[0] ?? 0) });
     continue;
   }
-  const res = await runRound(round, round.seed, { quiet: false });
+  const heatOffset = process.env.GP_CARS === "1" ? (process.env.GP_HEAT === "final" ? 40 : ((parseInt(process.env.GP_HEAT ?? "1", 10) || 1) - 1) * 7) : 0;
+  const res = await runRound(round, round.seed + heatOffset, { quiet: false });
   console.log(res.summary);
   const { data } = res;
+  if (process.env.GP_CARS === "1" && process.env.GP_HEAT && process.env.GP_HEAT !== "final") {
+    const qPath = new URL("tcr-qualifiers.json", outDir);
+    let qData = {};
+    try { qData = JSON.parse(readFileSync(qPath, "utf8")); } catch {}
+    const top2 = data.order.slice(0, 2).map((idx) => MARBLES[idx].abbr);
+    const thirdIdx = data.order[2];
+    const thirdFe = thirdIdx !== undefined ? (data.marbles[thirdIdx].finishExact ?? data.marbles[thirdIdx].finishFrame) : null;
+    const thirdTime = thirdFe !== null ? r3((thirdFe - data.timeline.raceStart) / FPS) : 9999;
+    qData[process.env.GP_HEAT] = {
+      top2,
+      third: thirdIdx !== undefined ? { abbr: MARBLES[thirdIdx].abbr, time: thirdTime } : null,
+    };
+    writeFileSync(qPath, JSON.stringify(qData, null, 2));
+    console.log(`TCR Heat ${process.env.GP_HEAT} Qualifiers -> Top 2: ${top2.join(", ")} | Wildcard P3: ${MARBLES[thirdIdx]?.abbr} (${thirdTime}s)`);
+  }
   data.round = k + 1;
   data.rounds = ROUNDS.length;
   const results = data.order.map((i, pos) => {
@@ -3072,13 +3894,16 @@ for (const [k, round] of ROUNDS.entries()) {
   // Before this round (for the intro's "what's at stake").
   data.standingsBefore = standingsBefore;
   data.constructorsBefore = constructorsBefore;
-  data.intro = introFor(data, k + 1);
+  data.intro = process.env.GP_CARS === "1" ? null : introFor(data, k + 1);
   standings.push(table);
   seasonRounds.push({ id: round.id, round: k + 1, gp: round.gp, title: round.title, country: round.country, circuit: data.info.circuit, winner: data.order[0] });
 
   writeFileSync(new URL(`${round.id}.json`, outDir), JSON.stringify(data));
-  writeFileSync(new URL(`${round.id}.wav`, audioDir), soundtrack(res, mulberry32(round.seed + 99)));
-  writeFileSync(new URL(`${round.id}-intro.wav`, audioDir), introTrack(data.intro, data, mulberry32(round.seed + 7)));
+  writeFileSync(
+    new URL(`${round.id}.wav`, audioDir),
+    process.env.GP_CARS === "1" ? carSoundtrack(res) : soundtrack(res, mulberry32(round.seed + 99)),
+  );
+  if (data.intro) writeFileSync(new URL(`${round.id}-intro.wav`, audioDir), introTrack(data.intro, data, mulberry32(round.seed + 7)));
 }
 
 writeFileSync(new URL("season.json", outDir), JSON.stringify({ marbles: MARBLES, rounds: seasonRounds, standings }));

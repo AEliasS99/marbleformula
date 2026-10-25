@@ -12,12 +12,14 @@ import { quality } from "./quality";
 import { isNight } from "./look";
 import { Hoops, Neon } from "./Neon";
 import { Boosters, DistributorFlap } from "./Boosts";
+import { getCircuitTheme, WorldScenery } from "./Themes";
 
 // The circuit and everything on it, seen through one View (a clock and a camera).
 
 export function Stage({ race, view, layout, frame, width, height }: { race: Race; view: View; layout: Layout; frame: number; width: number; height: number }) {
   const t = view.tAt(frame);
   const shot = view.shotAt(frame);
+  const theme = getCircuitTheme(race);
   // This canvas's own motion-blur sub-frame registry (src/gp/subframe.ts).
   const sub = useMemo(() => createSubframe(), []);
   return (
@@ -29,16 +31,18 @@ export function Stage({ race, view, layout, frame, width, height }: { race: Race
       <ThreeCanvas width={width} height={height} dpr={quality().dpr} shadows="variance" gl={{ antialias: false, alpha: false, depth: false, stencil: false }}>
         <ViewContext.Provider value={view}>
           <SubframeContext.Provider value={sub}>
-            <fog attach="fog" args={isNight() ? ["#07080b", 60, 260] : [STUDIO.fog, 220, 1400]} />
-            <Environment />
-            <hemisphereLight args={isNight() ? ["#9fb4d8", "#101114", 0.12] : ["#bfd8f5", "#5a7a3c", 0.22]} />
-            <Sun target={shot.target} pos={shot.pos} />
+            <fog attach="fog" args={isNight() ? [theme.fogColor, theme.fogNear, theme.fogFar] : [STUDIO.fog, 220, 1400]} />
+            <Environment race={race} />
+            <hemisphereLight args={isNight() ? [theme.hemiSkyColor, theme.hemiGroundColor, theme.hemiIntensity] : ["#bfd8f5", "#5a7a3c", 0.22]} />
+            <Sun target={shot.target} pos={shot.pos} race={race} />
             <CameraRig race={race} layout={layout} frame={frame} />
             <Circuit race={race} />
             <TrackDetails race={race} />
             <Decals race={race} />
             <TimingGate race={race} />
-            {isNight() ? <Neon race={race} /> : <Trackside race={race} />}
+            {isNight() && <Neon race={race} />}
+            <Trackside race={race} />
+            <WorldScenery race={race} />
             <Obstacles race={race} t={t} />
             <Machines race={race} t={t} />
             <Boosters race={race} t={t} />

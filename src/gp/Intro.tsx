@@ -47,7 +47,7 @@ const BLURBS: Record<string, { line: string; danger: number }> = {
   switch: { line: "Two half-width bars rise and sink in turn: take the open half or wait.", danger: 3 },
   crest: { line: "Humps at the apex of the bends: take them fast and you fly.", danger: 3 },
   pusher: { line: "A ram that sweeps across the track.", danger: 4 },
-  elevator: { line: "An endless stair carries the field back up for the next lap: roll on, ride up, roll off.", danger: 1 },
+  elevator: { line: "A twin-chain marble scoop lift picks up the surviving marbles one by one from the queue and carries them up for Lap 2.", danger: 2 },
   dq: { line: "A drain by the wall at some machines: roll into it and you drop out of the race.", danger: 5 },
 };
 
@@ -123,31 +123,37 @@ function introViews(race: Race, plan: IntroPlan) {
   views.title = drone(at.title, 2.0, 2.35, 0.52, 0.42);
   if (at.stakes) views.stakes = drone(at.stakes, 3.4, 3.8, 0.4, 0.36);
 
-  // The drone lap: low and slow over every obstacle, high and quick between them.
+  // The drone lap: swoops in low and close over every obstacle so each 3D machine is clearly presented, high and smooth between them.
   const fly = at.flyover;
   const pace = flyPacing(plan.L, plan.cards, fly.frames);
   views.flyover = {
     tAt: clock,
     shotAt: (vf) => {
       const u = pace.uAt(vf - fly.at);
-      // Steady: always the same distance behind and a gently varying height, both averaged over a
-      // long stretch of track (a jumpy drone made the lap dizzying).
       const slow = pace.slow(u);
-      const pos = add(mean(u - 22, u - 10), [0, 1, 0], 7 + 3 * (1 - slow));
-      const target = add(mean(u - 2, u + 12), [0, 1, 0], 0.3);
-      return shot(pos, target, 46, "flyover");
+      const back = 15 - 7.5 * slow;
+      const height = 8.2 - 4.8 * slow;
+      const pos = add(mean(u - back - 6, u - back + 2), [0, 1, 0], height);
+      const target = add(mean(u - 1, u + 7 - 3 * slow), [0, 1, 0], 0.35);
+      return shot(pos, target, 42 - 6 * slow, "flyover");
     },
   };
 
-  // Along the grid, from the far side to the pole sitter.
+  // Along the grid: sweep steadily across all 10 lanes (20 Countries & Scuderias) over 0..0.82, then push in to Pole Position.
   const g = gridGeometry(race);
   const line = at.lineup;
   views.lineup = {
     tAt: clock,
     shotAt: (vf) => {
       const p = (vf - line.at) / line.frames;
-      const lat = g.latFrom + (g.pole.lat - g.latFrom) * smooth(Math.max(0, Math.min(1, (p - 0.04) / 0.72)));
-      const push = smooth(Math.max(0, Math.min(1, (p - 0.78) / 0.22)));
+      const sgn = Math.sign(g.pole.lat || 1);
+      const latStart = -sgn * g.wide * 0.96;
+      const latEnd = sgn * g.wide * 0.96;
+      const sweepT = Math.max(0, Math.min(1, (p - 0.02) / 0.78));
+      const toPole = smooth(Math.max(0, Math.min(1, (p - 0.82) / 0.16)));
+      const swept = latStart + (latEnd - latStart) * sweepT;
+      const lat = swept + (g.pole.lat - swept) * toPole;
+      const push = smooth(Math.max(0, Math.min(1, (p - 0.82) / 0.18)));
       const ahead = g.front + 3.8 - 1.4 * push;
       const pos = add(add(add(g.c, g.t, ahead), g.r, lat), [0, 1, 0], 1.8 - 0.5 * push);
       const target = add(add(add(g.c, g.t, g.front - 0.7), g.r, lat * 0.96), [0, 1, 0], 0.1);
@@ -183,7 +189,7 @@ function gridGeometry(race: Race) {
   const poleIdx = race.marbles.reduce((b, m, i) => (m.grid < race.marbles[b].grid ? i : b), 0);
   const pole = place[poleIdx];
   const wide = Math.max(...place.map((q) => Math.abs(q.lat)));
-  return { c, t, r, place, front, pole, latFrom: -Math.sign(pole.lat || 1) * wide * 1.05 };
+  return { c, t, r, place, front, pole, wide, latFrom: -Math.sign(pole.lat || 1) * wide * 1.05 };
 }
 
 // --- The showroom (round 1) ----------------------------------------------------------
@@ -350,11 +356,11 @@ function TitleGraphics({ race, x, frames, s, layout }: { race: Race; x: number; 
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", opacity: out }}>
       <div style={{ textAlign: "center", color: "#fff", textShadow: "0 6px 30px rgba(0,0,0,0.45)" }}>
-        <div style={{ fontSize: 118 * s * big, fontWeight: 900, letterSpacing: 4 * s, lineHeight: 1, transform: `translateY(${(1 - a) * 40 * s}px)`, opacity: a }}>MARBLE FORMULA</div>
-        <div style={{ fontSize: 58 * s * big, fontWeight: 700, letterSpacing: 26 * s * big, marginTop: 10 * s, opacity: b, transform: `scaleX(${0.8 + 0.2 * b})` }}>CHAMPIONSHIP</div>
-        <div style={{ fontSize: 150 * s * big, fontWeight: 900, color: yellow, lineHeight: 1, marginTop: 14 * s, transform: `scale(${0.6 + 0.4 * yr})`, opacity: Math.min(1, yr * 1.5) }}>2027</div>
+        <div style={{ fontSize: 118 * s * big, fontWeight: 900, letterSpacing: 4 * s, lineHeight: 1, transform: `translateY(${(1 - a) * 40 * s}px)`, opacity: a }}>DON&apos;T BE LAST!</div>
+        <div style={{ fontSize: 40 * s * big, fontWeight: 800, letterSpacing: 6 * s * big, marginTop: 10 * s, opacity: b, transform: `scaleX(${0.8 + 0.2 * b})` }}>ONLY THE LAST MARBLE AT EACH CHECKPOINT IS ELIMINATED</div>
+        <div style={{ fontSize: 78 * s * big, fontWeight: 900, color: yellow, lineHeight: 1.1, marginTop: 14 * s, transform: `scale(${0.6 + 0.4 * yr})`, opacity: Math.min(1, yr * 1.5) }}>20 → 19 → 18 → 17 · TOP 15 SCORE POINTS</div>
         <div style={{ marginTop: 36 * s, opacity: sub, transform: `translateY(${(1 - sub) * 24 * s}px)`, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 * s }}>
-          <Chip s={s} size={30}>{`ROUND ${round} OF ${rounds}`}</Chip>
+          <Chip s={s} size={30}>{`EPISODE ${round} OF ${rounds}`}</Chip>
           <div style={{ fontSize: 56 * s * big, fontWeight: 900 }}>{info.title.toUpperCase()}</div>
           <div style={{ display: "flex", gap: 0, height: 8 * s, width: 320 * s }}>
             {info.flag.map((c) => (

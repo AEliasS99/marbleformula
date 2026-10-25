@@ -18,13 +18,19 @@
 //   npm run upload -- --season 3 --dry-run               # preview titles, descriptions, files without uploading
 
 import { execFile } from "node:child_process";
-import { closeSync, copyFileSync, existsSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { setDefaultResultOrder } from "node:dns";
+import { closeSync, copyFileSync, existsSync, openSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { setDefaultAutoSelectFamily } from "node:net";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { CIRCUITS } from "../src/gp/circuits/index.js";
 
+setDefaultResultOrder("ipv4first");
+setDefaultAutoSelectFamily(false);
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const VIDEO_CLOUD_DIR = "/Users/eli/GoogleCloud";
 const CLIENT_FILE = `${ROOT}.youtube-client.json`;
 const TOKEN_FILE = `${ROOT}.youtube-token.json`;
 const REDIRECT_PORT = 8899;
@@ -46,6 +52,7 @@ function parseArgs(argv) {
     dryRun: false,
     force: false,
     authOnly: false,
+    channelOnly: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -58,6 +65,7 @@ function parseArgs(argv) {
     else if (a === "--dry-run") o.dryRun = true;
     else if (a === "--force") o.force = true;
     else if (a === "--auth") o.authOnly = true;
+    else if (a === "--channel") o.channelOnly = true;
     else throw new Error(`Unknown option: ${a}`);
   }
   if (!["public", "unlisted", "private"].includes(o.privacy)) {
@@ -112,9 +120,9 @@ async function authorizeInteractive({ clientId, clientSecret }) {
     `&login_hint=${encodeURIComponent("marbleformula1@gmail.com")}` +
     `&prompt=consent`;
 
-  console.log(`\nOpening browser to authorize YouTube channel (@MarbleFormula)...`);
+  console.log(`\nOpening Google Chrome to authorize YouTube channel (@MarbleFormula)...`);
   console.log(`If it doesn't open automatically, visit:\n  ${authUrl}\n`);
-  execFile("open", [authUrl]);
+  execFile("open", ["-a", "Google Chrome", authUrl]);
 
   const code = await new Promise((resolve, reject) => {
     const srv = createServer((req, res) => {
@@ -216,52 +224,122 @@ async function uploadVideoResumable({ accessToken, filePath, title, description,
     },
   };
 
-  const initRes = await fetch(
-    "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json; charset=UTF-8",
-        "X-Upload-Content-Length": String(size),
-        "X-Upload-Content-Type": "video/mp4",
-      },
-      body: JSON.stringify(body),
-    },
-  );
-  if (!initRes.ok) {
-    const errText = await initRes.text();
-    throw new Error(`Failed to initiate upload (${initRes.status}): ${errText}`);
+  const sessionFile = `${filePath}.session.json`;
+  let uploadUrl = null;
+  let offset = 0;
+
+  if (existsSync(sessionFile)) {
+    try {
+      const savedSession = JSON.parse(readFileSync(sessionFile, "utf8"));
+      if (savedSession.uploadUrl && savedSession.size === size) {
+        const probeRes = await fetch(savedSession.uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Length": "0",
+            "Content-Range": `bytes */${size}`,
+          },
+        });
+        if (probeRes.status === 308) {
+          const range = probeRes.headers.get("range");
+          offset = range ? Number(range.split("-")[1]) + 1 : 0;
+          uploadUrl = savedSession.uploadUrl;
+          console.log(`  ↻ Resuming previous upload session at ${((offset / size) * 100).toFixed(1)}% (${(offset / 1e6).toFixed(0)} MB)...`);
+        }
+      }
+    } catch {
+      uploadUrl = null;
+      offset = 0;
+    }
   }
-  const uploadUrl = initRes.headers.get("location");
-  if (!uploadUrl) throw new Error("YouTube did not return a resumable upload Location header");
+
+  if (!uploadUrl) {
+    const initRes = await fetch(
+      "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json; charset=UTF-8",
+          "X-Upload-Content-Length": String(size),
+          "X-Upload-Content-Type": "video/mp4",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+    if (!initRes.ok) {
+      const errText = await initRes.text();
+      throw new Error(`Failed to initiate upload (${initRes.status}): ${errText}`);
+    }
+    uploadUrl = initRes.headers.get("location");
+    if (!uploadUrl) throw new Error("YouTube did not return a resumable upload Location header");
+    writeFileSync(sessionFile, JSON.stringify({ uploadUrl, size, createdAt: Date.now() }, null, 2));
+  }
 
   const fd = openSync(filePath, "r");
   try {
-    let offset = 0;
+    const { readSync } = await import("node:fs");
     while (offset < size) {
       const len = Math.min(CHUNK_SIZE, size - offset);
       const buf = Buffer.allocUnsafe(len);
-      const { readSync } = await import("node:fs");
       readSync(fd, buf, 0, len, offset);
 
       const end = offset + len - 1;
-      const chunkRes = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Length": String(len),
-          "Content-Range": `bytes ${offset}-${end}/${size}`,
-          "Content-Type": "video/mp4",
-        },
-        body: buf,
-      });
+      let chunkRes = null;
+      for (let attempt = 1; attempt <= 8; attempt++) {
+        try {
+          chunkRes = await fetch(uploadUrl, {
+            method: "PUT",
+            headers: {
+              "Content-Length": String(len),
+              "Content-Range": `bytes ${offset}-${end}/${size}`,
+              "Content-Type": "video/mp4",
+            },
+            body: buf,
+          });
+          if (chunkRes.status >= 500 && attempt < 8) {
+            await new Promise((r) => setTimeout(r, 2000 * attempt));
+            continue;
+          }
+          break;
+        } catch (err) {
+          if (attempt === 8) throw err;
+          process.stdout.write(`\n  ⚠️ Network hiccup at ${(offset / 1e6).toFixed(0)} MB (attempt ${attempt}/8), querying server offset & retrying...\n`);
+          await new Promise((r) => setTimeout(r, 2500 * attempt));
+          try {
+            const probe = await fetch(uploadUrl, {
+              method: "PUT",
+              headers: { "Content-Length": "0", "Content-Range": `bytes */${size}` },
+            });
+            if (probe.status === 308) {
+              const range = probe.headers.get("range");
+              if (range) {
+                const serverNext = Number(range.split("-")[1]) + 1;
+                if (serverNext > offset) {
+                  offset = serverNext;
+                  chunkRes = { status: 308, resumed: true };
+                  break;
+                }
+              }
+            } else if (probe.ok) {
+              chunkRes = probe;
+              break;
+            }
+          } catch {
+            // ignore probe error, retry PUT
+          }
+        }
+      }
 
-      if (chunkRes.status === 308) {
+      if (chunkRes.resumed) {
+        const pct = ((offset / size) * 100).toFixed(1);
+        process.stdout.write(`\r  Uploading ${filePath.replace(ROOT, "")}: ${pct}% (${(offset / 1e6).toFixed(0)}/${(size / 1e6).toFixed(0)} MB)`);
+      } else if (chunkRes.status === 308) {
         offset += len;
         const pct = ((offset / size) * 100).toFixed(1);
         process.stdout.write(`\r  Uploading ${filePath.replace(ROOT, "")}: ${pct}% (${(offset / 1e6).toFixed(0)}/${(size / 1e6).toFixed(0)} MB)`);
       } else if (chunkRes.ok) {
         process.stdout.write(`\r  Uploading ${filePath.replace(ROOT, "")}: 100.0% (${(size / 1e6).toFixed(0)} MB)\n`);
+        try { unlinkSync(sessionFile); } catch {}
         const video = await chunkRes.json();
         return video.id;
       } else {
@@ -274,14 +352,15 @@ async function uploadVideoResumable({ accessToken, filePath, title, description,
   }
 }
 
-async function uploadThumbnail({ accessToken, videoId, thumbPath }) {
+async function uploadThumbnail({ videoId, thumbPath }) {
+  const freshToken = await getAccessToken();
   const bytes = readFileSync(thumbPath);
   const res = await fetch(
     `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${encodeURIComponent(videoId)}`,
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${freshToken}`,
         "Content-Type": "image/jpeg",
         "Content-Length": String(bytes.length),
       },
@@ -295,6 +374,78 @@ async function uploadThumbnail({ accessToken, videoId, thumbPath }) {
   }
 }
 
+async function updateChannelBranding(accessToken) {
+  const chRes = await fetch("https://www.googleapis.com/youtube/v3/channels?part=id,snippet,brandingSettings&mine=true", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const chData = await chRes.json();
+  const item = chData.items?.[0];
+  if (!item) throw new Error(`Could not fetch channel: ${JSON.stringify(chData)}`);
+
+  let bannerExternalUrl = item.brandingSettings?.image?.bannerExternalUrl;
+  const bannerPath = `${ROOT}out/gp/channel-banner.jpg`;
+  if (existsSync(bannerPath)) {
+    console.log(`Uploading channel banner (${bannerPath.replace(ROOT, "")})...`);
+    const bytes = readFileSync(bannerPath);
+    const bRes = await fetch("https://www.googleapis.com/upload/youtube/v3/channelBanners/insert", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "image/jpeg",
+        "Content-Length": String(bytes.length),
+      },
+      body: bytes,
+    });
+    const bJson = await bRes.json();
+    if (bRes.ok && bJson.url) {
+      bannerExternalUrl = bJson.url;
+      console.log(`  ✓ Uploaded channel banner image`);
+    } else {
+      console.warn(`  ⚠️ Banner upload response (${bRes.status}): ${JSON.stringify(bJson)}`);
+    }
+  }
+
+  const description = [
+    "Welcome to Marble Formula (@MarbleFormula) — 4K 60fps 3D Marble Racing, Checkpoint Elimination Tournaments (\"Don't Be Last!\"), and the Marble Formula Championship 🏁",
+    "",
+    "• CHECKPOINT ELIMINATION RACES: 10 glowing neon & obsidian marbles battle down multi-stage tracks with Plinko pegboards, splitters, and Catch-and-Release Checkpoint Gates. Survive the Qualifiers to reach the Grand Final!",
+    "• MARBLE FORMULA CHAMPIONSHIP: 20 country marbles across 10 constructor teams racing on high-banked Formula 1 circuits (Monaco, Silverstone, Spa, Suzuka, Monza) packed with brutal machines: The Vortex, The Hammer, The Whirlwind, The Turntable, and Red Disqualification Zones.",
+    "",
+    "100% real Rapier 3D physics simulation in 4K 60fps with tactile ASMR glass-on-glass sound synthesis. Pick your marble color or country in the comments!",
+    "",
+    "🌐 Official Website: https://marbleformula.com",
+  ].join("\n");
+
+  const keywords = `"Marble Races" Marbles "Marble Racing" "Marble Run" "Elimination Race" "3D Marble Race" ASMR Sensory "Marble Formula" "Dont Be Last" "MFC 2027" "country marbles" satisfying`;
+
+  const body = {
+    id: item.id,
+    brandingSettings: {
+      channel: {
+        ...(item.brandingSettings?.channel ?? {}),
+        description,
+        keywords,
+        defaultLanguage: "en",
+      },
+      ...(bannerExternalUrl ? { image: { bannerExternalUrl } } : {}),
+    },
+  };
+
+  const upRes = await fetch("https://www.googleapis.com/youtube/v3/channels?part=brandingSettings", {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json; charset=UTF-8",
+    },
+    body: JSON.stringify(body),
+  });
+  const upJson = await upRes.json();
+  if (!upRes.ok) {
+    throw new Error(`Channel metadata update failed (${upRes.status}): ${JSON.stringify(upJson)}`);
+  }
+  console.log(`✓ Updated @MarbleFormula channel description, keywords, and banner!`);
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.authOnly) {
@@ -303,23 +454,41 @@ async function main() {
     await printChannelInfo(token);
     return;
   }
+  if (opts.channelOnly) {
+    const token = await getAccessToken();
+    await printChannelInfo(token);
+    await updateChannelBranding(token);
+    return;
+  }
 
   // Build upload queue
   const jobs = [];
   if (opts.file) {
     const roundId = opts.round ?? "r5-monza";
-    const metaPath = existsSync(`${ROOT}out/factory/s${opts.season}/${roundId}/youtube.json`)
-      ? `${ROOT}out/factory/s${opts.season}/${roundId}/youtube.json`
-      : `${ROOT}out/${roundId}-youtube.json`;
-    if (!existsSync(metaPath)) throw new Error(`Missing metadata file ${metaPath}; run: npm run factory -- --season ${opts.season} --only metadata`);
+    const metaCandidates = [
+      `${ROOT}out/gp/${roundId}-youtube.json`,
+      `${ROOT}out/factory/s${opts.season}/${roundId}/youtube.json`,
+      `${ROOT}out/${roundId}-youtube.json`,
+    ];
+    const metaPath = metaCandidates.find((p) => existsSync(p));
+    if (!metaPath) throw new Error(`Missing metadata file for ${roundId}`);
     const meta = JSON.parse(readFileSync(metaPath, "utf8"));
     const thumbCandidates = [
       `${ROOT}out/gp/${roundId}-thumb.jpg`,
+      `${ROOT}out/${roundId}-thumb.jpg`,
       `${ROOT}out/factory/s${opts.season}/${roundId}/thumb.jpg`,
     ];
+    const fileCandidates = opts.file.startsWith("/")
+      ? [opts.file]
+      : [
+          `${VIDEO_CLOUD_DIR}/${opts.file.replace(/^out\/(gp\/)?/, "")}`,
+          `${VIDEO_CLOUD_DIR}/${opts.file}`,
+          `${VIDEO_CLOUD_DIR}/marmot/races/${opts.file}`,
+        ];
+    const resolvedFile = fileCandidates.find((p) => existsSync(p)) ?? fileCandidates[0];
     jobs.push({
       label: `${roundId} (single file)`,
-      filePath: opts.file.startsWith("/") ? opts.file : `${ROOT}${opts.file}`,
+      filePath: resolvedFile,
       thumbPath: thumbCandidates.find((p) => existsSync(p)) ?? null,
       title: meta.title,
       description: meta.description,
@@ -331,18 +500,20 @@ async function main() {
     const rounds = opts.round ? CIRCUITS.filter((c) => c.id === opts.round) : CIRCUITS;
     for (const c of rounds) {
       const dir = `${ROOT}out/factory/s${opts.season}/${c.id}/`;
+      const cloudVideoDir = `${VIDEO_CLOUD_DIR}/factory/s${opts.season}/${c.id}/`;
       const metaPath = `${dir}youtube.json`;
       if (!existsSync(metaPath)) continue;
       const meta = JSON.parse(readFileSync(metaPath, "utf8"));
       const recordFile = `${dir}uploaded.json`;
       const uploaded = existsSync(recordFile) ? JSON.parse(readFileSync(recordFile, "utf8")) : {};
 
-      if ((!opts.only || opts.only === "video") && existsSync(`${dir}video.mp4`)) {
+      const videoFile = [`${cloudVideoDir}video.mp4`, `${VIDEO_CLOUD_DIR}/s${opts.season}-${c.id}.mp4`].find((p) => existsSync(p));
+      if ((!opts.only || opts.only === "video") && videoFile) {
         if (!uploaded.video || opts.force) {
           const thumbCandidates = [`${dir}thumb.jpg`, `${ROOT}out/gp/${c.id}-thumb.jpg`];
           jobs.push({
             label: `Season ${opts.season} · ${c.id} (4K Full Race)`,
-            filePath: `${dir}video.mp4`,
+            filePath: videoFile,
             thumbPath: thumbCandidates.find((p) => existsSync(p)) ?? null,
             title: meta.title,
             description: meta.description,
@@ -355,11 +526,12 @@ async function main() {
         }
       }
 
-      if ((!opts.only || opts.only === "short") && existsSync(`${dir}short.mp4`)) {
+      const shortFile = [`${cloudVideoDir}short.mp4`, `${VIDEO_CLOUD_DIR}/s${opts.season}-${c.id}-short.mp4`].find((p) => existsSync(p));
+      if ((!opts.only || opts.only === "short") && shortFile) {
         if (!uploaded.short || opts.force) {
           jobs.push({
             label: `Season ${opts.season} · ${c.id} (Vertical Short)`,
-            filePath: `${dir}short.mp4`,
+            filePath: shortFile,
             thumbPath: null,
             title: meta.short.title,
             description: meta.short.description,
@@ -420,6 +592,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(`\nUpload error: ${e.message}`);
+  console.error(`\nUpload error: ${e.message}`, e.cause ?? "");
   process.exit(1);
 });

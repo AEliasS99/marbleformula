@@ -4,6 +4,6 @@ import spa from "./r3-spa.js";
 import suzuka from "./r4-suzuka.js";
 import monza from "./r5-monza.js";
 
-// The season's circuits, in race order. Each file is a circuit's design: the
-// real outline it is built from, its scale and seed, and its obstacle layout.
-export const CIRCUITS = [monaco, silverstone, spa, suzuka, monza];
+// The season's circuits, in race order. Monza is Round 1 of the 2027
+// Championship, followed by Monaco (Round 2), Silverstone, Spa, and Suzuka.
+export const CIRCUITS = [monza, monaco, silverstone, spa, suzuka];

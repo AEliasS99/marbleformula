@@ -132,13 +132,16 @@ function build(data: RoundData) {
     const df = (marbles[i] as { dqFrame?: number | null }).dqFrame ?? null;
     return df !== null && df <= f;
   };
-  // The drain: from its DQ frame a marble slides into the nearest drain slot and drops down the
-  // shaft over 0.7 s, then is gone (it used to vanish on the spot).
+  // The drain / checkpoint knockout: from its DQ frame a marble either slides into the nearest drain
+  // slot or sinks smoothly into the track floor over 0.65 s, then is gone.
   const pads = ((data.obstacles as unknown as { kind: string; pos: Vec3 }[]) ?? []).filter((o) => o.kind === "dq");
   const drainOf = marbles.map((m, i) => {
     const df = (m as { dqFrame?: number | null }).dqFrame ?? null;
-    if (df === null || !pads.length) return null;
-    const at = frames[Math.max(0, Math.min(df - 1, lastFrame))][i]; // on its DQ frame the bake has already moved it out of the world
+    if (df === null) return null;
+    const at = frames[Math.max(0, Math.min(df - 1, lastFrame))][i];
+    if (!pads.length) {
+      return { frame: df, from: [at[0], at[1], at[2]] as Vec3, pad: [at[0], at[1], at[2]] as Vec3 };
+    }
     let best = pads[0];
     for (const p of pads) if (Math.hypot(p.pos[0] - at[0], p.pos[2] - at[2]) < Math.hypot(best.pos[0] - at[0], best.pos[2] - at[2])) best = p;
     return { frame: df, from: [at[0], at[1], at[2]] as Vec3, pad: best.pos };
@@ -173,11 +176,14 @@ function build(data: RoundData) {
     if (prev !== null && cur !== null && cur <= prev + 0.35) exactFinish[order[pos]] = prev + 0.35;
   }
 
-  // Finishers by time, then the rest by progress, then the disqualified (first out, last).
+  // Finishers by time, then the rest by progress, then the disqualified (later checkpoint out ranks higher; tie-break by progress at DQ).
   const rankKey = (i: number, f: number): [number, number] => {
     if (f < timeline.raceStart) return [1, marbles[i].grid]; // on the grid: by grid position
     if (finishedBy(i, f)) return [0, exactFinish[i] ?? marbles[i].finishFrame!];
-    if (dqBy(i, f)) return [2, -((marbles[i] as { dqFrame?: number | null }).dqFrame ?? 0)];
+    if (dqBy(i, f)) {
+      const df = (marbles[i] as { dqFrame?: number | null }).dqFrame ?? 0;
+      return [2, -(df * 10000 + progress(i, Math.min(df, lastFrame)))];
+    }
     return [1, -progress(i, f)];
   };
   const ranking = (f: number) =>
@@ -400,7 +406,8 @@ function build(data: RoundData) {
   /** P1 at a simulation frame (the left half of every split follows it). */
   const leaderAt = (f: number) => ranking(Math.max(0, Math.min(lastFrame, Math.round(f))))[0];
 
-  const intro = ((data as unknown as { intro?: IntroPlan }).intro ?? null) as IntroPlan | null;
+  const isCar = (data.info as { vehicle?: string })?.vehicle === "car";
+  const intro = isCar ? null : (((data as unknown as { intro?: IntroPlan }).intro ?? null) as IntroPlan | null);
 
   return {
     data,

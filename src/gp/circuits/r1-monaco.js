@@ -1,25 +1,23 @@
-// The Monaco Grand Prix: designed with `npm run design -- r1-monaco` (layout below).
+// Season 3 · Round 2 — Swiss Alpine Grand Prix (Matterhorn Glacier Switchbacks)
 export default {
   id: "r1-monaco",
-  title: "Monaco Grand Prix",
-  geo: "mc-1929",
-  gp: "Monaco",
-  country: "Monaco",
-  flag: ["#ce1126", "#ffffff"],
-  scale: 0.12,
-  seed: 6,
-  start: "auto", // the line moves to the straightest stretch: the lift tower and the grid need one
-  // Technical and twisty: the harbour straight (158–212) is the only long one,
-  // so the machines stack there; the early climb gets a gate and a jump to
-  // scramble the grid, and a drop and rumble strip wake up the last sector.
-  dq: { target: 1 }, // the pads are cut to catch about this many per race (the hammer and turntable throw marbles at the walls)
-  layout: [
-    ["jump", 60],
-    ["spinner", 115], // the whirlwind well before the turntable: two machines back to back blurred into one
-    ["hammer", 159],
-    ["drop", 170],
-    ["turntable", 197],
-    ["drop", 235],
-    ["bumps", 260],
+  gp: "Switzerland",
+  title: "Swiss Alpine Grand Prix",
+  country: "Switzerland",
+  location: "Zermatt",
+  circuit: "Matterhorn Glacier Switchbacks",
+  flag: ["#ff0000", "#ffffff", "#ff0000"],
+  seed: 17,
+  scale: 0.56,
+  start: "auto",
+  // High-speed alpine valley straight + cascading glacier switchbacks + ridge sweep
+  outline: [
+    [-72, -78], [74, -78],
+    [98, -62], [102, -32], [84, -8],
+    [28, -8], [4, 8], [8, 30], [36, 42],
+    [82, 42], [100, 58], [96, 86], [68, 102],
+    [-62, 102], [-90, 86], [-94, 54], [-72, 36],
+    [-26, 36], [-8, 18], [-26, 0],
+    [-74, 0], [-96, -18], [-96, -52],
   ],
 };

@@ -1,6 +1,8 @@
 import { Composition, Folder } from "remotion";
 import { GrandPrix } from "./gp/GrandPrix";
 import { GrandPrixShort } from "./gp/Short";
+import { ChampionshipGala, GALA_FRAMES } from "./gp/Gala";
+import { ChannelBanner, ChannelIcon } from "./gp/Branding";
 import { shortRange } from "./gp/short-range";
 import { rounds } from "./gp/race";
 import { MarbleRace } from "./tower/MarbleRace";
@@ -9,6 +11,16 @@ import { fps, timeline } from "./tower/race";
 export const Root = () => (
   <>
     <Folder name="GrandPrix">
+      <Composition id="GP-channel-icon" component={ChannelIcon} durationInFrames={1} fps={60} width={1000} height={1000} />
+      <Composition id="GP-channel-banner" component={ChannelBanner} durationInFrames={1} fps={60} width={2560} height={1440} />
+      <Composition
+        id="GP-gala-2027"
+        component={ChampionshipGala}
+        durationInFrames={GALA_FRAMES}
+        fps={60}
+        width={1920}
+        height={1080}
+      />
       {rounds.map((r) => (
         <Folder key={r.id} name={r.id}>
           <Composition

@@ -13,6 +13,28 @@ export default {
   collection: "boosters",
   card: { difficulty: 1, chaos: 2, seconds: 0.5, summary: "A speed pad: every marble on it is shot forward." },
   build(f, { frameAt, out }) {
+    if (process.env.GP_CARS === "1") {
+      // Asymmetric DRS / Overtake Attack Strip on one side of the track (-1.12 or +1.12):
+      // Trailing cars dive into the Attack Lane to slingshot past cars on the standard racing line!
+      const side = Math.round(f.u * 1.3) % 2 === 0 ? -1 : 1;
+      const latCenter = r3(side * 1.08);
+      const len = 6.2;
+      const s = frameAt(f.u + len / 2);
+      out.boosters.push({
+        kind: "booster",
+        u0: r3(f.u),
+        u1: r3(f.u + len),
+        pos: pointInFrame(s, latCenter, 0.008).map(r3),
+        quat: quatArr(frameQuat(s)),
+        length: len,
+        width: 1.42,
+        target: 19.8,
+        accel: 72,
+        latCenter,
+        latHalf: 0.88,
+      });
+      return;
+    }
     const s = frameAt(f.u + BOOSTER.length / 2);
     out.boosters.push({
       kind: "booster",

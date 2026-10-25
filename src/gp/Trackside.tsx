@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import * as THREE from "three";
 import { TRACK } from "./trackMesh.js";
 import { venueLayout, yawAlong } from "./venue.js";
+import { getCircuitTheme } from "./Themes";
 import type { Race, Vec3 } from "./race";
 
 // Everything around the circuit, so wide shots show a race venue instead of a
@@ -43,6 +44,7 @@ const BOARDS: [string, string, string][] = [
 ];
 
 export function Trackside({ race }: { race: Race }) {
+  const theme = getCircuitTheme(race);
   const built = useMemo(() => {
     const samples = race.data.samples as unknown as Sample[];
     const layout = venueLayout(samples, race.L) as unknown as {
@@ -87,7 +89,7 @@ export function Trackside({ race }: { race: Race }) {
     // Seats: instanced, in coloured blocks, on every stand.
     const rows = 10;
     const seatGeo = new THREE.BoxGeometry(0.34, 0.3, 0.3);
-    const seatColors = ["#d8232a", "#1f4fb8", "#f2b705", "#f4f4f2", "#2a8f4a"];
+    const seatColors = [theme.kerbColorA, theme.kerbColorB, ...theme.neonPalette];
     const seatCount = stands.reduce((n, st) => n + rows * Math.floor(st.len / 0.4), 0);
     const seats = new THREE.InstancedMesh(seatGeo, new THREE.MeshStandardMaterial({ roughness: 0.6 }), Math.max(1, seatCount));
     let si = 0;
@@ -129,6 +131,7 @@ export function Trackside({ race }: { race: Race }) {
     }
 
     // Advertising boards along the service road, facing the track.
+    const activeBoards = theme.boards.length ? theme.boards : BOARDS;
     const boards: { pos: THREE.Vector3; yaw: number; tex: number }[] = [];
     for (let u = 16, k = 0; u < race.L - 10; u += 9, k++) {
       const s = at(u);
@@ -136,10 +139,9 @@ export function Trackside({ race }: { race: Race }) {
       const r = flatRight(s);
       const side = Math.floor(u / 40) % 2 ? 1 : -1;
       const t = flatFwd(s);
-      boards.push({ pos: new THREE.Vector3(s.p[0], groundY, s.p[2]).addScaledVector(r, side * (W2 + 6.2)), yaw: yawAlong([t.x, 0, t.z]) + (side > 0 ? Math.PI : 0), tex: k % BOARDS.length });
+      boards.push({ pos: new THREE.Vector3(s.p[0], groundY, s.p[2]).addScaledVector(r, side * (W2 + 6.2)), yaw: yawAlong([t.x, 0, t.z]) + (side > 0 ? Math.PI : 0), tex: k % activeBoards.length });
     }
-    // The round's own board ("ROUND 5 · ITALY") on every circuit.
-    const boardTex = BOARDS.map(([t, bg, fg]) => textBoard(t.startsWith("ROUND") ? `ROUND ${race.data.round} · ${race.data.info.gp.toUpperCase()}` : t, bg, fg));
+    const boardTex = activeBoards.map(([t, bg, fg]) => textBoard(t, bg, fg));
 
     // Tyre stacks at the bends, outside the road.
     const tyreGeo = new THREE.TorusGeometry(0.42, 0.17, 10, 24);
@@ -156,7 +158,7 @@ export function Trackside({ race }: { race: Race }) {
     tyres.forEach((t, i) => {
       m.compose(t.pos, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2), new THREE.Vector3(1, 1, 1));
       tyreMesh.setMatrixAt(i, m);
-      tyreMesh.setColorAt(i, new THREE.Color(t.band ? (hash(i) < 0.5 ? "#d8232a" : "#f4f4f2") : "#1b1c20"));
+      tyreMesh.setColorAt(i, new THREE.Color(t.band ? (hash(i) < 0.5 ? theme.kerbColorA : theme.kerbColorB) : "#1b1c20"));
     });
     tyreMesh.instanceMatrix.needsUpdate = true;
     if (tyreMesh.instanceColor) tyreMesh.instanceColor.needsUpdate = true;
@@ -165,14 +167,14 @@ export function Trackside({ race }: { race: Race }) {
     const pit = layout.pit ? { base: new THREE.Vector3(...layout.pit.base), yaw: layout.pit.yaw, side: layout.pit.side } : null;
 
     return { road, stands, seats, masts, boards, boardTex, tyreMesh, pit, groundY };
-  }, [race]);
+  }, [race, theme]);
 
   const concrete = { color: "#c9c6bf", roughness: 0.85 } as const;
   const steel = { color: "#dfe2e8", metalness: 1, roughness: 0.25 } as const;
   return (
     <>
       <mesh geometry={built.road} receiveShadow>
-        <meshStandardMaterial color="#2e3035" roughness={0.9} />
+        <meshStandardMaterial color={theme.trackFloorColor} roughness={0.9} />
       </mesh>
 
       {built.stands.map((st, i) => (

@@ -80,6 +80,7 @@ import { cpus } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const VIDEO_CLOUD_DIR = "/Users/eli/GoogleCloud/factory/";
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const FACTORY = `${ROOT}out/factory/`;
 const SHARED_LOCK = `${FACTORY}shared.lock`;
@@ -603,13 +604,14 @@ async function factoryMain() {
     const rest = m[6];
     const dnf = (rest.match(/DNF ([^,]+)/)?.[1] ?? "").trim();
     const dq = (rest.match(/DQ ([A-Z ]+)/)?.[1] ?? "").trim();
-    return { id: m[1], seed: Number(m[2]), race: Number(m[3]), winner: m[4], margin: m[5] === "-" ? null : Number(m[5]), dnf: dnf ? dnf.split(" ").length : 0, drains: dq ? dq.split(" ").length : 0 };
+    const classified = Number(rest.match(/(\d+) classified/)?.[1] ?? 0);
+    return { id: m[1], seed: Number(m[2]), race: Number(m[3]), winner: m[4], margin: m[5] === "-" ? null : Number(m[5]), dnf: dnf ? dnf.split(" ").length : 0, drains: dq ? dq.split(" ").length : 0, classified };
   }
-  /** Lower is better: a close finish (never a 0.00s tie), one or two drains, nobody stuck. */
+  /** Lower is better: a close finish (never a 0.00s tie), all 10 survivors finishing (10 eliminated across Checkpoints 1–3), and nobody stuck. */
   const score = (r) =>
     r.dnf || r.margin === null
       ? Infinity
-      : r.margin + (r.margin < 0.015 ? 2.5 : 0) + (r.drains === 0 ? 0.6 : r.drains > 2 ? 0.8 * (r.drains - 2) : 0);
+      : r.margin + (r.margin < 0.015 ? 2.5 : 0) + r.classified * 1.5 + Math.abs(r.drains - 10) * 0.8;
 
   async function sweepAll(list, redo) {
     const todo = list.filter((c) => redo || !state.done[`sweep:${c.id}`] || state.seeds[c.id] === undefined);
@@ -862,7 +864,9 @@ async function factoryMain() {
   }
   async function renderCircuit(c, redo) {
     const dir = `${OUT}${c.id}/`;
+    const videoDir = `${VIDEO_CLOUD_DIR}s${season}/${c.id}/`;
     mkdirSync(dir, { recursive: true });
+    mkdirSync(videoDir, { recursive: true });
     const kinds = [
       { kind: "video", comp: `GP-${c.id}-4k`, props: { dpr: 1 }, timeoutMs: TIMEOUT.video, maxrate: "30000k", file: "video.mp4" },
       { kind: "short", comp: `GP-${c.id}-short`, props: { season }, timeoutMs: TIMEOUT.short, maxrate: "12000k", file: "short.mp4" },
@@ -873,9 +877,9 @@ async function factoryMain() {
         name,
         async (ctx) => {
           await ensureBundle(ctx);
-          const master = `${dir}master-${k.kind === "video" ? "4k" : "short"}.mp4`;
+          const master = `${videoDir}master-${k.kind === "video" ? "4k" : "short"}.mp4`;
           const review = await renderChecked(k.comp, master, k.props, k.timeoutMs, ctx);
-          await encode(master, `${dir}${k.file}`, k.maxrate, ctx);
+          await encode(master, `${videoDir}${k.file}`, k.maxrate, ctx);
           if (!keepMasters) rmSync(master, { force: true });
           if (review) state.review[name] = review;
           else delete state.review[name];
@@ -956,7 +960,7 @@ async function factoryMain() {
     const nice = (l) => l.toLowerCase().replace(/(^|\s)\S/g, (x) => x.toUpperCase()).replace(/^The /, "the ");
     const obstacles = [...new Set(d.features.map((f) => f.label))].filter((l) => l !== "THE LIFT TOWER" && l !== "THE STAIRWAY").map(nice);
     const description = [
-      `Season ${season}, round ${round} of ${d.rounds} of the Marble Formula Championship 2027: the ${gp} at ${d.info.circuit}. Twenty marbles, ten teams, ${d.info.laps} laps, and an endless stair carrying them back up between laps.`,
+      `Season ${season}, round ${round} of ${d.rounds} of the Marble Formula Championship 2027 — Don't Be Last!: the ${gp} at ${d.info.circuit}. Twenty marbles, ten Scuderia teams, ${d.info.laps} laps, a Twin-Chain Marble Scoop Lift carrying them back up between laps, and 3 Knockout Checkpoints eliminating the slowest marbles at the back (20 → 17 → 14 → 10) while the Top 10 finishers score Championship Points!`,
       ``,
       `On the track: ${obstacles.join(", ")}.`,
       ``,

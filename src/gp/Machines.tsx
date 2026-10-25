@@ -407,9 +407,10 @@ export function Machines({ race, t }: { race: Race; t: number }) {
 }
 
 /**
- * One bay of the endless stair (src/gp/stair.js): the shaft (a front wall up to
- * grid level, a back wall above the entrance, side walls) and its platforms,
- * each a dark plate with a lit front edge, moving on the stair's clock.
+ * Twin-Chain Marble Scoop Conveyor Lift (src/gp/stair.js):
+ * Picks up marbles one-by-one from the single-file queue at the bottom dock in
+ * sculpted U-shaped scoop cradles attached to twin heavy vertical roller-chains,
+ * driven by rotating toothed sprockets and an overhead electric motor + flywheel.
  */
 function StairBay({ race, t, elevator, tex }: { race: Race; t: number; elevator: Elevator; tex: { hazard: THREE.Texture } }) {
   const view = useView(race);
@@ -425,104 +426,194 @@ function StairBay({ race, t, elevator, tex }: { race: Race; t: number; elevator:
     const at = (x: number, y: number, z: number) => c.clone().addScaledVector(fwd, x).add(new THREE.Vector3(0, y, 0)).addScaledVector(right, z);
     return { fwd, right, yaw, plate, at };
   }, [elevator]);
+
+  const L = elevator.length;
+  const W = elevator.width;
+  const H = elevator.lift + 1.2;
+  const midY = (elevator.lift - 0.3) / 2;
+  const chainCols = [-(W / 2 - 0.06), 0, W / 2 - 0.06];
+  const LINKS_PER_COL = 28;
+  const LINK_COUNT = chainCols.length * LINKS_PER_COL;
+
+  // Sculpted 3D Marble Scoop Bucket geometry: open front/back cradle with side cheeks attached to the roller chains
+  const cradleGeo = useMemo(() => {
+    const floor = new THREE.BoxGeometry(L - 0.08, STAIR.plate, W - 0.08);
+    const backLip = new THREE.BoxGeometry(0.14, 0.22, W - 0.08);
+    backLip.translate(-(L / 2 - 0.1), 0.11, 0);
+    const cheeks = [-1, 1].map((s) => {
+      const ch = new THREE.BoxGeometry(L - 0.08, 0.34, 0.1);
+      ch.translate(0, 0.15, s * (W / 2 - 0.1));
+      return ch;
+    });
+    const pinBar = new THREE.CylinderGeometry(0.045, 0.045, W + 0.28, 14);
+    pinBar.rotateX(Math.PI / 2);
+    pinBar.translate(0, 0.18, 0);
+    const pos: number[] = [];
+    const idx: number[] = [];
+    let offset = 0;
+    for (const g of [floor, backLip, ...cheeks, pinBar]) {
+      const p = g.getAttribute("position");
+      for (let i = 0; i < p.count; i++) pos.push(p.getX(i), p.getY(i), p.getZ(i));
+      const ix = g.getIndex();
+      if (ix) for (let i = 0; i < ix.count; i++) idx.push(ix.getX(i) + offset);
+      offset += p.count;
+    }
+    const merged = new THREE.BufferGeometry();
+    merged.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    merged.setIndex(idx);
+    merged.computeVertexNormals();
+    return merged;
+  }, [L, W]);
+
   const mesh = useRef<THREE.InstancedMesh | null>(null);
   const edges = useRef<THREE.InstancedMesh | null>(null);
+  const linksRef = useRef<THREE.InstancedMesh | null>(null);
+  const sprocketsRef = useRef<(THREE.Group | null)[]>([]);
   const m4 = useMemo(() => new THREE.Matrix4(), []);
   const one = useMemo(() => new THREE.Vector3(1, 1, 1), []);
   const zero = useMemo(() => new THREE.Vector3(0, 0, 0), []);
+
   const place = (tt: number) => {
     const s = stairTime(E, tt / race.fps);
     for (let k = 0; k < loop.count; k++) {
       const [x, y, z] = stairLocal(E, loop, k, s);
-      // Only show the ascending shaft's active plates (the return leg runs inside the transfer housing).
       const active = Math.abs(z) < 0.06 && y >= -0.65 && y <= elevator.lift + 0.45;
       const sc = active ? one : zero;
       const p = frame.at(x, y - STAIR.plate / 2, z);
       m4.compose(p, frame.plate, sc);
       mesh.current?.setMatrixAt(k, m4);
-      // The lit edge along the platform's front.
-      const e = frame.at(x + (elevator.length / 2 - 0.05) * Math.cos(STAIR.tilt), y - (elevator.length / 2 - 0.05) * Math.sin(STAIR.tilt), z);
+      // Hazard-gold front retention lip on the camera-facing edge of each scoop bucket
+      const e = frame.at(x - (L / 2 - 0.1) * Math.cos(STAIR.tilt), y + (L / 2 - 0.1) * Math.sin(STAIR.tilt) + 0.1, z);
       m4.compose(e, frame.plate, sc);
       edges.current?.setMatrixAt(k, m4);
     }
     if (mesh.current) mesh.current.instanceMatrix.needsUpdate = true;
     if (edges.current) edges.current.instanceMatrix.needsUpdate = true;
+
+    // Animate the vertical roller-chains along the 3 columns (left, center spine, right)
+    if (linksRef.current) {
+      const y0 = 0.2;
+      const spanY = Math.max(1, elevator.lift + 0.4);
+      const scroll = (s * 3.2) % (spanY / LINKS_PER_COL);
+      let idx = 0;
+      for (const cz of chainCols) {
+        const cx = cz === 0 ? L / 2 - 0.06 : -(L / 2 - 0.12);
+        for (let j = 0; j < LINKS_PER_COL; j++) {
+          const ly = y0 + (((j / LINKS_PER_COL) * spanY + scroll) % spanY);
+          const lp = frame.at(cx, ly, cz);
+          m4.compose(lp, frame.yaw, one);
+          linksRef.current.setMatrixAt(idx++, m4);
+        }
+      }
+      linksRef.current.instanceMatrix.needsUpdate = true;
+    }
+
+    // Rotate toothed chain sprockets in the YZ screen plane (around local X axis)
+    sprocketsRef.current.forEach((sp) => {
+      if (sp) sp.rotation.x = -s * 3.5;
+    });
   };
   useEffect(() => place(t));
   useEffect(() => sub.subscribe((vf) => place(view.tAt(vf))), [sub, view, race, elevator]);
-  const L = elevator.length;
-  const W = elevator.width;
+
   const night = isNight();
-  const wallMat = night
-    ? { color: "#1c1f26", metalness: 0.55, roughness: 0.48, envMapIntensity: 0.35 }
-    : { color: "#dcdfe5", metalness: 0.65, roughness: 0.32 };
-  const frontTop = elevator.lift - elevator.slope * (L / 2) - 0.02;
-  const H = elevator.lift + 1.2;
-  const midY = (elevator.lift - 0.6) / 2;
-  const rings: number[] = [];
-  for (let ry = 2.6; ry < elevator.lift - 0.8; ry += 3.4) rings.push(ry);
+  const trussMat = night ? nightSteel : steel;
+  const frontTop = Math.max(2, elevator.lift - 0.8);
+  const rungCount = Math.max(3, Math.floor(frontTop / 1.6));
+
   return (
     <group>
-      <instancedMesh ref={mesh} args={[undefined, undefined, loop.count]} castShadow receiveShadow frustumCulled={false}>
-        <boxGeometry args={[L - 0.06, STAIR.plate, W - 0.06]} />
-        <meshStandardMaterial color={night ? "#2c303a" : "#e9ebef"} metalness={0.82} roughness={0.28} />
+      {/* Sculpted U-shaped marble scoop buckets (100% open view from the front!) */}
+      <instancedMesh ref={mesh} geometry={cradleGeo} args={[undefined, undefined, loop.count]} castShadow receiveShadow frustumCulled={false}>
+        <meshStandardMaterial color="#2a303d" metalness={0.85} roughness={0.24} />
       </instancedMesh>
+      {/* High-contrast gold retention lip on the front edge of each scoop bucket */}
       <instancedMesh ref={edges} args={[undefined, undefined, loop.count]} frustumCulled={false}>
-        <boxGeometry args={[0.11, STAIR.plate + 0.02, W - 0.08]} />
-        <meshStandardMaterial color="#e5b84b" emissive="#d49b27" emissiveIntensity={night ? 1.35 : 0.35} metalness={0.7} roughness={0.25} />
+        <boxGeometry args={[0.14, 0.16, W - 0.1]} />
+        <meshStandardMaterial color="#ffcc00" emissive="#ffaa00" emissiveIntensity={night ? 0.9 : 0.3} metalness={0.5} roughness={0.25} />
       </instancedMesh>
-      {/* Architectural elevator cage: corner columns, horizontal tie-rings, smoked glass sides, and crowned top housing. */}
-      {[-1, 1].map((ex) =>
-        [-1, 1].map((ez) => {
-          const c = frame.at(ex * (L / 2 + 0.15), midY, ez * (W / 2 + 0.1));
-          return (
-            <mesh key={`p${ex}${ez}`} position={c} quaternion={frame.yaw} castShadow>
-              <boxGeometry args={[0.15, H, 0.15]} />
-              <meshStandardMaterial {...wallMat} />
+      {/* Animated chrome roller-chain links climbing the 3 chain columns */}
+      <instancedMesh ref={linksRef} args={[undefined, undefined, LINK_COUNT]} frustumCulled={false}>
+        <boxGeometry args={[0.14, 0.2, 0.28]} />
+        <meshStandardMaterial {...chrome} />
+      </instancedMesh>
+
+      {/* Side & Center Roller-Chain Guide Columns */}
+      {chainCols.map((cz, cIdx) => {
+        const cx = cz === 0 ? L / 2 - 0.04 : -(L / 2 - 0.12);
+        return (
+          <group key={`col${cIdx}`}>
+            <mesh position={frame.at(cx, midY, cz)} quaternion={frame.yaw} castShadow>
+              <boxGeometry args={[0.08, H, 0.14]} />
+              <meshStandardMaterial color="#ffcc00" metalness={0.7} roughness={0.3} />
             </mesh>
+            {cz !== 0 && (
+              <mesh position={frame.at(0, midY, cz + (cz < 0 ? -0.08 : 0.08))} quaternion={frame.yaw}>
+                <boxGeometry args={[0.04, H, 0.04]} />
+                <meshStandardMaterial color="#00e5ff" emissive="#00e5ff" emissiveIntensity={2.0} toneMapped={false} />
+              </mesh>
+            )}
+          </group>
+        );
+      })}
+
+      {/* Rear Structural Ladder Truss at +L/2 (behind the scoop buckets from the camera's perspective) */}
+      {Array.from({ length: rungCount }, (_, rk) => {
+        const ry = 1.2 + rk * 1.6;
+        return (
+          <mesh key={`rung${rk}`} position={frame.at(L / 2 + 0.12, ry, 0)} quaternion={frame.yaw}>
+            <boxGeometry args={[0.08, 0.08, W + 0.12]} />
+            <meshStandardMaterial {...trussMat} />
+          </mesh>
+        );
+      })}
+
+      {/* Rotating Toothed Chain Sprockets Facing the Camera (in the YZ plane, rotation-z = PI/2) */}
+      {[1.55, 3.85, elevator.lift + 0.35].map((sy, sIdx) =>
+        chainCols.map((cz, zIdx) => {
+          const cx = cz === 0 ? L / 2 - 0.12 : -(L / 2 - 0.18);
+          return (
+            <group
+              key={`sp-${sIdx}-${zIdx}`}
+              ref={(el) => void (sprocketsRef.current[sIdx * chainCols.length + zIdx] = el)}
+              position={frame.at(cx, sy, cz)}
+              quaternion={frame.yaw}
+            >
+              <mesh rotation-z={Math.PI / 2} castShadow>
+                <cylinderGeometry args={[0.34, 0.34, 0.08, 24]} />
+                <meshStandardMaterial color="#ffcc00" metalness={0.8} roughness={0.25} />
+              </mesh>
+              <mesh rotation-z={Math.PI / 2}>
+                <cylinderGeometry args={[0.15, 0.15, 0.12, 20]} />
+                <meshStandardMaterial {...dark} />
+              </mesh>
+              {Array.from({ length: 8 }, (_, tk) => (
+                <mesh key={tk} rotation-x={(tk / 8) * Math.PI * 2}>
+                  <boxGeometry args={[0.06, 0.78, 0.09]} />
+                  <meshStandardMaterial {...chrome} />
+                </mesh>
+              ))}
+            </group>
           );
         }),
       )}
-      {rings.map((ry, idx) => (
-        <group key={`r${idx}`}>
-          {[-1, 1].map((ez) => (
-            <mesh key={`rz${ez}`} position={frame.at(0, ry, ez * (W / 2 + 0.1))} quaternion={frame.yaw}>
-              <boxGeometry args={[L + 0.34, 0.08, 0.09]} />
-              <meshStandardMaterial {...wallMat} />
-            </mesh>
-          ))}
-          <mesh position={frame.at(-L / 2 - 0.15, ry, 0)} quaternion={frame.yaw}>
-            <boxGeometry args={[0.09, 0.08, W + 0.24]} />
-            <meshStandardMaterial {...wallMat} />
-          </mesh>
-        </group>
-      ))}
-      {[-1, 1].map((ez) => (
-        <mesh key={`gl${ez}`} position={frame.at(0, midY + 0.4, ez * (W / 2 + 0.08))} quaternion={frame.yaw}>
-          <boxGeometry args={[L + 0.08, H - 1.2, 0.02]} />
-          <meshPhysicalMaterial color="#9fb8d8" transparent opacity={night ? 0.05 : 0.12} roughness={0.12} metalness={0.1} envMapIntensity={night ? 0.3 : 1} depthWrite={false} />
+
+      {/* Overhead Electric Drive Motor, Gearbox & Hazard Header at the Very Top */}
+      <group position={frame.at(0, elevator.lift + 0.95, 0)} quaternion={frame.yaw}>
+        <mesh castShadow>
+          <boxGeometry args={[L + 0.2, 0.38, W + 0.36]} />
+          <meshStandardMaterial color="#181b24" metalness={0.7} roughness={0.35} />
         </mesh>
-      ))}
-      {/* Top crown cap and bottom plinth */}
-      <mesh position={frame.at(0, elevator.lift + 0.55, 0)} quaternion={frame.yaw} castShadow>
-        <boxGeometry args={[L + 0.46, 0.34, W + 0.38]} />
-        <meshStandardMaterial {...wallMat} />
-      </mesh>
-      <mesh position={frame.at(0, elevator.lift + 0.55, 0)} quaternion={frame.yaw}>
-        <boxGeometry args={[L + 0.48, 0.06, W + 0.4]} />
-        <meshStandardMaterial color="#d4af37" metalness={0.95} roughness={0.22} />
-      </mesh>
+        <mesh position={[0, 0.21, 0]}>
+          <boxGeometry args={[L + 0.24, 0.06, W + 0.4]} />
+          <meshStandardMaterial map={tex.hazard} roughness={0.45} />
+        </mesh>
+      </group>
+
+      {/* Bottom Queue Entry Plinth */}
       <mesh position={frame.at(0, -0.58, 0)} quaternion={frame.yaw} receiveShadow>
-        <boxGeometry args={[L + 0.46, 0.28, W + 0.38]} />
-        <meshStandardMaterial {...wallMat} />
-      </mesh>
-      <mesh position={frame.at(L / 2 + 0.15, frontTop, 0)} quaternion={frame.yaw} castShadow>
-        <boxGeometry args={[0.14, 0.1, W + 0.3]} />
-        <meshStandardMaterial {...wallMat} />
-      </mesh>
-      <mesh position={frame.at(-L / 2 - 0.02, 1.1, 0)} quaternion={frame.yaw}>
-        <boxGeometry args={[0.32, 0.12, W + 0.22]} />
-        <meshStandardMaterial map={tex.hazard} roughness={0.5} />
+        <boxGeometry args={[L + 0.46, 0.24, W + 0.42]} />
+        <meshStandardMaterial {...trussMat} />
       </mesh>
     </group>
   );

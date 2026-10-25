@@ -1,26 +1,23 @@
-// The Japanese Grand Prix: designed with `npm run design -- r4-suzuka` (layout below).
+// Season 3 · Round 5 — New York Grand Prix (Times Square & Hudson Finale)
 export default {
   id: "r4-suzuka",
-  title: "Japanese Grand Prix",
-  geo: "jp-1962",
-  gp: "Japan",
-  country: "Japan",
-  flag: ["#ffffff", "#bc002d"],
-  scale: 0.08,
-  seed: 1,
-  start: "auto", // the line moves to the straightest stretch: the lift tower and the grid need one
-  // The esses and the figure-of-eight crossing: a rumble strip through the
-  // esses, the hammer and turntable before the hairpin, then the back straight
-  // carries a gate, the whirlwind, the rollers and a jump, and a last drop.
-  dq: { target: 1 }, // the pads are cut to catch about this many per race (the hammer and turntable throw marbles at the walls)
-  layout: [
-    ["bumps", 130],
-    ["hammer", 181],
-    ["turntable", 236],
-    ["drop", 250],
-    ["spinner", 314],
-    ["rollers", 324],
-    ["jump", 341],
-    ["drop", 376],
+  gp: "USA East",
+  title: "New York Grand Prix",
+  country: "United States",
+  location: "New York City",
+  circuit: "Times Square Championship Finale",
+  flag: ["#b22234", "#ffffff", "#3c3b6e"],
+  seed: 43,
+  scale: 0.56,
+  start: "auto",
+  // Broadway canyon straight + Times Square bowtie hairpins + Hudson Riverfront sprint
+  outline: [
+    [-84, -66], [84, -66],
+    [104, -50], [104, -20], [84, 0],
+    [6, 0], [-18, 14], [-14, 38], [14, 50],
+    [80, 50], [100, 66], [98, 90], [72, 100],
+    [-68, 100], [-94, 84], [-96, 54], [-74, 36],
+    [-42, 36], [-26, 18], [-44, 0],
+    [-80, 0], [-100, -18], [-100, -46],
   ],
 };

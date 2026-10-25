@@ -15,6 +15,7 @@ import { turntableParts } from "./obstacles/turntable.js";
 import { asphaltMaps, floorMaps, grassMaps, plasticMaps } from "./surfaces";
 import { isNight } from "./look";
 import { boltGeometry } from "./Details";
+import { getCircuitTheme } from "./Themes";
 
 // The 3D world, in a clean studio look: a seamless white set, a glossy white
 // half-pipe with rainbow lanes, chrome marbles. Geometry comes from the same
@@ -127,10 +128,11 @@ export function studioScene() {
  * Until it has loaded — the render is held meanwhile — the procedural studio
  * stands in.
  */
-export function Environment() {
+export function Environment({ race }: { race?: Race }) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const advance = useThree((s) => s.advance);
+  const skyColor = race ? getCircuitTheme(race).skyColor : "#07080b";
   useMemo(() => {
     // Tone mapping happens once, at the end of the effect chain (src/gp/Effects.tsx).
     gl.toneMapping = THREE.NoToneMapping;
@@ -141,11 +143,11 @@ export function Environment() {
     scene.environmentIntensity = 0.55;
     if (isNight()) {
       // The dark studio: its softboxes are what the metal and the marbles reflect.
-      scene.environmentIntensity = 0.7;
-      scene.background = new THREE.Color("#07080b");
+      scene.environmentIntensity = 0.72;
+      scene.background = new THREE.Color(skyColor);
     }
     pmrem.dispose();
-  }, [gl, scene]);
+  }, [gl, scene, skyColor]);
   useEffect(() => {
     if (isNight()) return; // no sky at night
     const handle = delayRender("Loading the studio HDRI");
@@ -190,10 +192,13 @@ export function Environment() {
  * target. It pools light where the marbles are and falls off into shade
  * around them, so the frame has a lit subject instead of even, flat light.
  */
-export function Sun({ target, pos }: { target: Vec3; pos?: Vec3 }) {
+export function Sun({ target, pos, race }: { target: Vec3; pos?: Vec3; race?: Race }) {
+  const theme = race ? getCircuitTheme(race) : null;
   const { sun, rim } = useMemo(() => {
-    // Late-afternoon sun, low and warm: long shadows from posts, guards and marbles.
-    const l = isNight() ? new THREE.DirectionalLight("#dfe8ff", 2.25) : new THREE.DirectionalLight("#ffd9a6", 3.2);
+    // Late-afternoon sun or themed circuit key light:
+    const l = isNight()
+      ? new THREE.DirectionalLight(theme ? theme.sunColor : "#dfe8ff", theme ? theme.sunIntensity : 2.25)
+      : new THREE.DirectionalLight("#ffd9a6", 3.2);
     l.castShadow = true;
     l.shadow.mapSize.set(4096, 4096);
     l.shadow.bias = -0.00025;
@@ -202,9 +207,12 @@ export function Sun({ target, pos }: { target: Vec3; pos?: Vec3 }) {
     l.shadow.blurSamples = 12;
     Object.assign(l.shadow.camera, { left: -18, right: 18, top: 18, bottom: -18, near: 1, far: 160 });
     // Warm Pixar rim/kicker light opposite the key light to sculpt grazing edges on marbles and chrome.
-    const r = new THREE.DirectionalLight(isNight() ? "#ffae66" : "#ffe4b8", isNight() ? 0.78 : 0.55);
+    const r = new THREE.DirectionalLight(
+      isNight() ? (theme ? theme.rimLightColor : "#ffae66") : "#ffe4b8",
+      isNight() ? (theme ? theme.rimLightIntensity : 0.78) : 0.55,
+    );
     return { sun: l, rim: r };
-  }, []);
+  }, [theme]);
   const [x, y, z] = target;
   const dist = pos ? Math.hypot(pos[0] - x, pos[1] - y, pos[2] - z) : 16;
   const span = Math.max(18, Math.min(64, dist * 0.85));
@@ -318,6 +326,7 @@ function densify(samples: Sample[], k = 2): Sample[] {
 }
 
 export function Circuit({ race }: { race: Race }) {
+  const theme = getCircuitTheme(race);
   const built = useMemo(() => {
     const samples = race.data.samples as unknown as Sample[];
     const mesh = buildTrackMesh(densify(samples), { arcSteps: 18 });
@@ -325,32 +334,32 @@ export function Circuit({ race }: { race: Race }) {
     const uFinish = (race.data.info as { finish?: number }).finish ?? L;
     const uEnd = samples[samples.length - 1].u;
 
-    // A race track: asphalt across the flat floor with white edge lines, the
-    // walls white. Texture x runs along the track (one repeat per 4 units,
-    // with fine grain), y across it.
+    // A race track: custom-themed floor with glowing/high-contrast edge lines and themed inner walls.
+    // Texture x runs along the track (one repeat per 4 units, with fine grain), y across it.
     const LT = 4096;
     const LA = 1024;
     const [fv0, fv1] = floorVRange();
+    const [sr, sg, sb] = theme.trackSpeckleRgb;
     const lanes = canvasTexture(
       LA,
       LT,
       (g) => {
-        // The walls' inner faces: a warm light grey, not paper white (in the sun that clipped to flat white).
-        g.fillStyle = isNight() ? "#3b3f47" : "#d9d6d0";
+        // The walls' inner faces: circuit-themed color
+        g.fillStyle = isNight() ? theme.innerWallColor : "#d9d6d0";
         g.fillRect(0, 0, LA, LT);
-        g.fillStyle = "#34363b";
+        g.fillStyle = theme.trackFloorColor;
         g.fillRect(0, fv0 * LT, LA, (fv1 - fv0) * LT);
-        // Aggregate grain: speckles of lighter and darker stone.
+        // Aggregate grain: speckles of themed stone/ice/crystal/sand.
         for (let i = 0; i < 140000; i++) {
           const x = hash(i * 1.7) * LA;
           const y = (fv0 + hash(i * 2.3) * (fv1 - fv0)) * LT;
-          const v = 40 + hash(i * 3.1) * 60;
-          g.fillStyle = `rgba(${v},${v},${v + 4},0.55)`;
+          const m = 0.45 + hash(i * 3.1) * 0.65;
+          g.fillStyle = `rgba(${Math.round(sr * m)},${Math.round(sg * m)},${Math.round(sb * m)},0.38)`;
           g.fillRect(x, y, 2 + hash(i) * 3, 2 + hash(i + 1) * 3);
         }
-        // White edge lines, and a faint darker racing line worn into the middle.
-        const edge = 0.028;
-        g.fillStyle = "#f2f2f0";
+        // Circuit-themed edge lines, and a faint darker racing line worn into the middle.
+        const edge = 0.032;
+        g.fillStyle = theme.trackEdgeColor;
         g.fillRect(0, (fv0 + 0.004) * LT, LA, edge * LT);
         g.fillRect(0, (fv1 - 0.004 - edge) * LT, LA, edge * LT);
         const grad = g.createLinearGradient(0, fv0 * LT, 0, fv1 * LT);
@@ -395,11 +404,11 @@ export function Circuit({ race }: { race: Race }) {
       },
       true,
     );
-    // Red-and-white kerbs on the inside of every proper corner.
+    // Circuit-themed kerbs on the inside of every proper corner.
     const kerbTex = canvasTexture(128, 32, (g) => {
-      g.fillStyle = "#d8232a";
+      g.fillStyle = theme.kerbColorA;
       g.fillRect(0, 0, 64, 32);
-      g.fillStyle = "#f4f4f2";
+      g.fillStyle = theme.kerbColorB;
       g.fillRect(64, 0, 64, 32);
     });
     kerbTex.wrapS = kerbTex.wrapT = THREE.RepeatWrapping;
@@ -540,31 +549,54 @@ export function Circuit({ race }: { race: Race }) {
       arrows,
       dashes,
       laneNumbers,
-      startLine: bandGeometry(samples, -0.12, 0.12, null, null, 0.014),
-      finishLine: bandGeometry(samples, uFinish - 0.3, uFinish + 0.3, null, null, 0.014),
+      startLine: bandGeometry(samples, -0.12, 0.12, -(TRACK.width / 2 - TRACK.fillet - 0.03), TRACK.width / 2 - TRACK.fillet - 0.03, 0.014),
+      finishLine: bandGeometry(samples, uFinish - 0.35, uFinish + 0.35, -(TRACK.width / 2 - TRACK.fillet - 0.03), TRACK.width / 2 - TRACK.fillet - 0.03, 0.014),
       groundY,
       center: [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...zs) + Math.max(...zs)) / 2] as [number, number],
     };
   }, [race]);
+  useEffect(
+    () => () => {
+      Object.values(built.geos).forEach((g) => g.dispose());
+      built.lanes.dispose();
+      built.chevrons.dispose();
+      built.checker.dispose();
+      built.arrowTex.dispose();
+      built.dashes.dispose();
+      built.startLine.dispose();
+      built.finishLine.dispose();
+      built.arrows.forEach((g) => g.dispose());
+      built.gridMarks.forEach((g) => g.dispose());
+      built.dropLips.forEach((g) => g.dispose());
+      built.kerbs.forEach((k) => {
+        k.geo.dispose();
+        k.tex.dispose();
+      });
+      built.laneNumbers.forEach((l) => {
+        l.geo.dispose();
+        l.tex.dispose();
+      });
+    },
+    [built],
+  );
 
   const { geos } = built;
   return (
     <>
       <mesh geometry={geos.floor} receiveShadow castShadow>
-        <meshPhysicalMaterial
+        <meshStandardMaterial
           map={built.lanes}
-          roughness={0.82}
+          roughness={0.88}
+          metalness={0.02}
           roughnessMap={built.asphalt.roughness}
           normalMap={built.asphalt.normal}
-          normalScale={new THREE.Vector2(0.42, 0.42)}
-          clearcoat={isNight() ? 0.16 : 0.08}
-          clearcoatRoughness={0.32}
-          envMapIntensity={isNight() ? 0.82 : 0.58}
+          normalScale={new THREE.Vector2(0.28, 0.28)}
+          envMapIntensity={0.25}
           side={THREE.DoubleSide}
         />
       </mesh>
       <mesh geometry={built.dashes}>
-        <meshStandardMaterial color="#f4f4f2" roughness={0.7} />
+        <meshStandardMaterial color={theme.trackDashColor} roughness={0.65} />
       </mesh>
       {built.arrows.map((g, i) => (
         <mesh key={`a${i}`} geometry={g}>
@@ -582,13 +614,20 @@ export function Circuit({ race }: { race: Race }) {
         </mesh>
       ))}
       <mesh geometry={geos.rim} castShadow receiveShadow>
-        {isNight() ? <meshStandardMaterial color="#cfd2d8" metalness={1} roughness={0.22} /> : <meshStandardMaterial color="#dcdad4" roughness={0.45} />}
+        {isNight() ? <meshStandardMaterial color={theme.rimColor} metalness={0.95} roughness={0.22} /> : <meshStandardMaterial color="#dcdad4" roughness={0.45} />}
       </mesh>
-      {/* The walls: a warm off-white moulded plastic with visible texture, not paper white (which read as flat CG). */}
+      {/* The walls: themed outer shell with surface texture. */}
       <mesh geometry={geos.shell} castShadow receiveShadow>
         {isNight() ? (
-          // Dark brushed metal.
-          <meshPhysicalMaterial color="#5a5f69" metalness={0.85} roughness={0.42} roughnessMap={built.plastic.roughness} normalMap={built.plastic.normal} normalScale={new THREE.Vector2(0.25, 0.25)} envMapIntensity={1.1} />
+          <meshPhysicalMaterial
+            color={theme.outerShellColor}
+            metalness={theme.outerShellMetalness}
+            roughness={theme.outerShellRoughness}
+            roughnessMap={built.plastic.roughness}
+            normalMap={built.plastic.normal}
+            normalScale={new THREE.Vector2(0.25, 0.25)}
+            envMapIntensity={1.1}
+          />
         ) : (
           <meshPhysicalMaterial
             color="#c9c6bf"
@@ -601,7 +640,7 @@ export function Circuit({ race }: { race: Race }) {
         )}
       </mesh>
       <mesh geometry={geos.caps} castShadow>
-        <meshStandardMaterial color="#eceae6" roughness={0.45} />
+        <meshStandardMaterial color={isNight() ? theme.capsColor : "#eceae6"} metalness={isNight() ? 0.8 : 0} roughness={0.42} />
       </mesh>
       {built.gridMarks.map((g, i) => (
         <mesh key={i} geometry={g}>
@@ -620,17 +659,10 @@ export function Circuit({ race }: { race: Race }) {
         <meshStandardMaterial map={built.checker} roughness={0.5} />
       </mesh>
 
-      {/* Grass around the circuit. */}
+      {/* Circuit-themed terrain ground (Glacier Snow for Alps, Desert Sand for Cairo, Ocean Harbour for Sydney, Cyber/Manhattan Plaza for Tokyo/NYC). */}
       <mesh rotation-x={-Math.PI / 2} position={[built.center[0], built.groundY, built.center[1]]} receiveShadow>
         <planeGeometry args={[3000, 3000]} />
-        {/* A polished studio floor: a blurred planar reflection of the track grounds it in the room. */}
-        {/* Brightened: the grass used to get most of its light from the sky's own sun, now capped out of it. */}
-        {isNight() ? (
-          // Honed architectural slate floor: soft reflections of the neon and studio softboxes.
-          <meshPhysicalMaterial map={built.floor.color} roughnessMap={built.floor.roughness} roughness={0.42} metalness={0.25} clearcoat={0.28} clearcoatRoughness={0.24} normalMap={built.floor.normal} normalScale={new THREE.Vector2(0.14, 0.14)} envMapIntensity={1.25} />
-        ) : (
-          <meshStandardMaterial map={built.floor.color} color={new THREE.Color(2.2, 2.2, 2.0)} roughnessMap={built.floor.roughness} roughness={1} normalMap={built.floor.normal} normalScale={new THREE.Vector2(0.5, 0.5)} />
-        )}
+        <meshStandardMaterial color={theme.groundColor} roughness={theme.groundRoughness} metalness={theme.groundMetalness} envMapIntensity={0.08} />
       </mesh>
     </>
   );
@@ -1254,27 +1286,191 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
   );
 }
 
-/** Start gantry with the five pairs of red lights, and the finish arch. */
+/** Start gantry, rainbow starting lanes, surface-conforming 3D Checkpoint gantries, and the finish arch. */
 export function Gantries({ race, frame }: { race: Race; frame: number }) {
   const samples = race.data.samples as unknown as Sample[];
   const at = (u: number) => samples[Math.max(0, Math.min(samples.length - 1, Math.round((u - samples[0].u) / 0.5)))];
   const W = TRACK.width / 2 + TRACK.wall;
   const H = TRACK_DEPTH + 1.3;
-  const lit = race.timeline.lights.filter((lf) => frame >= lf).length;
-  const out = frame >= race.timeline.raceStart;
   const banner = useMemo(() => finishBanner(), []);
-  useEffect(() => () => banner.dispose(), [banner]);
+  const startBannerTex = useMemo(() => startBanner(), []);
+  const cpOpenBanners = useMemo(
+    () => [
+      checkpointBanner(1, "TOP 19 ADVANCE · LAST MARBLE OUT!", false),
+      checkpointBanner(2, "TOP 18 ADVANCE · LAST MARBLE OUT!", false),
+      checkpointBanner(3, "TOP 17 ADVANCE · TOP 15 SCORE POINTS!", false),
+    ],
+    [],
+  );
+  const cpLockedBanners = useMemo(
+    () => [
+      checkpointBanner(1, "CHECKPOINT LOCKED · 20TH PLACE OUT", true),
+      checkpointBanner(2, "CHECKPOINT LOCKED · 19TH PLACE OUT", true),
+      checkpointBanner(3, "CHECKPOINT LOCKED · 18TH PLACE OUT", true),
+    ],
+    [],
+  );
+  const checkerTex = useMemo(() => {
+    const t = canvasTexture(256, 32, (g) => {
+      for (let x = 0; x < 16; x++)
+        for (let y = 0; y < 2; y++) {
+          g.fillStyle = (x + y) % 2 ? "#111216" : "#f4f4f6";
+          g.fillRect(x * 16, y * 16, 16, 16);
+        }
+    });
+    t.magFilter = THREE.NearestFilter;
+    return t;
+  }, []);
+  const chevTex = useMemo(
+    () =>
+      canvasTexture(256, 64, (g) => {
+        g.fillStyle = "#111216";
+        g.fillRect(0, 0, 256, 64);
+        g.fillStyle = "#ffcc00";
+        for (let x = -64; x < 256; x += 32) {
+          g.beginPath();
+          g.moveTo(x, 64);
+          g.lineTo(x + 16, 64);
+          g.lineTo(x + 48, 0);
+          g.lineTo(x + 32, 0);
+          g.fill();
+        }
+      }),
+    [],
+  );
+  useEffect(
+    () => () => {
+      banner.dispose();
+      startBannerTex.dispose();
+      checkerTex.dispose();
+      chevTex.dispose();
+      cpOpenBanners.forEach((b) => b.dispose());
+      cpLockedBanners.forEach((b) => b.dispose());
+    },
+    [banner, startBannerTex, checkerTex, chevTex, cpOpenBanners, cpLockedBanners],
+  );
+
+  // 10 Rainbow Parallel Starting Chute Lanes from uStart to the start gate (-0.16)
+  const rainbowGrid = useMemo(() => {
+    const startHalf = samples[0].w ?? TRACK.width / 2;
+    const grid = (race.data as unknown as { grid?: { lanes: number; rows: number; rowGap: number } }).grid ?? { lanes: 10, rows: 2, rowGap: 1 };
+    const laneW = (2 * startHalf) / grid.lanes;
+    const u0 = samples[0].u + 0.15;
+    const u1 = -0.16;
+    const colors = ["#ff1744", "#ff6d00", "#ffea00", "#00e640", "#00e5ff", "#2979ff", "#7c4dff", "#d500f9", "#ff4081", "#00bfa5"];
+    return Array.from({ length: grid.lanes }, (_, slot) => {
+      const lat = -startHalf + laneW * (slot + 0.5);
+      const col = colors[slot % colors.length];
+      return {
+        color: col,
+        geo: bandGeometry(samples, u0, u1, lat - laneW * 0.43, lat + laneW * 0.43, 0.015),
+      };
+    });
+  }, [samples, race]);
+
+  // Surface-conforming 3D Checkpoint floor bands (strictly on the flat floor inside the wall fillets so they are 100% straight)
+  const cps = ((race.data as unknown as { checkpoints?: { index: number; u: number; closedFrame: number | null }[] }).checkpoints ?? []).slice(0, 3);
+  const flatHalf = TRACK.width / 2 - TRACK.fillet - 0.03;
+  const cpGeos = useMemo(
+    () =>
+      cps.map((cp) => ({
+        upCheck: bandGeometry(samples, cp.u - 0.44, cp.u - 0.16, -flatHalf, flatHalf, 0.014),
+        laser: bandGeometry(samples, cp.u - 0.16, cp.u + 0.16, -flatHalf, flatHalf, 0.016),
+        dnCheck: bandGeometry(samples, cp.u + 0.16, cp.u + 0.44, -flatHalf, flatHalf, 0.014),
+      })),
+    [samples, race, flatHalf],
+  );
+
+  const cpBoardY = H + 0.48;
+  const cpArch = (cpIdx: number, u: number, locked: boolean) => {
+    const s = at(u);
+    const W = (s.w ?? TRACK.width / 2) + TRACK.wall;
+    // Align to the true 3D track frame (s.r across, s.n normal out of floor, s.t along slope)
+    const xVec = new THREE.Vector3(...s.r).normalize();
+    const upVec = new THREE.Vector3(...s.n).normalize();
+    const tVec = new THREE.Vector3().crossVectors(xVec, upVec).normalize();
+    const quat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xVec, upVec, tVec));
+    const cpBanner = locked ? (cpLockedBanners[cpIdx] ?? cpLockedBanners[0]) : (cpOpenBanners[cpIdx] ?? cpOpenBanners[0]);
+    const accent = locked ? "#ff1744" : "#00e676";
+    const geos = cpGeos[cpIdx];
+    return (
+      <group key={`cp-${cpIdx}`}>
+        {geos && (
+          <>
+            <mesh geometry={geos.upCheck}>
+              <meshStandardMaterial map={checkerTex} roughness={0.55} polygonOffset polygonOffsetFactor={-2} />
+            </mesh>
+            <mesh geometry={geos.laser}>
+              <meshStandardMaterial
+                color={accent}
+                emissive={accent}
+                emissiveIntensity={locked ? 2.4 : 1.6}
+                roughness={0.25}
+                toneMapped={false}
+                polygonOffset
+                polygonOffsetFactor={-3}
+              />
+            </mesh>
+            <mesh geometry={geos.dnCheck}>
+              <meshStandardMaterial map={checkerTex} roughness={0.55} polygonOffset polygonOffsetFactor={-2} />
+            </mesh>
+          </>
+        )}
+        <group position={s.p} quaternion={quat}>
+          {/* Industrial twin chrome stanchions with hazard base collars and top status beacons */}
+          {[-1, 1].map((sd) => (
+            <group key={sd} position={[sd * (W + 0.22), 0, 0]}>
+              <mesh position={[0, 0.28, 0]} castShadow>
+                <boxGeometry args={[0.28, 0.56, 0.36]} />
+                <meshStandardMaterial map={chevTex} roughness={0.45} />
+              </mesh>
+              <mesh position={[0, cpBoardY / 2 + 0.1, 0]} castShadow>
+                <cylinderGeometry args={[0.09, 0.11, cpBoardY + 0.2, 24]} />
+                <meshStandardMaterial {...chrome} />
+              </mesh>
+              <mesh position={[0, cpBoardY + 0.32, 0]}>
+                <cylinderGeometry args={[0.12, 0.14, 0.12, 20]} />
+                <meshStandardMaterial color="#15161b" roughness={0.4} />
+              </mesh>
+              <mesh position={[0, cpBoardY + 0.44, 0]}>
+                <sphereGeometry args={[0.095, 20, 14]} />
+                <meshStandardMaterial color={accent} emissive={accent} emissiveIntensity={3.2} toneMapped={false} />
+              </mesh>
+            </group>
+          ))}
+          {/* Overhead dark-steel gantry housing with chrome rails and dual-sided LED matrix board */}
+          <group position={[0, cpBoardY, 0]}>
+            <mesh castShadow>
+              <boxGeometry args={[2 * W + 0.72, 0.68, 0.2]} />
+              <meshStandardMaterial color="#101218" roughness={0.35} metalness={0.65} />
+            </mesh>
+            {[-0.35, 0.35].map((ry) => (
+              <mesh key={ry} position={[0, ry, 0]}>
+                <boxGeometry args={[2 * W + 0.78, 0.04, 0.24]} />
+                <meshStandardMaterial {...chrome} />
+              </mesh>
+            ))}
+            <mesh position={[0, 0, -0.105]} rotation-y={Math.PI}>
+              <planeGeometry args={[2 * W + 0.52, 0.58]} />
+              <meshBasicMaterial map={cpBanner} side={THREE.DoubleSide} />
+            </mesh>
+            <mesh position={[0, 0, 0.105]}>
+              <planeGeometry args={[2 * W + 0.52, 0.58]} />
+              <meshBasicMaterial map={cpBanner} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
+        </group>
+      </group>
+    );
+  };
 
   const arch = (u: number, children: React.ReactNode) => {
     const s = at(u);
     const W = (s.w ?? TRACK.width / 2) + TRACK.wall;
-    const quat = new THREE.Quaternion().setFromRotationMatrix(
-      new THREE.Matrix4().makeBasis(
-        new THREE.Vector3(...s.r).setY(0).normalize(),
-        new THREE.Vector3(0, 1, 0),
-        new THREE.Vector3(...s.t).setY(0).normalize(),
-      ),
-    );
+    const xVec = new THREE.Vector3(...s.r).normalize();
+    const upVec = new THREE.Vector3(...s.n).normalize();
+    const tVec = new THREE.Vector3().crossVectors(xVec, upVec).normalize();
+    const quat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xVec, upVec, tVec));
     return (
       <group position={s.p} quaternion={quat}>
         {[-1, 1].map((sd) => (
@@ -1285,7 +1481,7 @@ export function Gantries({ race, frame }: { race: Race; frame: number }) {
         ))}
         <mesh position={[0, H, 0]} castShadow>
           <boxGeometry args={[2 * W + 0.5, 0.34, 0.28]} />
-          <meshPhysicalMaterial color="#ffffff" roughness={0.25} clearcoat={1} />
+          <meshPhysicalMaterial color="#14161d" roughness={0.28} metalness={0.5} clearcoat={0.6} />
         </mesh>
         {children}
       </group>
@@ -1294,53 +1490,197 @@ export function Gantries({ race, frame }: { race: Race; frame: number }) {
 
   return (
     <>
+      {/* Satin Rainbow Starting Grid Lanes beneath the 20 marbles */}
+      {rainbowGrid.map((rg, idx) => (
+        <mesh key={`rg-${idx}`} geometry={rg.geo} receiveShadow>
+          <meshStandardMaterial
+            color={rg.color}
+            emissive={rg.color}
+            emissiveIntensity={0.22}
+            roughness={0.58}
+            metalness={0.05}
+            polygonOffset
+            polygonOffsetFactor={-2}
+          />
+        </mesh>
+      ))}
       {arch(
         -0.15,
-        [0, 1, 2, 3, 4].map((k) => (
-          <group key={k} position={[(k - 2) * 0.5, H - 0.36, -0.16]}>
-            <mesh>
-              <boxGeometry args={[0.38, 0.64, 0.08]} />
-              <meshStandardMaterial color="#111" roughness={0.4} />
-            </mesh>
-            {[0.14, -0.14].map((y) => (
-              <mesh key={y} position={[0, y, -0.05]}>
-                <sphereGeometry args={[0.1, 16, 12]} />
-                <meshStandardMaterial
-                  color={!out && k < lit ? "#ff1010" : "#3a0d0d"}
-                  emissive={!out && k < lit ? "#ff0000" : "#000"}
-                  emissiveIntensity={!out && k < lit ? 1.4 : 0}
-                />
-              </mesh>
-            ))}
-          </group>
-        )),
-      )}
-      {arch(
-        race.L,
-        <mesh position={[0, H, -0.15]} rotation-y={Math.PI /* face the approaching marbles */}>
-          <planeGeometry args={[2 * W + 0.4, 0.3]} />
-          <meshStandardMaterial map={banner} roughness={0.6} side={THREE.DoubleSide} />
+        <mesh position={[0, H, -0.15]} rotation-y={Math.PI}>
+          <planeGeometry args={[2 * (at(-0.15).w ?? TRACK.width / 2) + 0.4, 0.3]} />
+          <meshStandardMaterial map={startBannerTex} roughness={0.5} side={THREE.DoubleSide} />
         </mesh>,
       )}
+      {cps.map((cp, idx) => cpArch(idx, cp.u, cp.closedFrame != null && frame >= cp.closedFrame))}
+      {/* Grand Prix Finish Portal + 3D Gold Championship Trophy on a Stepped Plinth */}
+      {(() => {
+        const uFin = race.data.info.finish ?? race.L;
+        const s = at(uFin);
+        const Wf = (s.w ?? TRACK.width / 2) + TRACK.wall;
+        const xVec = new THREE.Vector3(...s.r).normalize();
+        const upVec = new THREE.Vector3(...s.n).normalize();
+        const tVec = new THREE.Vector3().crossVectors(xVec, upVec).normalize();
+        const quat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xVec, upVec, tVec));
+        const gold = { color: "#ffd54f", metalness: 0.96, roughness: 0.14 } as const;
+        return (
+          <group position={s.p} quaternion={quat}>
+            {/* Twin Checkered & Gold Finish Towers */}
+            {[-1, 1].map((sd) => (
+              <group key={sd} position={[sd * (Wf + 0.24), 0, 0]}>
+                <mesh position={[0, 0.32, 0]} castShadow>
+                  <boxGeometry args={[0.34, 0.64, 0.42]} />
+                  <meshStandardMaterial map={checkerTex} roughness={0.45} />
+                </mesh>
+                <mesh position={[0, cpBoardY / 2 + 0.12, 0]} castShadow>
+                  <cylinderGeometry args={[0.1, 0.12, cpBoardY + 0.24, 24]} />
+                  <meshStandardMaterial {...chrome} />
+                </mesh>
+                <mesh position={[0, cpBoardY + 0.46, 0]}>
+                  <sphereGeometry args={[0.11, 20, 14]} />
+                  <meshStandardMaterial color="#ffcc00" emissive="#ffaa00" emissiveIntensity={3.5} toneMapped={false} />
+                </mesh>
+              </group>
+            ))}
+            {/* Overhead Grand Prix Finish Bridge */}
+            <group position={[0, cpBoardY, 0]}>
+              <mesh castShadow>
+                <boxGeometry args={[2 * Wf + 0.84, 0.74, 0.24]} />
+                <meshStandardMaterial color="#101218" roughness={0.32} metalness={0.7} />
+              </mesh>
+              {[-0.38, 0.38].map((ry) => (
+                <mesh key={ry} position={[0, ry, 0]}>
+                  <boxGeometry args={[2 * Wf + 0.9, 0.05, 0.28]} />
+                  <meshStandardMaterial {...gold} />
+                </mesh>
+              ))}
+              <mesh position={[0, 0, -0.125]} rotation-y={Math.PI}>
+                <planeGeometry args={[2 * Wf + 0.64, 0.62]} />
+                <meshBasicMaterial map={banner} side={THREE.DoubleSide} />
+              </mesh>
+              <mesh position={[0, 0, 0.125]}>
+                <planeGeometry args={[2 * Wf + 0.64, 0.62]} />
+                <meshBasicMaterial map={banner} side={THREE.DoubleSide} />
+              </mesh>
+            </group>
+            {/* 3D Gold Championship Trophy Cup on a Stepped Plinth beside the Finish Arch */}
+            <group position={[Wf + 1.05, 0, 0]}>
+              {/* Stepped obsidian & gold plinth */}
+              <mesh position={[0, 0.22, 0]} castShadow receiveShadow>
+                <cylinderGeometry args={[0.46, 0.54, 0.44, 32]} />
+                <meshStandardMaterial color="#141720" metalness={0.75} roughness={0.28} />
+              </mesh>
+              <mesh position={[0, 0.46, 0]}>
+                <cylinderGeometry args={[0.48, 0.48, 0.05, 32]} />
+                <meshStandardMaterial {...gold} />
+              </mesh>
+              {/* Trophy pedestal base & stem */}
+              <mesh position={[0, 0.62, 0]} castShadow>
+                <cylinderGeometry args={[0.16, 0.28, 0.28, 28]} />
+                <meshStandardMaterial {...gold} />
+              </mesh>
+              <mesh position={[0, 0.92, 0]} castShadow>
+                <cylinderGeometry args={[0.08, 0.12, 0.36, 24]} />
+                <meshStandardMaterial {...gold} />
+              </mesh>
+              {/* Sculpted Gold Trophy Cup Bowl + Twin Handles + Crown Globe */}
+              <mesh position={[0, 1.32, 0]} castShadow>
+                <cylinderGeometry args={[0.34, 0.12, 0.52, 32]} />
+                <meshStandardMaterial {...gold} />
+              </mesh>
+              <mesh position={[0, 1.58, 0]} rotation-x={Math.PI / 2}>
+                <torusGeometry args={[0.34, 0.032, 14, 32]} />
+                <meshStandardMaterial {...gold} />
+              </mesh>
+              {[-1, 1].map((hd) => (
+                <mesh key={hd} position={[hd * 0.28, 1.34, 0]}>
+                  <torusGeometry args={[0.13, 0.028, 14, 28]} />
+                  <meshStandardMaterial {...gold} />
+                </mesh>
+              ))}
+              <mesh position={[0, 1.72, 0]} castShadow>
+                <sphereGeometry args={[0.14, 24, 18]} />
+                <meshStandardMaterial color="#ffe082" emissive="#ffb300" emissiveIntensity={0.65} metalness={0.95} roughness={0.1} />
+              </mesh>
+            </group>
+          </group>
+        );
+      })()}
     </>
   );
 }
 
-/** The chequered FINISH banner on the finish arch. */
-function finishBanner() {
-  return canvasTexture(512, 64, (g) => {
-    for (let x = 0; x < 64; x++)
-      for (let y = 0; y < 8; y++) {
-        g.fillStyle = (x + y) % 2 ? "#111" : "#fafafa";
-        g.fillRect(x * 8, y * 8, 8, 8);
+/** 3D Checkpoint Gantry Signboard ("CHECKPOINT X · TOP N ADVANCE") */
+function checkpointBanner(idx: number, subtitle: string, locked: boolean) {
+  return canvasTexture(1024, 224, (g) => {
+    const accent = locked ? "#ff1744" : "#00e676";
+    g.fillStyle = "#0a0c12";
+    g.fillRect(0, 0, 1024, 224);
+    g.strokeStyle = accent;
+    g.lineWidth = 8;
+    g.strokeRect(6, 6, 1012, 212);
+
+    // Checkered end-caps on left and right
+    for (let side of [18, 942]) {
+      for (let r = 0; r < 6; r++) {
+        for (let c = 0; c < 2; c++) {
+          g.fillStyle = (r + c) % 2 === 0 ? accent : "#141822";
+          g.fillRect(side + c * 32, 20 + r * 30, 32, 30);
+        }
       }
-    g.fillStyle = "#ffcc00";
-    g.fillRect(150, 6, 212, 52);
-    g.fillStyle = "#111";
-    g.font = "900 40px 'Avenir Next', system-ui, sans-serif";
+    }
+
+    g.fillStyle = "#ffffff";
+    g.font = "900 76px 'Avenir Next', system-ui, sans-serif";
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.fillText("FINISH", 256, 34);
+    g.fillText(`CHECKPOINT ${idx}`, 512, 82);
+
+    g.fillStyle = accent;
+    g.font = "800 36px 'Avenir Next', system-ui, sans-serif";
+    g.fillText(subtitle, 512, 162);
+  });
+}
+
+function startBanner() {
+  return canvasTexture(512, 64, (g) => {
+    g.fillStyle = "#111216";
+    g.fillRect(0, 0, 512, 64);
+    g.fillStyle = "#ffcc00";
+    g.fillRect(0, 0, 512, 6);
+    g.fillRect(0, 58, 512, 6);
+    g.fillStyle = "#ffffff";
+    g.font = "900 36px 'Avenir Next', system-ui, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText("DON'T BE LAST · START", 256, 34);
+  });
+}
+
+/** The chequered FINISH banner on the Grand Prix finish arch. */
+function finishBanner() {
+  return canvasTexture(1024, 224, (g) => {
+    g.fillStyle = "#0a0c12";
+    g.fillRect(0, 0, 1024, 224);
+    g.strokeStyle = "#ffcc00";
+    g.lineWidth = 8;
+    g.strokeRect(6, 6, 1012, 212);
+    // Checkered flags on left and right sides (2 columns wide so center text has full clearance)
+    for (const side of [18, 942]) {
+      for (let r = 0; r < 6; r++) {
+        for (let c = 0; c < 2; c++) {
+          g.fillStyle = (r + c) % 2 === 0 ? "#ffffff" : "#141822";
+          g.fillRect(side + c * 32, 20 + r * 30, 32, 30);
+        }
+      }
+    }
+    g.fillStyle = "#ffcc00";
+    g.font = "900 68px 'Avenir Next', system-ui, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText("GRAND PRIX FINISH", 512, 82);
+    g.fillStyle = "#ffffff";
+    g.font = "800 32px 'Avenir Next', system-ui, sans-serif";
+    g.fillText("CHAMPIONSHIP SHOWDOWN · DON'T BE LAST!", 512, 162);
   });
 }
 
@@ -1506,36 +1846,97 @@ export function Gate({ race, t }: { race: Race; t: number }) {
  * instead of mirroring every cloud, so the colour and the flag read first.
  */
 export function marbleTextures(name: string, code: string, color?: string) {
-  // 1024×512: a marble is 0.7 units across and never fills more than ~half the frame height.
+  // 1024×512: combines the swirled art-glass / agate polar domes with the country flag
+  // wrapped twice around the equator, country-code roundels at the seams, and chrome pinstripes.
   const W = 1024;
   const H = 512;
   const flag = (FLAGS as Record<string, { colors: readonly string[] }>)[code];
   const base = color ?? flag?.colors[0] ?? "#888";
   const accent = flag?.colors.find((c) => c.toLowerCase() !== base.toLowerCase()) ?? "#ffffff";
-  // Metal/rough map: G = roughness, B = metalness (scaled by the material's 1 / 1).
-  const PAINT = "rgb(0,92,46)"; // metallic-flake base coat: roughness 0.36, metalness 0.18
-  const FLAG = "rgb(0,68,0)"; // printed band: roughness 0.27, no metal
+  const palette = flag?.colors?.length ? [...flag.colors] : [base, accent, "#ffcc00"];
+  if (palette.length === 1) palette.push("#ffffff", base);
+  if (palette.length === 2) palette.push(palette[0]);
+
+  const parseHex = (hex: string): [number, number, number] => {
+    const h = hex.replace("#", "");
+    const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16) || 0;
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const c0 = parseHex(base);
+  const c1 = parseHex(palette[1] ?? "#ffffff");
+  const c2 = parseHex(palette[2] ?? palette[0]);
+
+  let seed = 0;
+  for (let i = 0; i < code.length; i++) seed = (seed * 31 + code.charCodeAt(i)) & 0xffff;
+  const sx = (seed % 97) * 0.13;
+  const sy = ((seed >> 4) % 89) * 0.17;
+  const sz = ((seed >> 8) % 73) * 0.19;
+
+  // Metal/rough map values: G = roughness, B = metalness
+  const PAINT = "rgb(0,52,46)"; // glossy swirled glass base coat: roughness ~0.20, metalness ~0.18
+  const FLAG = "rgb(0,48,18)"; // printed flag band under clearcoat: roughness ~0.19, low metal
   const CHROME = "rgb(0,14,255)"; // pinstripes: mirror chrome
   const bandY = H * 0.3;
   const bandH = H * 0.4;
+
   const paint = (g: CanvasRenderingContext2D, metalMap: boolean) => {
-    g.fillStyle = metalMap ? PAINT : base;
-    g.fillRect(0, 0, W, H);
-    if (!metalMap) {
-      // A soft darkening toward the poles: the paint looks deep, not flat.
+    if (metalMap) {
+      g.fillStyle = PAINT;
+      g.fillRect(0, 0, W, H);
+    } else {
+      // Paint swirled art-glass ribbons across the upper and lower domes so the poles have rich 3D depth
+      const img = g.createImageData(W, H);
+      const d = img.data;
+      for (let y = 0; y < H; y++) {
+        const v = (y + 0.5) / H;
+        const theta = v * Math.PI;
+        const sinT = Math.sin(theta);
+        const ny = Math.cos(theta);
+        for (let x = 0; x < W; x++) {
+          const u = (x + 0.5) / W;
+          const phi = u * Math.PI * 2;
+          const nx = sinT * Math.cos(phi);
+          const nz = sinT * Math.sin(phi);
+
+          const wx = nx * 2.4 + Math.sin(ny * 3.2 + sz) * 0.65 + Math.cos(nz * 2.7 + sx) * 0.45;
+          const wy = ny * 2.4 + Math.sin(nz * 3.1 + sx) * 0.65 + Math.cos(nx * 2.9 + sy) * 0.45;
+          const wz = nz * 2.4 + Math.sin(nx * 3.3 + sy) * 0.65 + Math.cos(ny * 2.6 + sz) * 0.45;
+
+          const f1 = Math.sin(wx * 2.4 + Math.cos(wy * 2.7 + wz * 2.1));
+          const f2 = Math.cos(wy * 2.9 - Math.sin(wz * 2.5 - wx * 2.3));
+          const ribbon1 = Math.max(0, Math.min(1, 0.5 + 0.5 * Math.sin((f1 + f2) * 2.4)));
+          const ribbon2 = Math.max(0, Math.min(1, Math.pow(0.5 + 0.5 * Math.cos(f1 * 3.8 - f2 * 2.8), 2.2)));
+          const depth = 0.72 + 0.32 * (0.5 + 0.5 * (f1 * 0.6 + f2 * 0.4));
+
+          const w1 = ribbon1 * 0.65;
+          const w2 = ribbon2 * 0.48;
+          const w0 = Math.max(0.15, 1 - w1 - w2 * 0.6);
+          const norm = w0 + w1 + w2 || 1;
+
+          const idx = (y * W + x) * 4;
+          d[idx] = Math.min(255, Math.max(0, Math.round(((c0[0] * w0 + c1[0] * w1 + c2[0] * w2) / norm) * depth)));
+          d[idx + 1] = Math.min(255, Math.max(0, Math.round(((c0[1] * w0 + c1[1] * w1 + c2[1] * w2) / norm) * depth)));
+          d[idx + 2] = Math.min(255, Math.max(0, Math.round(((c0[2] * w0 + c1[2] * w1 + c2[2] * w2) / norm) * depth)));
+          d[idx + 3] = 255;
+        }
+      }
+      g.putImageData(img, 0, 0);
+
+      // Soft darkening toward the poles so the paint looks deep
       const shade = g.createLinearGradient(0, 0, 0, H);
-      shade.addColorStop(0, "rgba(0,0,0,0.28)");
-      shade.addColorStop(0.3, "rgba(0,0,0,0)");
-      shade.addColorStop(0.7, "rgba(0,0,0,0)");
-      shade.addColorStop(1, "rgba(0,0,0,0.28)");
+      shade.addColorStop(0, "rgba(0,0,0,0.24)");
+      shade.addColorStop(0.28, "rgba(0,0,0,0)");
+      shade.addColorStop(0.72, "rgba(0,0,0,0)");
+      shade.addColorStop(1, "rgba(0,0,0,0.24)");
       g.fillStyle = shade;
       g.fillRect(0, 0, W, H);
     }
-    // The flag band, twice round, each with a thin dark frame.
+
+    // The country flag band, wrapped twice around the equator, each with a crisp dark frame.
     if (metalMap) {
       g.fillStyle = FLAG;
       g.fillRect(0, bandY, W, bandH);
-    } else
+    } else {
       for (let k = 0; k < 2; k++) {
         drawFlag(g, code, (W / 2) * k, bandY, W / 2, bandH);
         g.fillStyle = "rgba(0,0,0,0.35)";
@@ -1543,8 +1944,10 @@ export function marbleTextures(name: string, code: string, color?: string) {
         g.fillRect((W / 2) * k, bandY, W / 2, 5);
         g.fillRect((W / 2) * k, bandY + bandH - 5, W / 2, 5);
       }
+    }
+
     // Country code roundels at the seams.
-    if (!metalMap)
+    if (!metalMap) {
       for (let k = 0; k < 2; k++) {
         const cx = (W / 2) * k + W / 4;
         g.fillStyle = "#111216";
@@ -1560,7 +1963,9 @@ export function marbleTextures(name: string, code: string, color?: string) {
         g.textBaseline = "middle";
         g.fillText(code, cx, H / 2 + 2);
       }
-    // Chrome pinstripes edging the band, and an accent stripe in the flag's second colour.
+    }
+
+    // Chrome pinstripes edging the flag band, and an accent stripe in the flag's second colour.
     g.fillStyle = metalMap ? CHROME : "#ffffff";
     g.fillRect(0, bandY - H * 0.022, W, H * 0.012);
     g.fillRect(0, bandY + bandH + H * 0.01, W, H * 0.012);
@@ -1601,24 +2006,145 @@ function bakedTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) 
   return t;
 }
 
+/**
+ * Dedicated plan-view (top + flanks) 1024×1024 racing livery texture for 3D lofted cars:
+ * u ∈ [0,1] runs from rear tail (0) to front nosecone (1);
+ * v ∈ [0,1] runs from left flank (0) across centerline (0.5) to right flank (1).
+ */
+function carLiveryTexture(code: string, color?: string, carNum = 1) {
+  const W = 1024;
+  const H = 1024;
+  const flag = (FLAGS as Record<string, { colors: readonly string[] }>)[code];
+  const base = color ?? flag?.colors[0] ?? "#d82828";
+  const accent = flag?.colors.find((c) => c.toLowerCase() !== base.toLowerCase()) ?? "#ffffff";
+  const third = flag?.colors[2] ?? "#ffcc00";
+
+  return bakedTexture(W, H, (g) => {
+    // 1. Metallic team paint base with 3D crown highlight & dark carbon lower skirts
+    const grad = g.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0.0, "#10131a");
+    grad.addColorStop(0.11, "#161a24");
+    grad.addColorStop(0.14, base);
+    grad.addColorStop(0.42, base);
+    grad.addColorStop(0.5, "#ffffff");
+    grad.addColorStop(0.58, base);
+    grad.addColorStop(0.86, base);
+    grad.addColorStop(0.89, "#161a24");
+    grad.addColorStop(1.0, "#10131a");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, W, H);
+
+    // Blend base over centerline so the highlight is a soft metallic sheen
+    g.globalAlpha = 0.72;
+    g.fillStyle = base;
+    g.fillRect(0, H * 0.14, W, H * 0.72);
+    g.globalAlpha = 1;
+
+    // 2. Carbon-fiber weave & neon edge pin-stripes on side skirts
+    g.fillStyle = accent;
+    g.fillRect(0, H * 0.135, W, 6);
+    g.fillRect(0, H * 0.859, W, 6);
+
+    // 3. Twin Le Mans / Formula center racing stripes running nose-to-tail
+    g.fillStyle = accent;
+    g.fillRect(0, H * 0.452, W, H * 0.034);
+    g.fillRect(0, H * 0.514, W, H * 0.034);
+    g.fillStyle = third;
+    g.fillRect(0, H * 0.488, W, H * 0.024);
+
+    // 4. Prominent Country Flag on the Front Hood / Nosecone (u ∈ [0.64, 0.88])
+    const fx = W * 0.64;
+    const fw = W * 0.24;
+    const fy = H * 0.32;
+    const fh = H * 0.36;
+    drawFlag(g, code, fx, fy, fw, fh);
+    g.strokeStyle = "#11141c";
+    g.lineWidth = 6;
+    g.strokeRect(fx, fy, fw, fh);
+    g.strokeStyle = "#ffffff";
+    g.lineWidth = 2.5;
+    g.strokeRect(fx - 3, fy - 3, fw + 6, fh + 6);
+
+    // 5. Prominent Country Flag on Rear Engine Cover / Deck (u ∈ [0.12, 0.36], visible from chase & grid cameras!)
+    drawFlag(g, code, W * 0.12, H * 0.30, W * 0.24, H * 0.40);
+    g.strokeStyle = "#11141c";
+    g.lineWidth = 6;
+    g.strokeRect(W * 0.12, H * 0.30, W * 0.24, H * 0.40);
+
+    // 6. Twin Country Flags on Left & Right Sidepods (u ∈ [0.34, 0.58])
+    for (const sy of [H * 0.155, H * 0.665]) {
+      drawFlag(g, code, W * 0.34, sy, W * 0.24, H * 0.18);
+      g.strokeStyle = "#11141c";
+      g.lineWidth = 5;
+      g.strokeRect(W * 0.34, sy, W * 0.24, H * 0.18);
+    }
+
+    // 7. Aero heat-extractor carbon louvers on rear sidepods (u ∈ [0.16, 0.29])
+    g.fillStyle = "rgba(10,12,18,0.82)";
+    for (let k = 0; k < 6; k++) {
+      const lx = W * (0.16 + k * 0.02);
+      g.fillRect(lx, H * 0.18, W * 0.009, H * 0.09);
+      g.fillRect(lx, H * 0.73, W * 0.009, H * 0.09);
+    }
+
+    // 8. Racing Number Roundel on Nosecone (u = 0.91), Rear Deck (u = 0.24), & Both Flanks (u = 0.46)
+    const drawRoundel = (cx: number, cy: number, r: number) => {
+      g.fillStyle = "#f8fafd";
+      g.beginPath();
+      g.arc(cx, cy, r, 0, Math.PI * 2);
+      g.fill();
+      g.lineWidth = Math.max(3, r * 0.12);
+      g.strokeStyle = "#11131a";
+      g.stroke();
+      g.fillStyle = "#11131a";
+      g.font = `900 ${Math.round(r * 1.25)}px 'Avenir Next', system-ui, sans-serif`;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText(String(carNum), cx, cy + r * 0.06);
+    };
+    drawRoundel(W * 0.91, H * 0.5, 38);
+    drawRoundel(W * 0.24, H * 0.5, 42);
+    drawRoundel(W * 0.46, H * 0.245, 38);
+    drawRoundel(W * 0.46, H * 0.755, 38);
+  });
+}
+
 export function Marbles({ race, t }: { race: Race; t: number }) {
   const view = useView(race);
   const sub = useSubframe();
+  const isCar = (race.data.info as { vehicle?: string })?.vehicle === "car";
   const tex = useMemo(() => race.marbles.map((m) => marbleTextures(m.name, (m as { flag?: string }).flag ?? "", (m as { color?: string }).color)), [race]);
+  const carTex = useMemo(
+    () => (isCar ? race.marbles.map((m, i) => carLiveryTexture((m as { flag?: string }).flag ?? "", (m as { color?: string }).color, i + 1)) : []),
+    [race, isCar],
+  );
   // The largest textures on a canvas (two 1024×512 maps per marble): freed with it, not whenever it is collected.
   useEffect(
-    () => () =>
+    () => () => {
       tex.forEach((t) => {
         t.map.dispose();
         t.mr.dispose();
-      }),
-    [tex],
+      });
+      carTex.forEach((ct) => ct.dispose());
+    },
+    [tex, carTex],
   );
-  const refs = useRef<(THREE.Mesh | null)[]>([]);
+  const refs = useRef<(THREE.Object3D | null)[]>([]);
+  const wheelRefs = useRef<(THREE.Object3D | null)[][]>([]);
+  const flameRefs = useRef<(THREE.Object3D | null)[][]>([]);
+  const brakeRefs = useRef<(THREE.Mesh | null)[]>([]);
   useEffect(
     () =>
       sub.subscribe((vf) => {
         const tt = view.tAt(vf);
+        const f0 = Math.max(0, Math.min(Math.floor(tt), race.lastFrame));
+        const f1 = Math.min(f0 + 1, race.lastFrame);
+        const a = Math.min(Math.max(tt - f0, 0), 1);
+        const frames = race.data.frames as number[][][];
+        const qNow = new THREE.Quaternion();
+        const qInv = new THREE.Quaternion();
+        const qAhead = new THREE.Quaternion();
+        const fwdLocal = new THREE.Vector3();
         race.marbles.forEach((_, i) => {
           const m = refs.current[i];
           if (!m) return;
@@ -1627,11 +2153,808 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
           m.position.set(...(drained ? drained.pos : pos));
           m.quaternion.set(...quat);
           m.visible = drained ? drained.visible : !race.dqBy(i, tt);
+          if (isCar && wheelRefs.current[i]) {
+            const u = frames[f0][i][7] + (frames[f1][i][7] - frames[f0][i][7]) * a;
+            const spin = -u / 0.135;
+            // Compute Ackermann front-wheel steering angle from upcoming chassis heading change
+            const fAhead = Math.min(race.lastFrame, f0 + 4);
+            qNow.set(quat[0], quat[1], quat[2], quat[3]);
+            qInv.copy(qNow).invert();
+            const fA = frames[fAhead][i];
+            qAhead.set(fA[3], fA[4], fA[5], fA[6]);
+            fwdLocal.set(1, 0, 0).applyQuaternion(qAhead).applyQuaternion(qInv);
+            const steerYaw = Math.max(-0.42, Math.min(0.42, -Math.atan2(fwdLocal.z, Math.max(0.25, fwdLocal.x)) * 2.1));
+            wheelRefs.current[i].forEach((w, wIdx) => {
+              if (!w) return;
+              if (wIdx < 2) {
+                // Front wheels: Ackermann inside-wheel steering amplification around Y + axle spin around Z
+                const isInside = (wIdx === 0 && steerYaw > 0) || (wIdx === 1 && steerYaw < 0);
+                const ack = isInside ? 1.14 : 0.92;
+                w.rotation.order = "YZX";
+                w.rotation.set(0, steerYaw * ack, spin);
+              } else {
+                w.rotation.set(0, 0, spin);
+              }
+            });
+          }
+          if (isCar && (flameRefs.current[i] || brakeRefs.current[i])) {
+            const fPrev = Math.max(0, f0 - 2);
+            const fPrev2 = Math.max(0, f0 - 5);
+            const vNow = (frames[f1][i][7] - frames[fPrev][i][7]) * (race.fps / Math.max(1, f1 - fPrev));
+            const vBefore = (frames[fPrev][i][7] - frames[fPrev2][i][7]) * (race.fps / Math.max(1, fPrev - fPrev2));
+            const aLong = (vNow - vBefore) * (race.fps / 2.5);
+            const boostK = Math.max(0, Math.min(1.6, (vNow - 14.2) * 0.28 + Math.max(0, aLong - 2.0) * 0.12));
+            const flicker = 0.85 + 0.3 * Math.sin(tt * 1.9 + i * 2.3);
+            if (flameRefs.current[i]) {
+              for (const fl of flameRefs.current[i]) {
+                if (fl) {
+                  fl.visible = boostK > 0.05;
+                  fl.scale.set(0.8 + boostK * 0.35, (0.4 + boostK * 1.15) * flicker, 0.8 + boostK * 0.35);
+                }
+              }
+            }
+            const brk = brakeRefs.current[i];
+            if (brk) {
+              const isBraking = aLong < -1.1 && vNow > 4.0;
+              const mat = brk.material as THREE.MeshStandardMaterial;
+              if (mat) mat.emissiveIntensity = isBraking ? 11.5 : 2.2;
+              brk.scale.set(isBraking ? 1.45 : 1, isBraking ? 1.35 : 1, isBraking ? 1.08 : 1);
+            }
+          }
         });
       }),
-    [sub, view, race],
+    [sub, view, race, isCar],
   );
   const night = isNight();
+  const smokePack = useMemo(() => {
+    if (!isCar) return null;
+    const frames = race.data.frames as number[][][];
+    const fps = race.fps;
+    const MAX_SMOKE = 360;
+    const list: { t0: number; life: number; origin: Vec3; vel: Vec3; size0: number }[] = [];
+    const qTmp = new THREE.Quaternion();
+    const fwd = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    for (let i = 0; i < race.N; i++) {
+      let lastPuff = -999;
+      for (let f = Math.max(2, race.timeline.raceStart + 12); f < race.lastFrame; f += 2) {
+        if (f - lastPuff < 3 || race.dqBy(i, f)) continue;
+        const P0 = frames[f - 2][i];
+        const P1 = frames[f - 1][i];
+        const P2 = frames[f][i];
+        const vx = (P2[0] - P1[0]) * fps;
+        const vy = (P2[1] - P1[1]) * fps;
+        const vz = (P2[2] - P1[2]) * fps;
+        const speed = Math.hypot(vx, vy, vz);
+        if (speed < 5.2 || speed > 42) continue;
+        const v1x = (P1[0] - P0[0]) * fps;
+        const v1z = (P1[2] - P0[2]) * fps;
+        const latAcc = Math.hypot(vx - v1x, vz - v1z);
+        qTmp.set(P2[3], P2[4], P2[5], P2[6]);
+        fwd.set(1, 0, 0).applyQuaternion(qTmp);
+        right.set(0, 0, 1).applyQuaternion(qTmp);
+        const invSpd = 1 / Math.max(0.001, Math.hypot(vx, vz));
+        const sinSlip = Math.abs(fwd.x * vz * invSpd - fwd.z * vx * invSpd);
+        if (sinSlip < 0.18 && latAcc < 4.2) continue;
+        lastPuff = f;
+        const intensity = Math.min(1.4, Math.max((sinSlip - 0.16) * 2.6, (latAcc - 3.8) * 0.25));
+        const seed = f * 41 + i * 19;
+        for (const side of [-1, 1] as const) {
+          const s = seed + (side > 0 ? 7.1 : 0);
+          const ox = P2[0] - fwd.x * 0.31 + right.x * (side * 0.25);
+          const oy = P2[1] - 0.25;
+          const oz = P2[2] - fwd.z * 0.31 + right.z * (side * 0.25);
+          list.push({
+            t0: f + hash(s) * 1.0,
+            life: 0.24 + hash(s + 2.3) * 0.18,
+            origin: [ox, oy, oz],
+            vel: [
+              vx * 0.35 + right.x * side * (0.25 + hash(s + 4.1) * 0.5),
+              0.32 + hash(s + 6.9) * 0.45,
+              vz * 0.35 + right.z * side * (0.25 + hash(s + 8.3) * 0.5),
+            ],
+            size0: 0.055 + intensity * 0.038,
+          });
+        }
+      }
+    }
+    list.sort((a, b) => a.t0 - b.t0);
+    const geo = new THREE.OctahedronGeometry(1, 1);
+    const mat = new THREE.MeshStandardMaterial({
+      color: "#eef4fc",
+      emissive: "#a8b8cc",
+      emissiveIntensity: 0.28,
+      roughness: 0.96,
+      metalness: 0.0,
+      transparent: true,
+      opacity: 0.17,
+      depthWrite: false,
+    });
+    const inst = new THREE.InstancedMesh(geo, mat, MAX_SMOKE);
+    inst.frustumCulled = false;
+    return { mesh: inst, puffs: list, max: MAX_SMOKE, geo, mat };
+  }, [race, isCar]);
+
+  useEffect(
+    () => () => {
+      if (smokePack) {
+        smokePack.geo.dispose();
+        smokePack.mat.dispose();
+      }
+    },
+    [smokePack],
+  );
+
+  const updateSmoke = (simT: number) => {
+    if (!smokePack) return;
+    const { mesh, puffs, max } = smokePack;
+    const fps = race.fps;
+    const minT0 = simT - 0.5 * fps;
+    let lo = 0;
+    let hi = puffs.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (puffs[mid].t0 < minT0) lo = mid + 1;
+      else hi = mid;
+    }
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const pos = new THREE.Vector3();
+    const sc = new THREE.Vector3();
+    const dir = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    const zero = new THREE.Vector3(0, 0, 0);
+    let count = 0;
+    for (let idx = lo; idx < puffs.length && count < max; idx++) {
+      const pf = puffs[idx];
+      if (pf.t0 > simT) break;
+      const age = (simT - pf.t0) / fps;
+      if (age <= 0 || age >= pf.life) continue;
+      const u = age / pf.life;
+      const grow = Math.sin(u * Math.PI) * (0.9 + u * 1.4);
+      pos.set(pf.origin[0] + pf.vel[0] * age, pf.origin[1] + pf.vel[1] * age, pf.origin[2] + pf.vel[2] * age);
+      dir.set(pf.vel[0], pf.vel[1] * 0.3, pf.vel[2]);
+      const spd = dir.length();
+      if (spd > 0.001) q.setFromUnitVectors(up, dir.divideScalar(spd));
+      else q.identity();
+      const r = pf.size0 * grow;
+      sc.set(r * 0.85, r * 2.1, r * 0.42);
+      mesh.setMatrixAt(count++, m.compose(pos, q, sc));
+    }
+    mesh.visible = count > 0;
+    if (mesh.visible) {
+      for (let k = count; k < max; k++) mesh.setMatrixAt(k, m.compose(zero, q, zero));
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  };
+  updateSmoke(t);
+  useEffect(() => sub.subscribe((vf) => updateSmoke(view.tAt(vf))), [sub, view, race, smokePack]);
+
+  const carGeoms = useMemo(() => {
+    if (!isCar) return null;
+    const bump = (x: number, c: number, w: number) => Math.exp(-Math.pow((x - c) / w, 2));
+
+    // True 3D multi-station lofted car body with plan-view UVs (u along length X, v across width Z)
+    const buildLoftedHull = (style: 0 | 1 | 2 | 3) => {
+      const NX = 56;
+      const NR = 48;
+      const xMin = -0.43;
+      const xMax = 0.55;
+      const pos: number[] = [];
+      const uvs: number[] = [];
+      const idx: number[] = [];
+
+      for (let ix = 0; ix <= NX; ix++) {
+        const u = ix / NX;
+        const x = xMin + u * (xMax - xMin);
+        const noseT = Math.max(0, (x - 0.16) / (xMax - 0.16));
+        const tailT = Math.max(0, (-0.18 - x) / (-0.18 - xMin));
+
+        // 1) Half-width profile w(x) for each racing class
+        let halfW = 0.21;
+        if (style === 0) {
+          // Formula Apex: needle nosecone -> wide Venturi sidepods -> tight coke-bottle rear
+          const noseW = 0.036 + 0.068 * (1 - Math.pow(noseT, 1.35));
+          const podBulge = 0.135 * bump(x, -0.03, 0.22);
+          const rearTap = 1 - 0.38 * Math.pow(tailT, 1.4);
+          halfW = x > 0.18 ? noseW : (0.102 + podBulge) * rearTap;
+        } else if (style === 1) {
+          // Le Mans Hypercar / Cyber-GT: wide low nose + muscular front/rear wheel arches + pinched waist
+          const fArch = 0.038 * bump(x, 0.25, 0.13);
+          const rArch = 0.045 * bump(x, -0.24, 0.14);
+          const waist = -0.022 * bump(x, 0.01, 0.14);
+          const noseRound = x > 0.42 ? 1 - 0.32 * Math.pow((x - 0.42) / (xMax - 0.42), 2) : 1;
+          halfW = (0.225 + fArch + rArch + waist) * noseRound;
+        } else if (style === 2) {
+          // Dakar / WRC Rally Raid Prototype: wide muscular off-road stance with flared arches
+          const arch = 0.034 * bump(x, 0.25, 0.13) + 0.038 * bump(x, -0.24, 0.14);
+          const noseRound = x > 0.38 ? 1 - 0.28 * Math.pow((x - 0.38) / (xMax - 0.38), 2) : 1;
+          halfW = (0.215 + arch) * noseRound;
+        } else {
+          // Bonneville Jet-Streamliner: supersonic needle nose + twin side nacelles + turbine tail
+          const noseTap = x > 0.15 ? 1 - 0.72 * Math.pow((x - 0.15) / (xMax - 0.15), 1.45) : 1;
+          const nacelle = 0.065 * bump(x, -0.06, 0.25);
+          halfW = (0.145 + nacelle) * noseTap;
+        }
+
+        // Longitudinal tip closure at very front/back
+        const tipScale = ix === 0 || ix === NX ? 0.08 : ix === 1 || ix === NX - 1 ? 0.68 : 1;
+        const w = halfW * tipScale;
+
+        // 2) Vertical profile: floor yBot(x), central spine yCenter(x), and outer pontoon/fender ySide(x)
+        const noseLift = x > 0.35 ? 0.028 * Math.pow((x - 0.35) / 0.2, 1.6) : 0;
+        const tailDiffuser = x < -0.26 ? 0.032 * Math.pow((-0.26 - x) / 0.17, 1.5) : 0;
+        const yBot = (style === 2 ? -0.225 : -0.242) + noseLift + tailDiffuser;
+
+        // Centerline height (nose slope + recessed cockpit tub + raised airbox / engine cover spine)
+        const cockpitDip = -0.065 * bump(x, 0.02, 0.115);
+        const airboxHump = (style === 2 ? 0.095 : style === 1 ? 0.075 : 0.088) * bump(x, -0.17, 0.16);
+        const noseSlope = x > 0.12 ? -0.085 * Math.pow((x - 0.12) / (xMax - 0.12), 1.25) : 0;
+        const tailSlope = x < -0.22 ? -0.045 * Math.pow((-0.22 - x) / (-0.22 - xMin), 1.4) : 0;
+        const yCenterBase = (style === 2 ? -0.078 : -0.102) + cockpitDip + airboxHump + noseSlope + tailSlope;
+
+        // Outer flank / fender / sidepod shoulder height
+        let yFlankBase = yCenterBase - 0.028;
+        if (style === 0) {
+          // F1 Venturi sidepod shoulder
+          yFlankBase = -0.158 + 0.052 * bump(x, 0.03, 0.17) - 0.035 * noseT;
+        } else if (style === 1) {
+          // LMP / GT3 tall sculpted front & rear wheel-arch fenders with low central hood channel
+          const fenderH = 0.078 * bump(x, 0.25, 0.13) + 0.086 * bump(x, -0.24, 0.14);
+          yFlankBase = -0.155 + fenderH;
+        } else if (style === 2) {
+          // Rally Raid high fender arches
+          const fenderH = 0.065 * bump(x, 0.25, 0.13) + 0.068 * bump(x, -0.24, 0.14);
+          yFlankBase = -0.125 + fenderH;
+        }
+
+        for (let ir = 0; ir <= NR; ir++) {
+          const vRing = ir / NR;
+          const theta = vRing * Math.PI * 2; // 0 = top-center, π/2 = right flank, π = bottom-center, 3π/2 = left flank
+          const sinT = Math.sin(theta);
+          const cosT = Math.cos(theta);
+
+          // Super-elliptical cross-section with aerodynamic sidepod undercut
+          const absSin = Math.abs(sinT);
+          const signZ = sinT >= 0 ? 1 : -1;
+          const zNorm = signZ * Math.pow(absSin, 0.82);
+          let z = zNorm * w;
+
+          // Undercut on lower sidepods so flanks curve inward at the floor
+          if (cosT < 0 && style !== 3) {
+            const undercut = 1 - 0.18 * Math.pow(-cosT, 0.8) * bump(x, -0.04, 0.24);
+            z *= undercut;
+          }
+
+          let y: number;
+          if (cosT >= 0) {
+            // Upper deck: blend smoothly between centerline (airbox / cockpit tub) and outer fender/sidepod shoulders
+            const lat = absSin;
+            const shoulderBlend = Math.sin(lat * Math.PI * 0.88);
+            const yDeck = yCenterBase * (1 - 0.68 * shoulderBlend) + yFlankBase * (0.68 * shoulderBlend);
+            // Cockpit coaming rim around the driver opening
+            const coaming = 0.022 * bump(x, 0.02, 0.12) * bump(lat, 0.42, 0.16);
+            const crown = Math.pow(cosT, 0.55);
+            y = yBot + (yDeck + coaming - yBot) * (0.32 + 0.68 * crown);
+          } else {
+            // Lower hull: flat Venturi floor with beveled outer chine
+            const bottomFlat = Math.pow(-cosT, 0.42);
+            const yMid = 0.5 * (yBot + yFlankBase);
+            y = yMid - (yMid - yBot) * bottomFlat;
+          }
+
+          if (ix === 0 || ix === NX) {
+            y = 0.5 * (yBot + yCenterBase) + 0.08 * cosT * tipScale;
+          }
+
+          pos.push(x, y, z);
+          // Plan-view UV mapping: u along length, v across width from left flank (0) to right flank (1)
+          const uvU = Math.max(0.01, Math.min(0.99, u));
+          const uvV = Math.max(0.02, Math.min(0.98, 0.5 + (z / Math.max(0.18, halfW * 2.15))));
+          uvs.push(uvU, uvV);
+        }
+      }
+
+      for (let ix = 0; ix < NX; ix++) {
+        for (let ir = 0; ir < NR; ir++) {
+          const a = ix * (NR + 1) + ir;
+          const b = a + NR + 1;
+          idx.push(a, a + 1, b, a + 1, b + 1, b);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      geo.setIndex(idx);
+      geo.computeVertexNormals();
+      return geo;
+    };
+
+    // Sculpted 3D Swept Delta Front Wing Mainplane
+    const fwShape = new THREE.Shape();
+    fwShape.moveTo(0.08, 0);
+    fwShape.quadraticCurveTo(0.07, 0.16, 0.015, 0.285);
+    fwShape.lineTo(-0.075, 0.285);
+    fwShape.quadraticCurveTo(-0.03, 0.14, -0.045, 0);
+    fwShape.quadraticCurveTo(-0.03, -0.14, -0.075, -0.285);
+    fwShape.lineTo(0.015, -0.285);
+    fwShape.quadraticCurveTo(0.07, -0.16, 0.08, 0);
+    const f1FrontWing = new THREE.ExtrudeGeometry(fwShape, {
+      depth: 0.018,
+      bevelEnabled: true,
+      bevelSegments: 4,
+      steps: 1,
+      bevelSize: 0.006,
+      bevelThickness: 0.006,
+      curveSegments: 24,
+    });
+    f1FrontWing.rotateX(Math.PI / 2);
+    f1FrontWing.computeVertexNormals();
+
+    // Sculpted 3D Swept Rear Wing Airfoil Plane
+    const rwShape = new THREE.Shape();
+    rwShape.moveTo(0.065, 0);
+    rwShape.quadraticCurveTo(0.055, 0.15, 0.03, 0.255);
+    rwShape.lineTo(-0.065, 0.255);
+    rwShape.quadraticCurveTo(-0.045, 0.14, -0.055, 0);
+    rwShape.quadraticCurveTo(-0.045, -0.14, -0.065, -0.255);
+    rwShape.lineTo(0.03, -0.255);
+    rwShape.quadraticCurveTo(0.055, -0.15, 0.065, 0);
+    const rearWingPlane = new THREE.ExtrudeGeometry(rwShape, {
+      depth: 0.014,
+      bevelEnabled: true,
+      bevelSegments: 4,
+      steps: 1,
+      bevelSize: 0.005,
+      bevelThickness: 0.005,
+      curveSegments: 24,
+    });
+    rearWingPlane.rotateX(Math.PI / 2);
+    rearWingPlane.computeVertexNormals();
+
+    // Sculpted Wing Endplate (curved profile)
+    const epShape = new THREE.Shape();
+    epShape.moveTo(-0.09, -0.03);
+    epShape.lineTo(0.09, -0.03);
+    epShape.quadraticCurveTo(0.11, 0.02, 0.06, 0.075);
+    epShape.lineTo(-0.08, 0.085);
+    epShape.quadraticCurveTo(-0.11, 0.03, -0.09, -0.03);
+    const wingEndplate = new THREE.ExtrudeGeometry(epShape, {
+      depth: 0.012,
+      bevelEnabled: true,
+      bevelSegments: 3,
+      steps: 1,
+      bevelSize: 0.004,
+      bevelThickness: 0.004,
+      curveSegments: 20,
+    });
+    wingEndplate.translate(0, 0, -0.006);
+    wingEndplate.computeVertexNormals();
+
+    // 3D Titanium Halo Hoop (TubeGeometry along a 3D curve around the cockpit)
+    const haloCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.09, -0.055, -0.095),
+      new THREE.Vector3(0.03, -0.012, -0.082),
+      new THREE.Vector3(0.145, -0.018, 0),
+      new THREE.Vector3(0.03, -0.012, 0.082),
+      new THREE.Vector3(-0.09, -0.055, 0.095),
+    ]);
+    const haloHoop = new THREE.TubeGeometry(haloCurve, 32, 0.014, 12, false);
+
+    // LatheGeometry Rounded-Shoulder Racing Slick Tire (aligned with Z-axis via rotation-x = Math/2)
+    const buildTireGeo = (rOuter: number, rInner: number, width: number) => {
+      const hw = width / 2;
+      const sh = width * 0.18;
+      const pts = [
+        new THREE.Vector2(rInner, -hw * 0.88),
+        new THREE.Vector2(rOuter * 0.92, -hw),
+        new THREE.Vector2(rOuter, -hw + sh),
+        new THREE.Vector2(rOuter, hw - sh),
+        new THREE.Vector2(rOuter * 0.92, hw),
+        new THREE.Vector2(rInner, hw * 0.88),
+        new THREE.Vector2(rInner * 0.92, 0),
+        new THREE.Vector2(rInner, -hw * 0.88),
+      ];
+      const g = new THREE.LatheGeometry(pts, 40);
+      g.rotateX(Math.PI / 2);
+      g.computeVertexNormals();
+      return g;
+    };
+
+    // 6-Spoke 3D Star Alloy Wheel Rim (3D torus rim lips + 6 radial 3D spokes)
+    const buildSpokeRim = (rRim: number, width: number) => {
+      const parts: THREE.BufferGeometry[] = [];
+      const lipOut = new THREE.TorusGeometry(rRim * 0.92, rRim * 0.095, 14, 36);
+      const lipIn = lipOut.clone();
+      lipOut.translate(0, 0, width * 0.36);
+      lipIn.translate(0, 0, -width * 0.36);
+      parts.push(lipOut, lipIn);
+      for (let k = 0; k < 6; k++) {
+        const ang = (k * Math.PI) / 3;
+        const sp = new THREE.BoxGeometry(rRim * 1.72, rRim * 0.15, width * 0.22);
+        sp.rotateZ(ang);
+        sp.translate(0, 0, width * 0.18);
+        const spIn = sp.clone();
+        spIn.translate(0, 0, -width * 0.36);
+        parts.push(sp, spIn);
+      }
+      const merged = mergeGeometries(parts);
+      merged.computeVertexNormals();
+      return merged;
+    };
+
+    return {
+      hulls: [buildLoftedHull(0), buildLoftedHull(1), buildLoftedHull(2), buildLoftedHull(3)],
+      f1FrontWing,
+      rearWingPlane,
+      wingEndplate,
+      haloHoop,
+      tireFront: buildTireGeo(0.132, 0.076, 0.112),
+      tireRear: buildTireGeo(0.144, 0.082, 0.134),
+      tireRally: buildTireGeo(0.146, 0.08, 0.128),
+      rimFront: buildSpokeRim(0.078, 0.112),
+      rimRear: buildSpokeRim(0.085, 0.134),
+    };
+  }, [isCar]);
+
+  if (isCar && carGeoms) {
+    return (
+      <>
+        {smokePack && <primitive object={smokePack.mesh} />}
+        {race.marbles.map((m, i) => {
+          const { pos, quat } = race.marblePose(i, t);
+          const drained = race.drainPose(i, t);
+          const teamColor = (m as { color?: string }).color ?? "#ff3300";
+          const cls = (m as { stats?: { cls?: string } }).stats?.cls;
+          const carStyle = (cls === "F1" ? 0 : cls === "GT" ? 1 : cls === "BGY" ? 2 : cls === "JET" ? 3 : i % 4) as 0 | 1 | 2 | 3;
+          if (!wheelRefs.current[i]) wheelRefs.current[i] = [null, null, null, null];
+          if (!flameRefs.current[i]) flameRefs.current[i] = [null, null];
+          return (
+            <group
+              key={i}
+              ref={(el) => void (refs.current[i] = el)}
+              position={drained ? drained.pos : pos}
+              quaternion={quat}
+              visible={drained ? drained.visible : !race.dqBy(i, t)}
+            >
+              {/* Authentic 3D Lofted & Sculpted Motorsport Chassis */}
+              <group scale={[1.22, 0.92, 1.05]}>
+                {/* 1. Ground-Effect Carbon-Fiber Underbody Floor Plank & Rear Diffuser */}
+                <mesh position={[0.02, -0.242, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[0.78, 0.016, carStyle === 1 ? 0.48 : 0.42]} />
+                  <meshStandardMaterial color="#12151d" metalness={0.55} roughness={0.32} />
+                </mesh>
+                {/* Glowing Constructor Floor Edge LED Underglow Strips */}
+                {([-1, 1] as const).map((side) => (
+                  <mesh key={`fl${side}`} position={[0.0, -0.236, side * (carStyle === 1 ? 0.242 : 0.212)]}>
+                    <boxGeometry args={[0.48, 0.012, 0.012]} />
+                    <meshStandardMaterial color="#ffffff" emissive={teamColor} emissiveIntensity={2.4} toneMapped={false} />
+                  </mesh>
+                ))}
+
+                {/* 2. True 3D Lofted Aerodynamic Bodywork with Plan-View Country Flag & Racing Livery */}
+                <mesh geometry={carGeoms.hulls[carStyle]} castShadow receiveShadow>
+                  <meshPhysicalMaterial
+                    map={carTex[i]}
+                    emissiveMap={carTex[i]}
+                    emissive="#ffffff"
+                    emissiveIntensity={0.14}
+                    metalness={0.42}
+                    roughness={0.18}
+                    clearcoat={1}
+                    clearcoatRoughness={0.04}
+                    envMapIntensity={night ? 1.4 : 1.1}
+                  />
+                </mesh>
+
+                {/* 3. Sidepod Radiator Intakes & Aero Mirrors (Styles 0 & 1) */}
+                {(carStyle === 0 || carStyle === 1) &&
+                  ([-1, 1] as const).map((side) => (
+                    <group key={`sp${side}`}>
+                      {/* Dark carbon radiator intake mouth on front of sidepods */}
+                      <mesh position={[0.14, -0.145, side * 0.165]} rotation={[0, side * 0.18, 0]}>
+                        <boxGeometry args={[0.03, 0.068, 0.095]} />
+                        <meshStandardMaterial color="#0b0d12" roughness={0.85} metalness={0.2} />
+                      </mesh>
+                      {/* Sculpted wing mirror pod on stalk */}
+                      <mesh position={[0.11, -0.055, side * 0.155]} rotation={[0.3 * side, 0, -0.2]}>
+                        <boxGeometry args={[0.045, 0.022, 0.036]} />
+                        <meshPhysicalMaterial color={teamColor} metalness={0.6} roughness={0.18} clearcoat={1} />
+                      </mesh>
+                    </group>
+                  ))}
+
+                {/* 4. Class 0 (Formula Apex): Swept Delta Multi-Element Front Wing + 3D Titanium Halo + Airbox Intake */}
+                {carStyle === 0 && (
+                  <group>
+                    {/* Swept 3D Delta Carbon Front Wing + Team Secondary Flap + Curved Endplates */}
+                    <group position={[0.49, -0.238, 0]}>
+                      <mesh geometry={carGeoms.f1FrontWing} castShadow receiveShadow>
+                        <meshStandardMaterial color="#161a22" metalness={0.65} roughness={0.26} />
+                      </mesh>
+                      <mesh geometry={carGeoms.f1FrontWing} position={[-0.025, 0.018, 0]} scale={[0.72, 1, 0.94]} rotation={[0, 0, 0.18]} castShadow>
+                        <meshPhysicalMaterial color={teamColor} emissive={teamColor} emissiveIntensity={0.2} metalness={0.5} roughness={0.2} clearcoat={1} />
+                      </mesh>
+                      {([-1, 1] as const).map((side) => (
+                        <mesh key={side} geometry={carGeoms.wingEndplate} position={[-0.01, 0.02, side * 0.282]} castShadow>
+                          <meshPhysicalMaterial color="#f4f7fc" metalness={0.35} roughness={0.22} clearcoat={1} />
+                        </mesh>
+                      ))}
+                    </group>
+                    {/* 3D Titanium FIA Halo Protection Hoop + Front Pylon */}
+                    <mesh geometry={carGeoms.haloHoop} castShadow>
+                      <meshStandardMaterial color="#202530" metalness={0.88} roughness={0.18} />
+                    </mesh>
+                    <mesh position={[0.135, -0.055, 0]} rotation={[0, 0, -0.38]} castShadow>
+                      <cylinderGeometry args={[0.011, 0.013, 0.085, 16]} />
+                      <meshStandardMaterial color="#202530" metalness={0.88} roughness={0.18} />
+                    </mesh>
+                    {/* Overhead Roll-Hoop Ram-Air Intake Scoop */}
+                    <mesh position={[-0.105, -0.005, 0]} rotation={[0, 0, Math.PI / 2]}>
+                      <cylinderGeometry args={[0.032, 0.038, 0.06, 20]} />
+                      <meshStandardMaterial color="#0c0e14" metalness={0.5} roughness={0.4} />
+                    </mesh>
+                  </group>
+                )}
+
+                {/* 5. Class 1 (Le Mans Hypercar / Cyber-GT): Wraparound GT Windshield, Roof Scoop, Splitter, Dorsal Fin & Quad LEDs */}
+                {carStyle === 1 && (
+                  <group>
+                    {/* Front Carbon GT Splitter Lip */}
+                    <mesh position={[0.48, -0.242, 0]} castShadow>
+                      <boxGeometry args={[0.14, 0.018, 0.52]} />
+                      <meshStandardMaterial color="#11141c" metalness={0.7} roughness={0.24} />
+                    </mesh>
+                    {/* Curved Wraparound Smoked-Glass GT Windshield Visor */}
+                    <mesh position={[0.09, -0.052, 0]} rotation={[0, Math.PI / 2, -0.32]}>
+                      <cylinderGeometry args={[0.115, 0.138, 0.068, 32, 1, true, -Math.PI * 0.45, Math.PI * 0.9]} />
+                      <meshPhysicalMaterial color="#090e18" emissive={teamColor} emissiveIntensity={0.25} metalness={0.92} roughness={0.05} clearcoat={1} side={THREE.DoubleSide} />
+                    </mesh>
+                    {/* GT3 Roof Halo Hoop + Overhead Ram-Air Scoop */}
+                    <mesh geometry={carGeoms.haloHoop} scale={[1.05, 1.02, 1.08]} castShadow>
+                      <meshPhysicalMaterial color={teamColor} metalness={0.65} roughness={0.18} clearcoat={1} />
+                    </mesh>
+                    {/* LMP Central Carbon Dorsal Shark-Fin */}
+                    <mesh position={[-0.24, -0.015, 0]} castShadow>
+                      <boxGeometry args={[0.24, 0.11, 0.014]} />
+                      <meshPhysicalMaterial color={teamColor} metalness={0.55} roughness={0.2} clearcoat={1} />
+                    </mesh>
+                    {/* Glowing Quad Cyber-GT Laser Headlights on Front Fenders */}
+                    {([-1, 1] as const).map((side) => (
+                      <mesh key={side} position={[0.42, -0.115, side * 0.195]} rotation={[0, -side * 0.22, 0.18]}>
+                        <boxGeometry args={[0.055, 0.02, 0.082]} />
+                        <meshStandardMaterial color="#e0ffff" emissive="#00f0ff" emissiveIntensity={3.6} toneMapped={false} />
+                      </mesh>
+                    ))}
+                  </group>
+                )}
+
+                {/* 6. Class 2 (Dakar / WRC Rally Raid): Tubular Bull-Bar, Full Roll Cage, 4-Pod Roof Lightbar & Twin Spare Tires */}
+                {carStyle === 2 && (
+                  <group>
+                    {/* Front Aluminum Skid-Plate & Bull-Bar */}
+                    <mesh position={[0.48, -0.195, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+                      <cylinderGeometry args={[0.022, 0.022, 0.36, 20]} />
+                      <meshStandardMaterial color="#2a303c" metalness={0.85} roughness={0.22} />
+                    </mesh>
+                    {/* 3D Tubular Rally Roll Cage + Roof Rack */}
+                    <mesh geometry={carGeoms.haloHoop} position={[0, 0.025, 0]} scale={[1.15, 1.15, 1.18]} castShadow>
+                      <meshStandardMaterial color={teamColor} metalness={0.7} roughness={0.22} />
+                    </mesh>
+                    {/* 4-Pod Rally Raid LED Roof Lightbar */}
+                    {[-0.075, -0.025, 0.025, 0.075].map((lz, li) => (
+                      <mesh key={li} position={[0.12, 0.055, lz]} rotation={[0, 0, Math.PI / 2]}>
+                        <cylinderGeometry args={[0.02, 0.018, 0.032, 16]} />
+                        <meshStandardMaterial color="#fffbe6" emissive="#ffdd66" emissiveIntensity={3.6} toneMapped={false} />
+                      </mesh>
+                    ))}
+                    {/* Angled Rear Dakar Spare Wheel & Tire in Rear Bed */}
+                    <group position={[-0.32, -0.055, 0]} rotation={[Math.PI / 2, 0.42, 0]}>
+                      <mesh geometry={carGeoms.tireFront} scale={[0.82, 0.82, 0.82]} castShadow>
+                        <meshStandardMaterial color="#15181f" roughness={0.72} metalness={0.18} />
+                      </mesh>
+                      <mesh geometry={carGeoms.rimFront} scale={[0.82, 0.82, 0.82]}>
+                        <meshStandardMaterial color={teamColor} metalness={0.85} roughness={0.2} />
+                      </mesh>
+                    </group>
+                  </group>
+                )}
+
+                {/* 7. Class 3 (Bonneville Jet-Streamliner): 8 Individual Chrome V8 Exhaust Headers, Twin Tailfins & Jet Turbine */}
+                {carStyle === 3 && (
+                  <group>
+                    {/* 4 Individual Curved Chrome V8 Exhaust Pipes per Flank */}
+                    {([-1, 1] as const).map((side) =>
+                      [0.2, 0.09, -0.02, -0.13].map((px, pi) => (
+                        <mesh key={`${side}-${pi}`} position={[px, -0.155, side * 0.175]} rotation={[side * 0.25, -side * 0.35, Math.PI / 2]} castShadow>
+                          <cylinderGeometry args={[0.016, 0.021, 0.14, 16]} />
+                          <meshStandardMaterial color="#eef4ff" metalness={0.96} roughness={0.07} />
+                        </mesh>
+                      )),
+                    )}
+                    {/* Twin Swept Supersonic Tailfins */}
+                    {([-1, 1] as const).map((side) => (
+                      <mesh key={side} geometry={carGeoms.wingEndplate} position={[-0.31, -0.04, side * 0.155]} scale={[1.35, 1.45, 1.2]} castShadow>
+                        <meshPhysicalMaterial color={teamColor} emissive={teamColor} emissiveIntensity={0.22} metalness={0.55} roughness={0.18} clearcoat={1} />
+                      </mesh>
+                    ))}
+                    {/* Massive Rear Jet-Turbine Nozzle & Multi-Stage Afterburner Plume */}
+                    <mesh position={[-0.41, -0.145, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
+                      <cylinderGeometry args={[0.078, 0.062, 0.12, 32]} />
+                      <meshStandardMaterial color="#1d222c" metalness={0.88} roughness={0.2} />
+                    </mesh>
+                    <mesh
+                      ref={(el) => void (flameRefs.current[i][0] = el)}
+                      position={[-0.52, -0.145, 0]}
+                      rotation={[0, 0, Math.PI / 2]}
+                    >
+                      <coneGeometry args={[0.056, 0.22, 28]} />
+                      <meshStandardMaterial color="#88f0ff" emissive="#ff6600" emissiveIntensity={3.8} toneMapped={false} />
+                    </mesh>
+                  </group>
+                )}
+
+                {/* 8. Recessed Driver Helmet + Iridescent Visor inside the Cockpit */}
+                <group position={[0.01, -0.068, 0]}>
+                  <mesh castShadow>
+                    <sphereGeometry args={[0.088, 36, 28]} />
+                    <meshPhysicalMaterial
+                      map={tex[i].map}
+                      emissiveMap={tex[i].map}
+                      emissive="#ffffff"
+                      emissiveIntensity={0.18}
+                      metalness={0.75}
+                      roughness={0.14}
+                      clearcoat={1}
+                    />
+                  </mesh>
+                  <mesh position={[0.022, 0.008, 0]} rotation={[0, Math.PI / 2, -0.12]}>
+                    <cylinderGeometry args={[0.091, 0.091, 0.044, 28, 1, true, -Math.PI * 0.36, Math.PI * 0.72]} />
+                    <meshStandardMaterial color="#080c14" emissive={teamColor} emissiveIntensity={0.45} metalness={0.96} roughness={0.05} side={THREE.DoubleSide} />
+                  </mesh>
+                </group>
+
+                {/* 9. Swan-Neck Dual-Plane Rear Wing + Curved Endplates + Rear Diffuser Strakes + FIA Rain Light & Twin Exhausts */}
+                {carStyle !== 3 && (
+                  <group position={[-0.37, -0.025, 0]}>
+                    {/* Twin Swan-Neck Wing Pylons */}
+                    {([-1, 1] as const).map((side) => (
+                      <mesh key={`py${side}`} position={[0.04, -0.045, side * 0.068]} rotation={[0, 0, -0.22]} castShadow>
+                        <boxGeometry args={[0.065, 0.105, 0.012]} />
+                        <meshStandardMaterial color="#151922" metalness={0.75} roughness={0.25} />
+                      </mesh>
+                    ))}
+                    {/* Lower Sculpted Carbon Mainplane + Upper Team-Colored DRS Swept Wing */}
+                    <mesh geometry={carGeoms.rearWingPlane} position={[0.015, -0.008, 0]} scale={[1, 1, carStyle === 1 ? 1.06 : 0.96]} rotation={[0, 0, 0.06]} castShadow>
+                      <meshStandardMaterial color="#151922" metalness={0.65} roughness={0.24} />
+                    </mesh>
+                    <mesh geometry={carGeoms.rearWingPlane} position={[-0.018, 0.024, 0]} scale={[0.88, 1, carStyle === 1 ? 1.06 : 0.96]} rotation={[0, 0, 0.14]} castShadow>
+                      <meshPhysicalMaterial color={teamColor} emissive={teamColor} emissiveIntensity={0.26} metalness={0.55} roughness={0.16} clearcoat={1} />
+                    </mesh>
+                    {/* Sculpted Curved Rear Wing Endplates */}
+                    {([-1, 1] as const).map((side) => (
+                      <mesh key={side} geometry={carGeoms.wingEndplate} position={[0, -0.015, side * (carStyle === 1 ? 0.272 : 0.246)]} scale={[1.02, 1.22, 1]} castShadow>
+                        <meshPhysicalMaterial color={teamColor} metalness={0.5} roughness={0.2} clearcoat={1} />
+                      </mesh>
+                    ))}
+                    {/* 4 Vertical Carbon Venturi Diffuser Strakes under Rear Bumper */}
+                    {[-0.15, -0.055, 0.055, 0.15].map((dz, di) => (
+                      <mesh key={`df${di}`} position={[-0.02, -0.175, dz]}>
+                        <boxGeometry args={[0.08, 0.048, 0.008]} />
+                        <meshStandardMaterial color="#10131a" metalness={0.6} roughness={0.3} />
+                      </mesh>
+                    ))}
+                    {/* Glowing Red FIA Rain Light / Cyber-GT Full-Width LED Taillight Bar (flares intensely under braking!) */}
+                    <mesh ref={(el) => void (brakeRefs.current[i] = el)} position={[-0.045, -0.135, 0]}>
+                      <boxGeometry args={[0.026, 0.032, carStyle === 1 ? 0.46 : 0.052]} />
+                      <meshStandardMaterial color="#ff2233" emissive="#ff1122" emissiveIntensity={2.2} toneMapped={false} />
+                    </mesh>
+                    {/* Twin Titanium Exhaust Pipes with Recessed Glowing Core & Dynamic DRS/Overtake Afterburner Flames */}
+                    {([-1, 1] as const).map((side, exIdx) => (
+                      <group key={`ex${side}`} position={[-0.052, -0.132, side * 0.092]}>
+                        <mesh rotation={[0, 0, Math.PI / 2]}>
+                          <cylinderGeometry args={[0.022, 0.024, 0.062, 24]} />
+                          <meshStandardMaterial color="#c8d4e8" metalness={0.92} roughness={0.15} />
+                        </mesh>
+                        <mesh position={[-0.029, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
+                          <cylinderGeometry args={[0.016, 0.016, 0.008, 20]} />
+                          <meshStandardMaterial color="#77e8ff" emissive="#00c8ff" emissiveIntensity={2.8} toneMapped={false} />
+                        </mesh>
+                        <mesh
+                          ref={(el) => void (flameRefs.current[i][exIdx] = el)}
+                          position={[-0.11, 0, 0]}
+                          rotation={[0, 0, Math.PI / 2]}
+                        >
+                          <coneGeometry args={[0.024, 0.16, 20]} />
+                          <meshStandardMaterial color="#88f8ff" emissive="#00d8ff" emissiveIntensity={3.6} transparent opacity={0.88} toneMapped={false} />
+                        </mesh>
+                      </group>
+                    ))}
+                  </group>
+                )}
+
+                {/* 10. Double-Wishbone Carbon Suspension Arms & Pushrods connecting Chassis to Wheel Hubs */}
+                {(
+                  [
+                    [0.26, -0.195, -1],
+                    [0.26, -0.195, 1],
+                    [-0.25, -0.19, -1],
+                    [-0.25, -0.19, 1],
+                  ] as const
+                ).map(([sx, sy, side], sIdx) => (
+                  <group key={`susp${sIdx}`}>
+                    {/* Upper & Lower Carbon Wishbone Arms */}
+                    <mesh position={[sx, sy + 0.022, side * 0.165]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+                      <cylinderGeometry args={[0.008, 0.008, 0.17, 10]} />
+                      <meshStandardMaterial color="#181c24" metalness={0.75} roughness={0.25} />
+                    </mesh>
+                    <mesh position={[sx, sy - 0.022, side * 0.165]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+                      <cylinderGeometry args={[0.009, 0.009, 0.17, 10]} />
+                      <meshStandardMaterial color="#181c24" metalness={0.75} roughness={0.25} />
+                    </mesh>
+                    {/* Angled Coilover Pushrod */}
+                    <mesh position={[sx - 0.01, sy + 0.035, side * 0.155]} rotation={[side * 0.62, 0, 0]}>
+                      <cylinderGeometry args={[0.007, 0.007, 0.15, 10]} />
+                      <meshStandardMaterial color={teamColor} metalness={0.8} roughness={0.2} />
+                    </mesh>
+                    {/* Non-rotating Slotted Carbon Brake Disc & Glowing Red Brembo Caliper */}
+                    <mesh position={[sx, sy, side * (sIdx < 2 ? 0.24 : 0.25)]}>
+                      <cylinderGeometry args={[0.064, 0.064, 0.016, 24]} />
+                      <meshStandardMaterial color="#383e4c" metalness={0.85} roughness={0.28} />
+                    </mesh>
+                  </group>
+                ))}
+
+                {/* 11. 4 Rounded-Shoulder LatheGeometry Racing Slicks + 6-Spoke 3D Star Alloy Rims + Center-Lock Nuts */}
+                {(
+                  [
+                    [0.26, -0.195, -0.262, true, 0],
+                    [0.26, -0.195, 0.262, true, 1],
+                    [-0.25, -0.185, -0.272, false, 2],
+                    [-0.25, -0.185, 0.272, false, 3],
+                  ] as const
+                ).map(([wx, wy, wz, isFront, wIdx]) => {
+                  const wr = isFront ? 0.132 : 0.144;
+                  const ww = isFront ? 0.112 : 0.134;
+                  const signZ = wz >= 0 ? 1 : -1;
+                  return (
+                    <group key={wIdx} position={[wx, wy, wz]} ref={(el) => void (wheelRefs.current[i][wIdx] = el)}>
+                      {/* LatheGeometry Rounded-Shoulder Racing Slick Tire */}
+                      <mesh
+                        geometry={carStyle === 2 ? carGeoms.tireRally : isFront ? carGeoms.tireFront : carGeoms.tireRear}
+                        castShadow
+                        receiveShadow
+                      >
+                        <meshStandardMaterial color="#121419" roughness={0.68} metalness={0.16} />
+                      </mesh>
+                      {/* Pirelli-Style Colored Sidewall Stripe Ring on Outer Face */}
+                      <mesh position={[0, 0, signZ * (ww * 0.495)]} rotation={[0, signZ > 0 ? 0 : Math.PI, 0]}>
+                        <ringGeometry args={[wr * 0.66, wr * 0.78, 36]} />
+                        <meshStandardMaterial color={teamColor} emissive={teamColor} emissiveIntensity={0.48} roughness={0.22} metalness={0.6} side={THREE.DoubleSide} />
+                      </mesh>
+                      {/* 6-Spoke 3D Star Forged Alloy Wheel Rim */}
+                      <mesh
+                        geometry={isFront ? carGeoms.rimFront : carGeoms.rimRear}
+                        rotation={[0, signZ > 0 ? 0 : Math.PI, 0]}
+                        castShadow
+                      >
+                        <meshStandardMaterial color="#e6ecf5" roughness={0.15} metalness={0.94} />
+                      </mesh>
+                      {/* Anodized Center-Lock Wheel Nut */}
+                      <mesh rotation={[Math.PI / 2, 0, 0]}>
+                        <cylinderGeometry args={[wr * 0.16, wr * 0.16, ww * 0.92, 18]} />
+                        <meshStandardMaterial color={teamColor} roughness={0.18} metalness={0.88} />
+                      </mesh>
+                    </group>
+                  );
+                })}
+              </group>
+            </group>
+          );
+        })}
+      </>
+    );
+  }
   return (
     <>
       {race.marbles.map((_, i) => {
@@ -1642,14 +2965,18 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
             <sphereGeometry args={[race.data.marbleRadius, 96, 64]} />
             <meshPhysicalMaterial
               map={tex[i].map}
+              emissiveMap={tex[i].map}
+              emissive="#ffffff"
+              emissiveIntensity={0.14}
               metalnessMap={tex[i].mr}
               roughnessMap={tex[i].mr}
               metalness={1}
               roughness={1}
               clearcoat={1}
-              clearcoatRoughness={0.04}
-              ior={1.52}
-              envMapIntensity={night ? 1.2 : 1.0}
+              clearcoatRoughness={0.025}
+              ior={1.58}
+              reflectivity={0.95}
+              envMapIntensity={night ? 1.25 : 1.0}
             />
           </mesh>
         );
@@ -1658,19 +2985,22 @@ export function Marbles({ race, t }: { race: Race; t: number }) {
   );
 }
 
-/** High-energy collision sparks emitted deterministically from hard marble impacts; closed-form for any frame or slow-mo replay. */
+/** High-energy collision sparks emitted deterministically from hard marble/car impacts; closed-form for any frame or slow-mo replay. */
 export function ImpactSparks({ race, t }: { race: Race; t: number }) {
   const view = useView(race);
   const sub = useSubframe();
-  const MAX = 160;
-  const { mesh, sparks } = useMemo(() => {
+  const isCar = (race.data.info as { vehicle?: string })?.vehicle === "car";
+  const MAX = isCar ? 420 : 160;
+  const { mesh, sparks, geo, mat } = useMemo(() => {
     const frames = race.data.frames as number[][][];
     const fps = race.fps;
+    const minImp = isCar ? 3.2 : 5.2;
     const list: { t0: number; life: number; origin: Vec3; vel: Vec3; hot: number }[] = [];
     for (let i = 0; i < race.N; i++) {
       let lastBurst = -999;
+      let lastSkid = -999;
       for (let f = Math.max(2, race.timeline.raceStart + 10); f < race.lastFrame; f++) {
-        if (f - lastBurst < 12 || race.dqBy(i, f)) continue;
+        if (race.dqBy(i, f)) continue;
         const P0 = frames[f - 2][i];
         const P1 = frames[f - 1][i];
         const P2 = frames[f][i];
@@ -1686,9 +3016,33 @@ export function ImpactSparks({ race, t }: { race: Race; t: number }) {
         const dvy = v2y - v1y;
         const dvz = v2z - v1z;
         const impulse = Math.hypot(dvx, dvy, dvz);
-        if (impulse < 5.2) continue;
+        // Underbody titanium skid-block sparks on jump ramps, landings, crests & peak-speed aero compression
+        if (isCar && f - lastSkid >= 4 && ((dvy > 1.05 && speed > 7.5) || (speed > 13.2 && (f + i * 3) % 5 === 0))) {
+          lastSkid = f;
+          const invSpd = 1 / speed;
+          const fx = v2x * invSpd;
+          const fz = v2z * invSpd;
+          const skidCount = dvy > 1.05 ? 7 : 3;
+          const skidSeed = f * 53 + i * 29;
+          for (let k = 0; k < skidCount; k++) {
+            const s = skidSeed + k * 5.9;
+            const lat = (hash(s) - 0.5) * 1.4;
+            list.push({
+              t0: f - 0.3 + hash(s + 1.7) * 0.5,
+              life: 0.14 + hash(s + 3.1) * 0.18,
+              origin: [P2[0] - fx * 0.34 + fz * (hash(s + 4.3) - 0.5) * 0.18, P2[1] - 0.24, P2[2] - fz * 0.34 - fx * (hash(s + 4.3) - 0.5) * 0.18],
+              vel: [
+                v2x * 0.28 + fz * lat,
+                0.8 + hash(s + 6.1) * 2.1,
+                v2z * 0.28 - fx * lat,
+              ],
+              hot: 1,
+            });
+          }
+        }
+        if (f - lastBurst < (isCar ? 8 : 12) || impulse < minImp) continue;
         lastBurst = f;
-        const count = Math.min(8, Math.floor(3 + (impulse - 5.2) * 0.45));
+        const count = Math.min(isCar ? 14 : 8, Math.floor((isCar ? 5 : 3) + (impulse - minImp) * 0.55));
         const seed = f * 37 + i * 13;
         for (let k = 0; k < count; k++) {
           const s = seed + k * 7.3;
@@ -1714,7 +3068,7 @@ export function ImpactSparks({ race, t }: { race: Race; t: number }) {
     const mat = new THREE.MeshStandardMaterial({
       color: "#fff5d6",
       emissive: "#ff8814",
-      emissiveIntensity: 3.2,
+      emissiveIntensity: 3.4,
       roughness: 0.2,
       toneMapped: false,
     });
@@ -1723,8 +3077,16 @@ export function ImpactSparks({ race, t }: { race: Race; t: number }) {
     const warm = new THREE.Color("#ff9922");
     const whiteHot = new THREE.Color("#fff7df");
     for (let k = 0; k < MAX; k++) inst.setColorAt(k, k % 3 === 0 ? whiteHot : warm);
-    return { mesh: inst, sparks: list };
-  }, [race]);
+    return { mesh: inst, sparks: list, geo, mat };
+  }, [race, isCar, MAX]);
+
+  useEffect(
+    () => () => {
+      geo.dispose();
+      mat.dispose();
+    },
+    [geo, mat],
+  );
 
   const update = (simT: number) => {
     const fps = race.fps;

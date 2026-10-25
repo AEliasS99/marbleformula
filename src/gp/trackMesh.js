@@ -10,7 +10,7 @@
 
 export const TRACK = {
   width: 4.2, // usual floor width, wall to wall
-  wallHeight: 1.35, // taller walls for the steep banking
+  wallHeight: 0.58, // sleek F1 / Alpine barrier height so trackside scenery is clearly visible over the walls
   fillet: 0.14,
   wall: 0.16, // shell thickness
 };
@@ -35,9 +35,9 @@ export function surfaceHeight(lateral, w = HALF) {
  * it); `outer` is the same pushed out by the shell thickness. Every width gives
  * the same number of points, so neighbouring rings join up.
  */
-export function troughProfile(steps = FILLET_STEPS, w = HALF) {
+export function troughProfile(steps = FILLET_STEPS, w = HALF, wallHeight = TRACK.wallHeight) {
   const F = TRACK.fillet;
-  const H = TRACK.wallHeight;
+  const H = wallHeight;
   const T = TRACK.wall;
   const corner = (side, r) => {
     // Quarter circle from the wall (going down) to the floor (going inward).
@@ -102,10 +102,10 @@ const at = (s, lateral, up) => [
  * `caps` (end plates) — plus one merged triangle soup for the physics collider.
  * UVs: u = units along the track / 4, v = 0..1 across.
  */
-export function buildTrackMesh(samples, { arcSteps = FILLET_STEPS, endCaps = true } = {}) {
+export function buildTrackMesh(samples, { arcSteps = FILLET_STEPS, endCaps = true, wallHeight = TRACK.wallHeight } = {}) {
   const limits = sideLimits(samples);
   const parts = { floor: geo(), rim: geo(), shell: geo() };
-  const profiles = samples.map((s) => troughProfile(arcSteps, s.w ?? HALF));
+  const profiles = samples.map((s) => troughProfile(arcSteps, s.w ?? HALF, wallHeight));
 
   const strip = (g, ringOf, vOf) => {
     const base = g.position.length / 3;

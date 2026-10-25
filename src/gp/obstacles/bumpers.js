@@ -9,6 +9,10 @@ export default {
   dq: true,
   card: { difficulty: 2, chaos: 3, seconds: 1.5, summary: "Three springy posts that bat marbles sideways." },
   build(f, { cylinder }) {
+    if (process.env.GP_CARS === "1") {
+      // Zero pinball bumpers in Car Mode!
+      return;
+    }
     cylinder("bumper", f.u, 0.3, 0.2, 0.75, 0.8);
     cylinder("bumper", f.u + 2.3, -0.4, 0.24, 0.75, 0.8);
     cylinder("bumper", f.u + 4.5, 0.35, 0.22, 0.75, 0.8);

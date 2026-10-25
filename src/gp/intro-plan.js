@@ -10,59 +10,59 @@
 // The intro's simulation clock runs up to 0, where the race's starts: the
 // marbles wait on the grid while the machines already turn.
 
-export const TEAM_FRAMES = 90;
+export const TEAM_FRAMES = 150; // 2.5 s per Scuderia/Team in the 3D Showroom (10 teams = 25 s)
 export const GRID_U = -9.5; // where the samples (and the grid) begin
 
 /**
  * @param {{ round: number, L: number, highlight: number | null, cards: { type: string, u: number }[], teams: number }} o
  */
 export function introPlan({ round, L, highlight, cards, teams }) {
-  // Smooth F1 broadcast intro (~25 s = 1,500 frames):
-  //   cold (2.5 s) -> title (3.0 s) -> flyover (13.0 s, calm drone lap slowing over each obstacle) -> lineup (6.5 s)
-  const fly = 780;
+  // Full, unhurried F1 broadcast presentation:
+  //   title   (4.5 s = 270 frames: round, circuit, length, laps, knockout format)
+  //   teams   (25.0 s = 1500 frames on Round 1: 3D Showroom presenting all 10 Scuderias & their 2 Countries)
+  //   stakes  (5.0 s = 300 frames on Rounds 2+: Drivers & Constructors Championship Standings)
+  //   flyover (~35.0 s = 2100 frames over the ENTIRE course L: presents all obstacles from Start to Finish & Chain Lift)
+  //   lineup  (18.0 s = 1080 frames: steady walk across all 10 lanes / 20 Countries & Scuderias on the Starting Grid)
+  const flyL = L;
+  const openCards = cards.filter((c) => c.u <= flyL - 2);
+  const fly = Math.max(2100, openCards.length * 230);
   const scenes = [
-    { id: "cold", frames: highlight === null ? 0 : 150 },
-    { id: "title", frames: 180 },
-    ...(round === 1 ? [{ id: "teams", frames: teams * TEAM_FRAMES }] : []),
+    { id: "cold", frames: 0 },
+    { id: "title", frames: 270 },
+    { id: "teams", frames: round === 1 ? teams * TEAM_FRAMES : 0 },
+    { id: "stakes", frames: round > 1 ? 300 : 0 },
     { id: "flyover", frames: fly },
-    { id: "lineup", frames: 390 },
+    { id: "lineup", frames: 1080 },
   ].filter((sc) => sc.frames > 0);
   let at = 0;
   for (const sc of scenes) {
     sc.at = at;
     at += sc.frames;
   }
-  const pace = flyPacing(L, cards, fly);
-  // Each card shows while the drone passes its obstacle (at least 2.0 s).
-  const shown = cards.map((c) => {
-    const a = Math.round(pace.xAt(c.u - 5));
-    const b = Math.round(Math.max(pace.xAt(c.u + 7), a + 120));
+  const pace = flyPacing(flyL, openCards, fly);
+  // Lock each obstacle card's [from, to] window directly to the frames when the drone camera is slowed over c.u
+  // (never shift cards after the fact, which previously desynchronized the cards from the 3D obstacle on screen!).
+  const shown = openCards.map((c, idx) => {
+    const centerFrame = Math.round(pace.xAt(c.u));
+    const prevMid = idx > 0 ? Math.round((pace.xAt(openCards[idx - 1].u) + centerFrame) / 2) : 18;
+    const nextMid = idx + 1 < openCards.length ? Math.round((centerFrame + pace.xAt(openCards[idx + 1].u)) / 2) : fly - 10;
+    const a = Math.max(prevMid, centerFrame - 105);
+    const b = Math.min(nextMid, Math.max(a + 150, centerFrame + 105));
     return { ...c, from: a, to: b };
   });
-  // Every card stays up at least 2.0 s (a close neighbour waits its turn), and
-  // gives way when the next one comes in.
-  for (let k = 1; k < shown.length; k++) {
-    shown[k].from = Math.max(shown[k].from, shown[k - 1].from + 120);
-    shown[k].to = Math.max(shown[k].to, shown[k].from + 120);
-  }
-  for (let k = 0; k < shown.length; k++) {
-    if (k + 1 < shown.length) shown[k].to = Math.min(shown[k].to, shown[k + 1].from);
-    shown[k].to = Math.min(shown[k].to, fly);
-  }
-  return { scenes, total: at, highlight, L, cards: shown };
+  return { scenes, total: at, highlight, L: flyL, cards: shown };
 }
 
 /**
  * The drone's pace along the lap: fast on the straights, slow over each
- * obstacle. Time density 1 + 6·e^(-(d/6)²) per unit of track around each card;
- * `uAt(x)` is the drone's u at frame x of the flyover, `xAt(u)` the inverse,
- * and `slow(u)` 0..1, how much it has slowed there (it flies lower).
+ * obstacle. Strong density peak (9.5) around each obstacle card so the camera
+ * lingers directly over each 3D machine for ~3 seconds while its card is shown.
  */
 export function flyPacing(L, cards, frames) {
   const step = 0.5;
   const u0 = GRID_U;
   const n = Math.ceil((L - u0) / step);
-  const dens = (u) => 1 + cards.reduce((a, c) => a + 2.5 * Math.exp(-(((u - c.u - 1) / 7) ** 2)), 0);
+  const dens = (u) => 1 + cards.reduce((a, c) => a + 9.5 * Math.exp(-(((u - c.u) / 6.5) ** 2)), 0);
   const cum = [0];
   for (let k = 0; k < n; k++) cum.push(cum[k] + dens(u0 + (k + 0.5) * step) * step);
   const total = cum[n];
