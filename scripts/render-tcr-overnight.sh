@@ -12,8 +12,15 @@ echo "Saving all videos exclusively to $VIDEO_OUT"
 echo "=========================================================="
 
 # 1. Render Swiss Alps Matterhorn "Don't Be Last!" 4K UHD Tournament (Heats 1-4 + 10-Car Grand Final)
-rm -f src/gp/races/tcr-qualifiers.json
 for H in 1 2 3 4 final; do
+  OUT_FILE="$VIDEO_OUT/tcr-alps-heat${H}-4k.mp4"
+  if [[ "$H" == "final" ]]; then
+    OUT_FILE="$VIDEO_OUT/tcr-alps-grand-final-4k.mp4"
+  fi
+  if [[ -s "$OUT_FILE" ]]; then
+    echo ">>> [ALPS 4K TCR - HEAT: $H] Already rendered ($OUT_FILE), skipping to next..."
+    continue
+  fi
   echo ""
   echo ">>> [ALPS 4K TCR - HEAT: $H] Baking & Bundling at $(date)..."
   GP_CARS=1 GP_LAPS=1 GP_HEAT=$H GP_ONLY=r1-monaco node scripts/season.mjs
@@ -23,13 +30,8 @@ for H in 1 2 3 4 final; do
   rm -rf out/bundle-cars
   npx remotion bundle src/index.ts --out-dir out/bundle-cars
 
-  OUT_FILE="$VIDEO_OUT/tcr-alps-heat${H}-4k.mp4"
-  if [[ "$H" == "final" ]]; then
-    OUT_FILE="$VIDEO_OUT/tcr-alps-grand-final-4k.mp4"
-  fi
-
   echo ">>> [ALPS 4K TCR - HEAT: $H] Rendering 4K UHD $OUT_FILE at $(date)..."
-  npx remotion render out/bundle-cars GP-r1-monaco-4k "$OUT_FILE" --props='{"dpr":1}' --concurrency=4
+  npx remotion render out/bundle-cars GP-r1-monaco-4k "$OUT_FILE" --props='{"dpr":1}' --concurrency=4 --timeout=180000
   echo ">>> [ALPS 4K TCR - HEAT: $H] Finished $OUT_FILE at $(date)!"
 done
 
@@ -90,7 +92,7 @@ for H in 1 2 3 4 final; do
   fi
 
   echo ">>> [TOKYO 4K TCR - HEAT: $H] Rendering 4K UHD $OUT_FILE at $(date)..."
-  npx remotion render out/bundle-cars GP-r5-monza-4k "$OUT_FILE" --props='{"dpr":1}' --concurrency=4
+  npx remotion render out/bundle-cars GP-r5-monza-4k "$OUT_FILE" --props='{"dpr":1}' --concurrency=4 --timeout=180000
   echo ">>> [TOKYO 4K TCR - HEAT: $H] Finished $OUT_FILE at $(date)!"
 done
 
