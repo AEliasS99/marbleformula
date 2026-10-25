@@ -1,8 +1,8 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-cd /Users/eli/marmot/races
-VIDEO_OUT="/Users/eli/GoogleCloud"
+cd "${0:A:h}/.."
+VIDEO_OUT="${VIDEO_OUT:-$HOME/GoogleCloud}"
 mkdir -p out out/gp "$VIDEO_OUT"
 
 echo "=========================================================="
