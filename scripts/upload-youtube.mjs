@@ -78,11 +78,11 @@ function loadClient() {
   if (process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET) {
     return { clientId: process.env.YOUTUBE_CLIENT_ID, clientSecret: process.env.YOUTUBE_CLIENT_SECRET };
   }
-  if (!existsSync(CLIENT_FILE) && existsSync(`${VIDEO_CLOUD_DIR}/.youtube-auth/.youtube-client.json`)) {
-    copyFileSync(`${VIDEO_CLOUD_DIR}/.youtube-auth/.youtube-client.json`, CLIENT_FILE);
+  if (!existsSync(CLIENT_FILE) && existsSync(`${VIDEO_CLOUD_DIR}/youtube-auth/youtube-client.json`)) {
+    copyFileSync(`${VIDEO_CLOUD_DIR}/youtube-auth/youtube-client.json`, CLIENT_FILE);
   }
-  if (!existsSync(TOKEN_FILE) && existsSync(`${VIDEO_CLOUD_DIR}/.youtube-auth/.youtube-token.json`)) {
-    copyFileSync(`${VIDEO_CLOUD_DIR}/.youtube-auth/.youtube-token.json`, TOKEN_FILE);
+  if (!existsSync(TOKEN_FILE) && existsSync(`${VIDEO_CLOUD_DIR}/youtube-auth/youtube-token.json`)) {
+    copyFileSync(`${VIDEO_CLOUD_DIR}/youtube-auth/youtube-token.json`, TOKEN_FILE);
   }
   if (!existsSync(CLIENT_FILE)) {
     // Auto-import from ~/Downloads/client_secret*.json if the user just downloaded it!
