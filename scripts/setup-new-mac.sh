@@ -37,13 +37,13 @@ DEFAULT_OUT="$HOME/GoogleCloud"
 mkdir -p "$DEFAULT_OUT" out out/gp
 
 # 3b. Restaurar credenciales de YouTube (@MarbleFormula) desde GoogleCloud si existen
-if [[ -f "$DEFAULT_OUT/.youtube-auth/.youtube-client.json" && ! -f ".youtube-client.json" ]]; then
-  cp "$DEFAULT_OUT/.youtube-auth/.youtube-client.json" .youtube-client.json
-  echo "🔑 Restaurado .youtube-client.json desde $DEFAULT_OUT/.youtube-auth/"
+if [[ -f "$DEFAULT_OUT/youtube-auth/youtube-client.json" && ! -f ".youtube-client.json" ]]; then
+  cp "$DEFAULT_OUT/youtube-auth/youtube-client.json" .youtube-client.json
+  echo "🔑 Restaurado .youtube-client.json desde $DEFAULT_OUT/youtube-auth/"
 fi
-if [[ -f "$DEFAULT_OUT/.youtube-auth/.youtube-token.json" && ! -f ".youtube-token.json" ]]; then
-  cp "$DEFAULT_OUT/.youtube-auth/.youtube-token.json" .youtube-token.json
-  echo "🔑 Restaurado .youtube-token.json desde $DEFAULT_OUT/.youtube-auth/"
+if [[ -f "$DEFAULT_OUT/youtube-auth/youtube-token.json" && ! -f ".youtube-token.json" ]]; then
+  cp "$DEFAULT_OUT/youtube-auth/youtube-token.json" .youtube-token.json
+  echo "🔑 Restaurado .youtube-token.json desde $DEFAULT_OUT/youtube-auth/"
 fi
 
 # 4. Generar datos iniciales de los 5 circuitos (src/gp/races/*.json + index.ts)
