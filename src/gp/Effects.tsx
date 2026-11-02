@@ -26,6 +26,11 @@ import { useSubframe } from "./subframe";
 import { useView } from "./view";
 import { isNight } from "./look";
 import { quality } from "./quality";
+import { cancelRender, useRemotionEnvironment } from "remotion";
+import {cockpitBlurSamples} from './car-cockpit.js';
+import {zoomBlurSamples} from './camera-exposure.js';
+import {naturalLighting} from './visual-realism.js';
+import {tuscanVenue} from './tuscany-sites.js';
 
 // Camera-like finishing, the cues that make a render read as a photograph of a
 // small real object: ambient occlusion in every crease and contact, highlights
@@ -99,8 +104,13 @@ class AccumulatePass extends Pass {
   }
 
   clear(renderer: THREE.WebGLRenderer) {
+    const color = renderer.getClearColor(new THREE.Color());
+    const alpha = renderer.getClearAlpha();
     renderer.setRenderTarget(this.accum);
+    // Additive accumulation must start at zero, independent of the last pass.
+    renderer.setClearColor(0x000000, 0);
     renderer.clear(true, false, false);
+    renderer.setClearColor(color, alpha);
   }
 
   render(renderer: THREE.WebGLRenderer, inputBuffer: THREE.WebGLRenderTarget) {
@@ -139,10 +149,23 @@ function RenderOnceComposerIsReady() {
 export function Effects({ race, frame }: { race: Race; frame: number }) {
   return (
     <>
+      <ContextHealth />
       <EffectChain race={race} frame={frame} />
       <RenderOnceComposerIsReady />
     </>
   );
+}
+
+function ContextHealth() {
+  const gl = useThree((s) => s.gl);
+  const {isRendering} = useRemotionEnvironment();
+  useEffect(() => {
+    if (!isRendering) return;
+    const lost = () => cancelRender(new Error('WebGL context lost; this render must not be published.'));
+    gl.domElement.addEventListener('webglcontextlost', lost);
+    return () => gl.domElement.removeEventListener('webglcontextlost', lost);
+  }, [gl, isRendering]);
+  return null;
 }
 
 let smaaImages: [HTMLCanvasElement, HTMLCanvasElement] | null = null;
@@ -159,6 +182,7 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  const natural=naturalLighting(race.data)||tuscanVenue(race.data);
 
   const chain = useMemo(() => {
     const buf = gl.getDrawingBufferSize(new THREE.Vector2());
@@ -168,7 +192,7 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     // Tight and strong: contact shadows under the marbles and in every seam.
     ao.configuration.aoRadius = 0.5;
     ao.configuration.distanceFalloff = 1.0;
-    ao.configuration.intensity = 5;
+    ao.configuration.intensity = natural?2.1:5;
     ao.configuration.color = new THREE.Color("#1a1c24");
     ao.configuration.gammaCorrection = false; // the final pass converts to sRGB; doing it twice washes everything out
     ao.setQualityMode("High");
@@ -178,15 +202,15 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     // The set is white: only true specular glints (well above diffuse white) may bloom.
     // With a bright studio the white track sits near 1.0: only real glints, well above it, may bloom.
     // Night: the neon and the glints bloom generously; day: only real specular glints.
-    const bloom = isNight()
+    const bloom = natural ? new BloomEffect({mipmapBlur:true,intensity:.18,luminanceThreshold:2.4,luminanceSmoothing:.4,radius:.55}) : isNight()
       ? new BloomEffect({ mipmapBlur: true, intensity: 0.9, luminanceThreshold: 1.4, luminanceSmoothing: 0.25, radius: 0.7 })
       : new BloomEffect({ mipmapBlur: true, intensity: 0.25, luminanceThreshold: 2.6, luminanceSmoothing: 0.3 });
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
     // A light grade after tone mapping: a touch more contrast and colour, so the low sun bites.
-    const grade = new BrightnessContrastEffect({ brightness: 0.0, contrast: 0.14 });
-    const vignette = new VignetteEffect({ offset: 0.32, darkness: 0.42 });
+    const grade = new BrightnessContrastEffect({ brightness: 0.0, contrast: natural?.08:.14 });
+    const vignette = new VignetteEffect({ offset: 0.32, darkness: natural?.20:.42 });
     const noise = new NoiseEffect({ premultiply: true, blendFunction: BlendFunction.SOFT_LIGHT });
-    noise.blendMode.opacity.value = 0.025;
+    noise.blendMode.opacity.value = natural?.012:.025;
     const focus = new EffectPass(camera, dof);
     composer.addPass(focus);
     // No saturation boost: on the painted marbles' pure reds and yellows it pushed channels
@@ -208,7 +232,7 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     // The effect passes' shader clock (only the grain reads it), set per sub-frame below.
     const clocks = [focus, finish, aa].map((p) => p.fullscreenMaterial as EffectMaterial);
     return { composer, dof, ao, accumulate, clocks, lastW: 0, lastH: 0, lastPr: 0 };
-  }, [gl, scene, camera]);
+  }, [gl, scene, camera,natural]);
 
   useEffect(() => () => chain.composer.dispose(), [chain]);
 
@@ -224,7 +248,14 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     }
     chain.accumulate.clear(gl);
     const { shutter } = MOTION_BLUR;
-    const samples = quality().blur;
+    const presentation=(race.data as unknown as {carConditions?:{racecraft?:{cockpitPresentation?:string}}}).carConditions?.racecraft?.cockpitPresentation;
+    // Fast first-person yaw needs more temporal samples than an exterior shot:
+    // two exposures leave doubled distant scenery instead of a smooth streak.
+    const shotKind = view.shotAt(Math.round(frame)).kind;
+    const baseSamples = cockpitBlurSamples(quality().blur,shotKind,presentation);
+    const samples = (shotKind === 'finish' || shotKind === 'replay') ? zoomBlurSamples(baseSamples,
+      view.shotAt(frame - shutter / 2).fov, view.shotAt(frame + shutter / 2).fov,
+      size.x, size.y) : baseSamples;
     chain.accumulate.weight = 1 / samples;
     for (let k = 0; k < samples; k++) {
       const vf = frame + shutter * ((k + 0.5) / samples - 0.5);

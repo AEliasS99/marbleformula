@@ -37,7 +37,7 @@ export default {
   restitution: 0.1,
   collection: "turntables",
   card: { difficulty: 3, chaos: 4, seconds: 1.5, summary: "A spinning disc with raised rubber ribs and a domed hub: throws marbles across the track and into each other." },
-  build(f, { frameAt, out }) {
+  build(f, { frameAt, out, physicsProfile }) {
     const s = frameAt(f.u + 1);
     out.turntables.push({
       kind: "turntable",
@@ -49,7 +49,9 @@ export default {
       ribHeight: TURNTABLE.ribHeight,
       ribWidth: TURNTABLE.ribWidth,
       ribFrom: TURNTABLE.ribFrom,
-      ribTo: TURNTABLE.ribTo,
+      // .55 wall clearance was smaller than the .70 ball; rotating ribs
+      // could squeeze it against the rail. Preserve the plate and motion.
+      ribTo: physicsProfile==='contact-flow-v2'?Math.min(TURNTABLE.ribTo,(s.w??2.1)-.88):TURNTABLE.ribTo,
       hub: TURNTABLE.hub,
       hubHeight: TURNTABLE.hubHeight,
       speed: (out.turntables.length % 2 ? -1 : 1) * TURNTABLE.speed,

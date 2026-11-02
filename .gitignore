@@ -1,4 +1,5 @@
 node_modules
+build/
 out
 out/bundle*
 out/bundle-cars
@@ -17,3 +18,15 @@ public/gp/*.wav
 # Temp files of scripts/factory.mjs restoring a season's data (renamed into place at once)
 src/gp/races/*.factory-tmp
 public/gp/*.factory-tmp
+# Local designer revision backups (current designs are shareable source files)
+designs/history/
+designs/*.tmp
+
+designs/.simulations/
+
+# Private read-only Cloud/YouTube catalogue cache (no credentials)
+designs/.productions/
+.youtube-analytics/
+
+# Baked editor-to-renderer preview audio
+public/replays/

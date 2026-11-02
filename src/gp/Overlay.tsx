@@ -1,7 +1,11 @@
+import {audioCredit} from './audio-credit.js';
 import { AbsoluteFill, interpolate, spring } from "remotion";
 import { lensFov, project, type Highlight, type Layout, type Race, type Section, type Shot, type Split, type Vec3 } from "./race";
 import { flagDataUrl } from "./flags";
 import { TEAMS, teamOf } from "./teams.js";
+import {carSpeedKph} from './car-speed.js';
+import {carSurfaceFeedback} from './car-surface-feedback.js';
+import {knockoutCopy,marbleFinishGap,standaloneMarbleRace} from './marble-presentation.js';
 
 // Broadcast graphics in a clean studio style: white cards, heavy black type,
 // yellow accents. Everything is driven by the frame number through Remotion's
@@ -71,14 +75,16 @@ export function Overlay(p: OverlayProps) {
       )}
       {live && frame >= tl.raceStart && <Minimap {...p} s={s} f={f} />}
       {live && !p.split && <ShotCaption {...p} s={s} f={f} />}
+      {live && p.shot.kind==='cockpit' && p.shot.marble!==null && <CockpitHUD {...p} s={s}/>}
       {live && p.split && <SplitGraphics race={race} split={p.split} f={f} frame={frame} s={s} layout={p.layout} width={p.width} height={p.height} />}
       {live && <Toasts race={race} f={f} s={s} layout={p.layout} />}
       {live && <CheckpointKnockoutToast race={race} f={f} s={s} layout={p.layout} />}
+      {live && !p.split && <SurfaceConditionCaption race={race} f={f} s={s} subject={p.shot.marble}/>}
       {live && <FinishBanner race={race} f={f} s={s} layout={p.layout} />}
       {section === "replay" && <ReplayGraphics race={race} frame={frame} s={s} />}
       {section === "results" && <Results race={race} frame={frame} s={s} layout={p.layout} />}
-      {section === "standings" && <Standings race={race} frame={frame} s={s} layout={p.layout} />}
-      {section === "constructors" && <Constructors race={race} frame={frame} s={s} layout={p.layout} />}
+      {section === "standings" && ((race.data.info as {vehicle?:string}).vehicle === "car" ? <TcrQualification race={race} frame={frame} s={s} layout={p.layout}/> : <Standings race={race} frame={frame} s={s} layout={p.layout} />)}
+      {section === "constructors" && ((race.data.info as {vehicle?:string}).vehicle === "car" ? <TcrQualification race={race} frame={frame} s={s} layout={p.layout}/> : <Constructors race={race} frame={frame} s={s} layout={p.layout} />)}
       {[tl.replay.at, tl.results.at, tl.standings.at].map((at) => (
         <Flash key={at} race={race} frame={frame} at={at} />
       ))}
@@ -127,7 +133,7 @@ function IntroCard({ race, frame, s, layout }: OverlayProps & { s: number }) {
     >
       {!isCar && (
         <div style={{ display: "flex", gap: 12 * s, transform: `translateY(${(1 - inn) * -30 * s}px)`, opacity: inn }}>
-          <Chip s={s}>ROUND {race.data.round} / {race.data.rounds}</Chip>
+          <Chip s={s}>{isCar ? (race.data.info as {heat?:string}).heat : `ROUND ${race.data.round} / ${race.data.rounds}`}</Chip>
           <Chip s={s} bg={card}>
             MARBLE FORMULA CHAMPIONSHIP 2027
           </Chip>
@@ -373,7 +379,7 @@ function TimingTower({ race, f, s }: { race: Race; f: number; s: number }) {
         }}
       >
         <span style={{ whiteSpace: "nowrap", fontSize: 13 * s, marginRight: 6 * s }}>
-          {isCar ? "🏁" : `DON'T BE LAST · ${race.data.info.gp.toUpperCase()}`}
+          {isCar ? "🏁" : standaloneMarbleRace(race.data) ? race.data.info.gp.toUpperCase() : `DON'T BE LAST · ${race.data.info.gp.toUpperCase()}`}
         </span>
         <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontSize: 14 * s }}>
           {race.LAPS > 1 && started ? (
@@ -408,7 +414,7 @@ function TimingTower({ race, f, s }: { race: Race; f: number; s: number }) {
           const done = race.finishedBy(i, f);
           let gap = "";
           if (!started) gap = `P${m.grid}`;
-          else if (done) gap = pos === 1 ? race.finishSeconds(i)!.toFixed(2) : `+${(race.finishSeconds(i)! - race.finishSeconds(race.winner)!).toFixed(2)}`;
+          else if (done) gap = pos === 1 ? race.finishSeconds(i)!.toFixed(2) : `+${standaloneMarbleRace(race.data)?marbleFinishGap(race.finishSeconds(i)! - race.finishSeconds(race.winner)!):(race.finishSeconds(i)! - race.finishSeconds(race.winner)!).toFixed(2)}`;
           else if (race.dqBy(i, f)) gap = "OUT";
           else if (pos === 1) gap = "LEAD";
           else gap = `+${race.gapAt(i, gf).toFixed(1)}`;
@@ -476,6 +482,7 @@ function TimingTower({ race, f, s }: { race: Race; f: number; s: number }) {
                   <span style={{ display: "inline-flex", alignItems: "center" }}>
                     🧠<PipBar val={st.int} color="#ea80fc" s={s} />
                   </span>
+                  <span style={{marginLeft:'auto',fontVariantNumeric:'tabular-nums',color:'#c8eef7',whiteSpace:'nowrap'}}>{out?'OUT':done?'FIN':`${Math.round(carSpeedKph(race.data,i,f)??0)} km/h`}</span>
                 </div>
               )}
             </div>
@@ -491,11 +498,9 @@ function MoreBallsTopRightHUD({ race, f, s, layout }: { race: Race; f: number; s
   if (layout === "portrait") return null;
   const isCar = (race.data.info as { vehicle?: string })?.vehicle === "car";
   const surviving = race.marbles.filter((_, i) => !race.dqBy(i, f)).length;
-  const roundNum = race.data.round ?? 1;
   const cps = ((race.data as unknown as { checkpoints?: { index: number; survive: number; closedFrame: number | null; eliminated: number[] }[] }).checkpoints ?? []);
   const activeCp = cps.find((c) => c.closedFrame === null || f < c.closedFrame);
-  const songs = ["Neon Strip Velocity", "Interlagos Samba", "Miami Marina Pulse", "Zandvoort Dune Drift", "Yas Marina Finale"];
-  const songTitle = songs[(roundNum - 1) % songs.length];
+  const credit = audioCredit(race.data);
 
   return (
     <div
@@ -526,11 +531,11 @@ function MoreBallsTopRightHUD({ race, f, s, layout }: { race: Race; f: number; s
             <span style={{ color: "#00e5ff" }}>{surviving}/{race.N} Marbles Survive</span>
             {activeCp ? (
               <>
-                {" "}&nbsp;·&nbsp; <span style={{ color: "#ff5252" }}>Cutoff: Top {activeCp.survive} (Last Eliminated)</span>
+                {" "}&nbsp;·&nbsp; <span style={{ color: "#ff5252" }}>Top {activeCp.survive} advance</span>
               </>
             ) : (
               <>
-                {" "}&nbsp;·&nbsp; <span style={{ color: "#ffcc00" }}>Top 10 Score Points!</span>
+                {" "}&nbsp;·&nbsp; <span style={{ color: "#ffcc00" }}>{knockoutCopy(race.data).points}</span>
               </>
             )}
           </div>
@@ -584,7 +589,7 @@ function MoreBallsTopRightHUD({ race, f, s, layout }: { race: Race; f: number; s
               marginTop: 4 * s,
             }}
           >
-            RULE: LAST MARBLES AT EACH CHECKPOINT ARE ELIMINATED
+            RULE: LAST {isCar ? "CARS" : "MARBLES"} AT EACH CHECKPOINT ARE ELIMINATED
           </div>
         </>
       )}
@@ -601,10 +606,10 @@ function MoreBallsTopRightHUD({ race, f, s, layout }: { race: Race; f: number; s
           border: "1px solid rgba(255,255,255,0.14)",
         }}
       >
-        <span style={{ fontSize: 16 * s, opacity: 0.7 }}>🎵</span>
+        <span style={{ fontSize: 16 * s, opacity: 0.7 }}>{credit.icon}</span>
         <div style={{ textAlign: "left", lineHeight: 1.1 }}>
-          <div style={{ fontSize: 9 * s, fontWeight: 700, color: "rgba(255,255,255,0.65)" }}>Song:</div>
-          <div style={{ fontSize: 13 * s, fontWeight: 900 }}>{songTitle}</div>
+          <div style={{ fontSize: 9 * s, fontWeight: 700, color: "rgba(255,255,255,0.65)" }}>{credit.label}</div>
+          <div style={{ fontSize: 13 * s, fontWeight: 900 }}>{credit.title}</div>
         </div>
       </div>
     </div>
@@ -613,6 +618,7 @@ function MoreBallsTopRightHUD({ race, f, s, layout }: { race: Race; f: number; s
 
 /** Top-center Checkpoint Knockout Toast explaining the elimination rules, warning when a checkpoint opens, and announcing eliminated backmarkers */
 function CheckpointKnockoutToast({ race, f, s, layout }: { race: Race; f: number; s: number; layout: Layout }) {
+  const isCar = (race.data.info as {vehicle?:string}).vehicle === "car";
   const cps = ((race.data as unknown as {
     checkpoints?: { index: number; survive: number; firstFrame?: number | null; closedFrame: number | null; eliminated: number[] }[];
   }).checkpoints ?? []);
@@ -648,7 +654,7 @@ function CheckpointKnockoutToast({ race, f, s, layout }: { race: Race; f: number
           CHECKPOINT {hit.index} LOCKED · TOP {hit.survive} ADVANCE!
         </div>
         <div style={{ fontSize: 11 * s, fontWeight: 700, color: "rgba(255,255,255,0.72)", marginTop: 2 * s }}>
-          Last {hit.eliminated.length} marbles failed to reach Checkpoint {hit.index} in time
+          Last {hit.eliminated.length} {isCar ? "cars" : "marbles"} failed to reach Checkpoint {hit.index} in time
         </div>
         {hit.eliminated.length > 0 && (
           <div
@@ -720,7 +726,7 @@ function CheckpointKnockoutToast({ race, f, s, layout }: { race: Race; f: number
           CHECKPOINT {openCp.index} OPEN · ONLY TOP {openCp.survive} ADVANCE
         </div>
         <div style={{ fontSize: 12 * s, fontWeight: 800, color: "#ffcc00", marginTop: 3 * s }}>
-          DON&apos;T BE LAST: THE LAST {elimCount} MARBLES AT THIS CHECKPOINT WILL BE ELIMINATED!
+          DON&apos;T BE LAST: THE LAST {elimCount} {isCar ? "CARS" : "MARBLES"} AT THIS CHECKPOINT WILL BE ELIMINATED!
         </div>
       </div>
     );
@@ -757,7 +763,7 @@ function CheckpointKnockoutToast({ race, f, s, layout }: { race: Race; f: number
           DON&apos;T BE LAST! · CHECKPOINT KNOCKOUT RULES
         </div>
         <div style={{ fontSize: 12 * s, fontWeight: 800, color: "#ffffff", marginTop: 3 * s }}>
-          3 Checkpoints eliminate ONLY the last marble at the back (20 → 19 → 18 → 17) · Top 15 finishers score points!
+          {isCar ? `3 elimination checkpoints (${[race.N, ...cps.map(c => c.survive)].join(" → ")}) · ${race.N === 6 ? "Top 2 qualify · P3 enters wildcard comparison" : "Grand Final"}` : knockoutCopy(race.data).summary}
         </div>
       </div>
     );
@@ -785,6 +791,27 @@ const Chequer = ({ s }: { s: number }) => (
   <span style={{ width: 18 * s, height: 14 * s, backgroundImage: "conic-gradient(#fff 25%, #111 0 50%, #fff 0 75%, #111 0)", backgroundSize: `${7 * s}px ${7 * s}px`, borderRadius: 2 * s, boxShadow: "0 0 0 1px #111" }} />
 );
 
+function CarSpeedometer({speed,s}:{speed:number;s:number}){
+ const ratio=Math.max(0,Math.min(1,speed/160));
+ return <span style={{display:'inline-flex',alignItems:'center',gap:4*s,fontVariantNumeric:'tabular-nums'}}>
+  <svg width={28*s} height={17*s} viewBox="0 0 28 17" aria-hidden>
+   <path d="M2 15 A12 12 0 0 1 26 15" fill="none" stroke="#c7d0d6" strokeWidth="3"/>
+   <path d="M2 15 A12 12 0 0 1 26 15" fill="none" stroke="#008fb0" strokeWidth="3" pathLength="1" strokeDasharray={`${ratio} 1`}/>
+   <line x1="14" y1="15" x2={14+Math.cos(Math.PI*(1-ratio))*9} y2={15-Math.sin(Math.PI*(1-ratio))*9} stroke="#172735" strokeWidth="1.5"/>
+  </svg>
+  <span style={{fontSize:15*s,minWidth:29*s,textAlign:'right'}}>{Math.round(speed)}</span><span style={{fontSize:9*s,color:'#52616d'}}>km/h</span>
+ </span>;
+}
+
+function CockpitHUD({race,shot,t,s}:OverlayProps&{s:number}){
+ if(shot.marble===null)return null;
+ const car=race.marbles[shot.marble],speed=carSpeedKph(race.data,shot.marble,t);
+ return <div style={{position:'absolute',left:28*s,bottom:120*s,padding:`${10*s}px ${16*s}px`,borderRadius:12*s,background:'rgba(244,247,250,.96)',borderTop:`${3*s}px solid ${car.color}`,boxShadow:shadow}}>
+  <div style={{display:'flex',alignItems:'center',gap:8*s,fontSize:15*s,fontWeight:900,marginBottom:5*s}}><MarbleDot s={s} color={car.color} flag={flagOf(car)} size={17}/>{car.abbr}<span style={{fontSize:10*s,letterSpacing:1*s,color:'#52616d'}}>DRIVER CAM</span></div>
+  <CarSpeedometer speed={speed??0} s={s*1.45}/>
+ </div>;
+}
+
 function Minimap({ race, t, s, f, layout, frame }: OverlayProps & { s: number; f: number }) {
   const size = (layout === "portrait" ? 210 : 190) * s;
   const { d, map } = outlinePath(race.data.outline, size, 16 * s);
@@ -794,21 +821,23 @@ function Minimap({ race, t, s, f, layout, frame }: OverlayProps & { s: number; f
   const features = race.data.features as { u: number; type: string }[];
   const samples = race.data.samples as { u: number; p: number[] }[];
   return (
-    <svg
-      width={size}
-      height={size}
+    <div
       style={{
+        width: size,
+        height: size,
         position: "absolute",
         right: 28 * s,
         bottom: (layout === "portrait" ? 210 : 28) * s,
         background: "rgba(14, 16, 22, 0.72)",
-        backdropFilter: "blur(10px)",
         border: `${1 * s}px solid rgba(255,255,255,0.12)`,
         borderRadius: 16 * s,
         boxShadow: "0 10px 28px rgba(0,0,0,0.4)",
         opacity: inn * out,
       }}
     >
+      {/* Keep the SVG off the backdrop-filter compositor. Chromium can paint
+          its backplate while dropping all paths/flags during frame seeks. */}
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{display: "block"}}>
       <path d={d} fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth={9 * s} strokeLinejoin="round" />
       <path d={d} fill="none" stroke="#f4f5f8" strokeWidth={2.5 * s} strokeLinejoin="round" />
       {features.map((ft, k) => {
@@ -835,7 +864,8 @@ function Minimap({ race, t, s, f, layout, frame }: OverlayProps & { s: number; f
           </g>
         );
       })}
-    </svg>
+      </svg>
+    </div>
   );
 }
 
@@ -865,20 +895,31 @@ function ShotCaption({ race, shot, t, f, s, width, height, layout }: OverlayProp
     ) : null;
 
   const ranking = race.ranking(f);
+  const compactCarBadges=isCar&&(race.data as unknown as {carConditions?:{racecraft?:{paceModel?:string}}}).carConditions?.racecraft?.paceModel==='race-pace-v2';
+  const occupiedBadges:{x:number;y:number}[]=[];
   const badges =
-    f >= race.timeline.raceStart + race.sec(1) && ["chase", "side", "top", "orbit", "lead", "feature", "finish"].includes(shot.kind)
+    f >= race.timeline.raceStart + race.sec(1) && ["chase", "side", "top", "orbit", "lead", "feature", "finish", ...(isCar?["action","wide","grid"]:[])].includes(shot.kind)
       ? ranking
-          .slice(0, 3)
+          .slice(0, isCar?race.N:3)
           .filter((i) => !race.finishedBy(i, f) && !race.dqBy(i, f))
           .map((i) => {
             const rank = ranking.indexOf(i) + 1;
             const { pos } = race.marblePose(i, t);
             const pt = project(shot, lensFov(shot.fov, width / height, layout), [pos[0], pos[1] + 0.55, pos[2]], width, height);
             if (!pt.visible) return null;
+            if(compactCarBadges){
+              const x=pt.x,y=pt.y-65*s;
+              if(occupiedBadges.length>=4||x<70*s||x>width-70*s||y<45*s||y>height-90*s||
+                x<340*s&&y<(race.N*34+90)*s||occupiedBadges.some(p=>Math.abs(p.x-x)<135*s&&Math.abs(p.y-y)<78*s))return null;
+              occupiedBadges.push({x,y});
+            }
             return (
-              <div key={i} style={{ position: "absolute", left: pt.x, top: pt.y - 40 * s, transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 6 * s, padding: `${3 * s}px ${10 * s}px`, background: card, borderRadius: 9 * s, boxShadow: shadow, fontSize: 19 * s, fontWeight: 900, whiteSpace: "nowrap" }}>
+              <div key={i} style={{ position: "absolute", left: pt.x, top: pt.y - (isCar?65:40) * s, transform: "translateX(-50%)", display: "flex", alignItems: "center", flexDirection:isCar?'column':'row', gap: 3 * s, padding: `${3 * s}px ${10 * s}px`, background: card, borderRadius: 9 * s, boxShadow: shadow, fontSize: 19 * s, fontWeight: 900, whiteSpace: "nowrap" }}>
+                <span style={{display:'inline-flex',alignItems:'center',gap:6*s}}>
                 <span style={{ width: 20 * s, height: 20 * s, borderRadius: 6 * s, background: rank === 1 ? yellow : ink, color: rank === 1 ? ink : "white", fontSize: 14 * s, display: "flex", alignItems: "center", justifyContent: "center" }}>{rank}</span>
                 {race.marbles[i].abbr}
+                </span>
+                {isCar&&<CarSpeedometer speed={carSpeedKph(race.data,i,t)??0} s={s}/>}
               </div>
             );
           })
@@ -992,13 +1033,21 @@ function SplitGraphics({ race, split, f, frame, s, layout, width, height }: { ra
 
 function Toasts({ race, f, s, layout }: { race: Race; f: number; s: number; layout: Layout }) {
   const life = race.sec(2.5);
-  const ev = [...race.events].reverse().find((e) => f >= e.frame && f < e.frame + life);
+  const filmed=(race.data.cams as unknown as unknown[][])[Math.min(f,race.data.cams.length-1)]?.[8];
+  const incident = [...((race.data as unknown as {carIncidents?:{f:number;marble:number}[]}).carIncidents||[])].reverse().find(e=>e.marble===filmed&&f>=e.f&&f<e.f+life);
+  const event = [...race.events].reverse().find((e) => f >= e.frame && f < e.frame + life);
+  const ev = incident&&(!event||incident.f>event.frame)?{kind:'slide',frame:incident.f,a:incident.marble,b:incident.marble,pos:0}:event;
   if (!ev) return null;
   const local = f - ev.frame;
   const k = spring({ frame: local, fps: race.fps, config: { damping: 16 } });
   const out = interpolate(local, [life - race.sec(0.4), life], [1, 0], clamp);
   const a = race.marbles[ev.a];
   const b = race.marbles[ev.b];
+  if(ev.kind==='slide')return (
+    <div style={{position:'absolute',left:40*s,bottom:(layout==='portrait'?560:40)*s,opacity:k*out,transform:`translateX(${(1-k)*-60*s}px)`}}>
+      <Chip s={s} bg={card} size={28}><span style={{background:'#f5a340',padding:`${2*s}px ${8*s}px`,borderRadius:6*s,fontSize:18*s}}>LOSS OF GRIP</span><MarbleDot s={s} color={a.color} flag={flagOf(a)}/>{a.abbr}</Chip>
+    </div>
+  );
   if ((ev as { kind: string }).kind === "bestlap") {
     const e = ev as unknown as { a: number; frames: number; lap: number };
     return (
@@ -1130,7 +1179,7 @@ function FinishBanner({ race, f, s, layout }: { race: Race; f: number; s: number
             {podium.map((idx, pIdx) => {
               const pm = race.marbles[idx];
               const tSec = race.finishSeconds(idx);
-              const diff = pIdx === 0 || tSec === null || winSec === null ? "WINNER" : `+${(tSec - winSec).toFixed(2)}s`;
+              const diff = pIdx === 0 || tSec === null || winSec === null ? "WINNER" : `+${standaloneMarbleRace(race.data)?marbleFinishGap(tSec-winSec):(tSec-winSec).toFixed(2)}s`;
               return (
                 <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8 * s, background: "rgba(255,255,255,0.08)", padding: `${5 * s}px ${14 * s}px`, borderRadius: 10 * s, fontSize: 16 * s, fontWeight: 800 }}>
                   <span style={{ color: pIdx === 0 ? "#ffcc00" : pIdx === 1 ? "#cfd6e0" : "#e59856", fontWeight: 900 }}>P{pIdx + 1}</span>
@@ -1167,7 +1216,7 @@ function ReplayGraphics({ race, frame, s }: { race: Race; frame: number; s: numb
             {race.margin !== null && race.margin < 0.3 ? "PHOTO FINISH" : "THE WIN"}
           </span>
           {w.name} beats {r.name}
-          {race.margin !== null ? ` by ${race.margin.toFixed(2)}s` : ""}
+          {race.margin !== null ? ` by ${standaloneMarbleRace(race.data)?marbleFinishGap(race.margin):race.margin.toFixed(2)}s` : ""}
         </Chip>
       </div>
     </>
@@ -1257,7 +1306,7 @@ function Card({ race, s, layout, children, title, frame, at, footer, columns, he
           }}
         >
           <span>{title}</span>
-          <span style={{ fontSize: 15 * s, color: "#ffcc00", letterSpacing: 2 * s }}>DON&apos;T BE LAST · CHAMPIONSHIP</span>
+          <span style={{ fontSize: 15 * s, color: "#ffcc00", letterSpacing: 2 * s }}>DON&apos;T BE LAST · {standaloneMarbleRace(race.data)?'RACE':'CHAMPIONSHIP'}</span>
         </div>
         {headerExtra}
         <div style={{ padding: `${12 * s}px ${28 * s}px ${footer ? 8 : 18}px`, display: "grid", gridAutoFlow: "column", gridTemplateColumns: cols === 2 ? "1fr 1fr" : "1fr", gridTemplateRows: `repeat(${Math.ceil((columns ? n : race.N) / cols)}, auto)`, columnGap: 28 * s }}>{children}</div>
@@ -1274,7 +1323,7 @@ function Results({ race, frame, s, layout }: { race: Race; frame: number; s: num
   const top3 = results.slice(0, 3).map((r, idx) => {
     const m = race.marbles[r.marble];
     const ti = race.finishSeconds(r.marble) ?? r.time;
-    const sub = ti === null ? `+${r.points} PTS` : idx === 0 ? `${ti.toFixed(2)}s · +${r.points} PTS` : `+${(ti - t0!).toFixed(2)}s · +${r.points} PTS`;
+    const sub = (race.data.info as {vehicle?:string}).vehicle === "car" ? (ti === null ? "ELIMINATED" : `${ti.toFixed(2)}s`) : ti === null ? `+${r.points} PTS` : idx === 0 ? `${ti.toFixed(2)}s · +${r.points} PTS` : `+${standaloneMarbleRace(race.data)?marbleFinishGap(ti-t0!):(ti-t0!).toFixed(2)}s · +${r.points} PTS`;
     return { marbleIdx: r.marble, name: m.name, flag: flagOf(m), color: m.color, sub };
   });
   return (
@@ -1305,11 +1354,48 @@ function Results({ race, frame, s, layout }: { race: Race; frame: number; s: num
         const m = race.marbles[r.marble];
         const inn = spring({ frame: frame - at - race.sec(0.2) - k * race.sec(0.08), fps: race.fps, config: { damping: 18 } });
         const ti = race.finishSeconds(r.marble) ?? r.time;
-        const gap = (r as { dq?: boolean }).dq ? "ELIM" : ti === null ? "—" : k === 0 ? `${ti.toFixed(2)}s` : `+${(ti - t0!).toFixed(2)}`;
+        const gap = (r as { dq?: boolean }).dq ? "ELIM" : ti === null ? "—" : k === 0 ? `${ti.toFixed(2)}s` : `+${standaloneMarbleRace(race.data)?marbleFinishGap(ti-t0!):(ti-t0!).toFixed(2)}`;
         return <Row key={r.marble} s={s} inn={inn} pos={r.pos} color={m.color} flag={flagOf(m)} name={m.name} right={gap} extra={r.points ? `+${r.points}` : ""} compact={race.N > 12} />;
       })}
     </Card>
   );
+}
+
+function SurfaceConditionCaption({race,f,s,subject}: {race:Race; f:number; s:number;subject:number|null}) {
+  const modern=(race.data as unknown as {carConditions?:{racecraft?:{boostModel?:string}}}).carConditions?.racecraft?.boostModel==='lane-charge-v2';
+  if(modern){
+    const i=subject??race.ranking(f).find(i=>!race.dqBy(i,f)&&!race.finishedBy(i,f));
+    if(i===undefined||race.dqBy(i,f)||race.finishedBy(i,f))return null;
+    const speed=carSpeedKph(race.data,i,f);if(speed===null)return null;
+    const feedback=carSurfaceFeedback(race.data,i,f,speed);
+    const label=feedback.water>.08?'WATER CONTACT':feedback.lane?feedback.lane.label:feedback.nearPond?'DRY BYPASS':null;
+    if(!label)return null;
+    return <div style={{position:'absolute',bottom:84*s,left:'50%',transform:'translateX(-50%)',padding:`${9*s}px ${18*s}px`,background:'rgba(10,24,35,.92)',borderBottom:`${3*s}px solid ${feedback.water>.08?'#94d7ec':'#ffcc00'}`,borderRadius:6*s,color:'white',fontSize:18*s,fontWeight:800,letterSpacing:1*s}}>{label} · {race.marbles[i].abbr} · {Math.round(speed)} km/h</div>;
+  }
+  const conditions = (race.data as unknown as {carConditions?:{patches:{u0:number;u1:number;kind?:string}[]}}).carConditions;
+  if (!conditions) return null;
+  const active=race.ranking(f).filter(i=>!race.dqBy(i,f)&&!race.finishedBy(i,f));
+  const p=conditions.patches.find(p=>active.some(i=>{const u=race.uOf(i,f);return u>=p.u0-10&&u<=p.u1;}));
+  if(!p)return null;
+  const label=p.kind==='pond'?'WATER POND · SLOW WATER / DRY PASSING LINE':`${race.data.info.gp==='Colombia'?'MOUNTAIN DEW':race.data.info.gp==='Spain'?'COASTAL SEA SPRAY':'ALPINE MELTWATER'} · WET INSIDE / DRY OUTSIDE`;
+  return <div style={{position:'absolute',bottom:84*s,left:'50%',transform:'translateX(-50%)',padding:`${9*s}px ${18*s}px`,background:'rgba(10,24,35,.87)',borderBottom:`${3*s}px solid #94d7ec`,borderRadius:6*s,color:'white',fontSize:18*s,fontWeight:800,letterSpacing:1*s}}>{label}</div>;
+}
+
+function TcrQualification({race, frame, s, layout}: {race:Race; frame:number; s:number; layout:Layout}) {
+  const heat = (race.data.info as {heat?:string}).heat ?? "TCR";
+  return <Card race={race} s={s} layout={layout} frame={frame} at={race.timeline.standings.at} title={heat} columns={1}>
+    {race.data.results.map((r,k)=> {
+      const m = race.marbles[r.marble];
+      const status = r.time === null ? "ELIMINATED" : race.N === 6 ? k < 2 ? "QUALIFIED" : k === 2 ? "WILDCARD CANDIDATE" : "FINISHED" : `P${k+1}`;
+      return <div key={r.marble} style={{display:'grid',gridTemplateColumns:`${36*s}px ${30*s}px minmax(0,1fr) ${100*s}px ${250*s}px`,gap:12*s,alignItems:'center',height:54*s,borderBottom:'1px solid rgba(255,255,255,.10)',fontWeight:900,fontSize:24*s}}>
+        <span style={{background:k===0?'#ffcc00':'rgba(255,255,255,.12)',color:k===0?'#111':'white',borderRadius:6*s,textAlign:'center'}}>{r.pos}</span>
+        <MarbleDot s={s} color={m.color} flag={flagOf(m)} size={26}/>
+        <span>{m.name.toUpperCase()}</span>
+        <span style={{textAlign:'right',fontSize:21*s,color:'#00e676'}}>{r.time===null?'—':`${r.time.toFixed(2)}s`}</span>
+        <span style={{textAlign:'right',fontSize:18*s,whiteSpace:'nowrap',color:k<2?'#ffcc00':'#d9e2ec'}}>{status}</span>
+      </div>;
+    })}
+  </Card>;
 }
 
 function Standings({ race, frame, s, layout }: { race: Race; frame: number; s: number; layout: Layout }) {
@@ -1328,14 +1414,14 @@ function Standings({ race, frame, s, layout }: { race: Race; frame: number; s: n
       layout={layout}
       frame={frame}
       at={at}
-      title={final ? "FINAL CHAMPIONSHIP STANDINGS" : `CHAMPIONSHIP · AFTER ROUND ${race.data.round} OF ${race.data.rounds}`}
+      title={standaloneMarbleRace(race.data)?"RACE STANDINGS":final ? "FINAL CHAMPIONSHIP STANDINGS" : `CHAMPIONSHIP · AFTER ROUND ${race.data.round} OF ${race.data.rounds}`}
       headerExtra={<PodiumStage s={s} top3={top3} />}
       footer={
         final ? (
           <div style={{ display: "flex", alignItems: "center", gap: 14 * s, transform: `scale(${crown})` }}>
             <TrophyCup s={s} rank={1} size={46} />
             <Chip s={s} size={34}>
-              {race.marbles[champion.marble].name.toUpperCase()} · WORLD CHAMPION ({champion.points} PTS)
+              {race.marbles[champion.marble].name.toUpperCase()} · {standaloneMarbleRace(race.data)?'RACE WINNER':'WORLD CHAMPION'} ({champion.points} PTS)
             </Chip>
           </div>
         ) : undefined

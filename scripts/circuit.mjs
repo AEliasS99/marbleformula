@@ -11,6 +11,9 @@ export const BRIDGE_CLEARANCE = 2.2; // parts this far apart vertically may over
 export const SLOPE = (8 * Math.PI) / 180; // steady descent between drops: gravity is the only engine (6.5° felt slow)
 
 const SPACING = 1.0;
+// Preparation asks for the same relaxed outline for placement, refinement and
+// the final course. Reuse that expensive deterministic solve within this process.
+const outlineCache = new Map();
 
 /** Loads a GeoJSON LineString and projects lon/lat to local metres (equirectangular). */
 export function loadOutline(file) {
@@ -74,6 +77,8 @@ export function radius3(a, b, c) {
  * apart in height (a crossover bridge), since the track descends as it goes.
  */
 export function marbleize(rawPts, scale = SCALE) {
+  const key=JSON.stringify([scale,rawPts]);
+  if(outlineCache.has(key))return structuredClone(outlineCache.get(key));
   const scaled = rawPts.map(([x, z]) => [x * scale, z * scale]);
   let { pts, length } = resampleLoop(scaled, SPACING);
   const anchors = pts.map((p) => [...p]);
@@ -123,7 +128,10 @@ export function marbleize(rawPts, scale = SCALE) {
     if (it % 10 === 9) ({ pts, length } = resampleLoop(pts, SPACING));
   }
   ({ pts, length } = resampleLoop(pts, SPACING));
-  return { pts, length, scaled, crossings };
+  const result={ pts, length, scaled, crossings };
+  if(outlineCache.size>=4)outlineCache.delete(outlineCache.keys().next().value);
+  outlineCache.set(key,structuredClone(result));
+  return result;
 }
 
 /** Where the real outline crosses itself (Suzuka's figure eight), as lap fractions. */

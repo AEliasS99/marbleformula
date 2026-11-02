@@ -5,6 +5,7 @@ import { sweep } from "./Details";
 import { TRACK, TRACK_DEPTH } from "./trackMesh.js";
 import { getCircuitTheme } from "./Themes";
 import type { Race, Vec3 } from "./race";
+import {naturalLighting} from './visual-realism.js';
 
 // The night look's light show: LED strips along both walls, under the inside
 // of the rim (they light the track and the marbles' paint) and along the
@@ -56,7 +57,7 @@ export function Neon({ race }: { race: Race }) {
   // Unlit and above 1: the bloom pass makes it glow.
   return (
     <mesh geometry={geo}>
-      <meshBasicMaterial vertexColors color={new THREE.Color(theme.extraNeonArches ? 11 : 9, theme.extraNeonArches ? 11 : 9, theme.extraNeonArches ? 11 : 9)} toneMapped={false} />
+      {naturalLighting(race.data)?<meshStandardMaterial vertexColors roughness={.55} metalness={.12}/>:<meshBasicMaterial vertexColors color={new THREE.Color(theme.extraNeonArches ? 11 : 9, theme.extraNeonArches ? 11 : 9, theme.extraNeonArches ? 11 : 9)} toneMapped={false} />}
     </mesh>
   );
 }

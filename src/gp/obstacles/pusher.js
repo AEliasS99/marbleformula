@@ -1,3 +1,4 @@
+import {pusherHeadVertices} from '../pusher-head.js';
 import { frameQuat, mod, pointInFrame, quatArr, r3, rot, solid, TRACK } from "./kit.js";
 
 // A block that slides out from one wall across most of the track and back,
@@ -21,12 +22,13 @@ export default {
   restitution: 0.2,
   collection: "pushers",
   card: { difficulty: 3, chaos: 3, seconds: 1.2, summary: "A piston block that shoves the leaders into the far wall." },
-  build(f, { frameAt, out, sync }) {
+  build(f, { frameAt, out, sync, physicsProfile }) {
     const s = frameAt(f.u + 1);
     const W2 = s.w ?? TRACK.width / 2;
     const side = out.pushers.length % 2 ? 1 : -1;
     out.pushers.push({
       kind: "pusher",
+      ...(physicsProfile==='contact-flow-v2'?{headShape:'guarded-ramp-v1'}:{}),
       // Rest position: flush with the wall it comes out of.
       pos: pointInFrame(s, side * (W2 - PUSHER.size[2] / 2 - 0.02), PUSHER.size[1] / 2 + 0.02).map(r3),
       dir: [-side * s.r[0], -side * s.r[1], -side * s.r[2]].map(r3),
@@ -42,7 +44,9 @@ export default {
     const bodies = list.map((p) => {
       const at = pusherPos(p, 0);
       const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(at.x, at.y, at.z).setRotation(rot(p.quat)));
-      world.createCollider(solid(RAPIER.ColliderDesc.cuboid(p.size[0] / 2, p.size[1] / 2, p.size[2] / 2), RAPIER, { friction: 0.3, restitution: this.restitution, group: groups.track }), body);
+      const shape=p.headShape==='guarded-ramp-v1'?RAPIER.ColliderDesc.convexHull(pusherHeadVertices(p)):RAPIER.ColliderDesc.cuboid(p.size[0]/2,p.size[1]/2,p.size[2]/2);
+      if(!shape)throw new Error('Invalid pusher head geometry');
+      world.createCollider(solid(shape, RAPIER, { friction: 0.3, restitution: this.restitution, group: groups.track }), body);
       return body;
     });
     return { kinematics: (t) => list.forEach((p, k) => bodies[k].setNextKinematicTranslation(pusherPos(p, t))) };

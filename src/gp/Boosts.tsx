@@ -3,13 +3,17 @@ import * as THREE from "three";
 import type { Quat, Race, Vec3 } from "./race";
 import { useSubframe } from "./subframe";
 import { useView } from "./view";
+import {boostAppearance} from './race-action-profile.js';
+import {boostLaneGeometry} from './boost-lanes.js';
+import {tuscanVenue} from './tuscany-sites.js';
 
 // The booster pads (glowing chevrons that scroll forward) and the distributor
 // flap that sends the field to both stair bays.
 
-type Booster = { pos: Vec3; quat: Quat; length: number; width: number };
+type Booster = { pos: Vec3; quat: Quat; length: number; width: number; u0:number;u1:number;latCenter:number;tier?:string };
 
-function chevronTexture() {
+function chevronTexture(lane:Booster) {
+  const style=boostAppearance(lane);
   const c = document.createElement("canvas");
   c.width = 256;
   c.height = 256;
@@ -20,8 +24,8 @@ function chevronTexture() {
   for (let k = 0; k < 2; k++) {
     const x0 = 20 + k * 128;
     const grad = g.createLinearGradient(x0, 0, x0 + 90, 0);
-    grad.addColorStop(0, "#00e5ff");
-    grad.addColorStop(1, "#ff2bd6");
+    grad.addColorStop(0, style.color);
+    grad.addColorStop(1, style.accent);
     g.fillStyle = grad;
     g.beginPath();
     g.moveTo(x0, 30);
@@ -33,6 +37,10 @@ function chevronTexture() {
     g.closePath();
     g.fill();
   }
+  if(lane.tier){
+    g.strokeStyle=style.color;g.lineWidth=5;g.strokeRect(2,3,252,250);
+    g.fillStyle='#b6c3c9';for(const y of [12,244])for(const x of [10,74,138,202])g.fillRect(x,y,18,2);
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -41,25 +49,30 @@ function chevronTexture() {
 }
 
 export function Boosters({ race, t }: { race: Race; t: number }) {
+  const venue = tuscanVenue(race.data);
   const view = useView(race);
   const sub = useSubframe();
   const list = ((race.data as unknown as { boosters?: Booster[] }).boosters ?? []) as Booster[];
   const tex = useMemo(() => list.map((b) => {
-    const tx = chevronTexture();
+    const tx = chevronTexture(b);
     tx.repeat.set(b.length / 1.2, 1);
     return tx;
   }), [race]);
+  const geometry=useMemo(()=>list.map(b=>b.tier?boostLaneGeometry(race.data.samples,b):null),[race]);
+  useEffect(()=>()=>{tex.forEach(t=>t.dispose());geometry.forEach(g=>g?.dispose());},[tex,geometry]);
   // The arrows run forward at 6 units a second.
-  const scroll = (tt: number) => tex.forEach((tx, k) => (tx.offset.x = -((tt / race.fps) * 6) / (list[k].length / tx.repeat.x)));
+  const scroll = (tt: number) => tex.forEach((tx, k) => (tx.offset.x = -((tt / race.fps) * boostAppearance(list[k]).scroll) / (list[k].length / tx.repeat.x)));
   scroll(t);
   useEffect(() => sub.subscribe((vf) => scroll(view.tAt(vf))), [sub, view, race, tex]);
   return (
     <>
       {list.map((b, i) => (
-        <group key={i} position={b.pos} quaternion={b.quat}>
+        geometry[i]?<mesh key={i} geometry={geometry[i]!}>
+          <meshStandardMaterial map={tex[i]} emissive="#ffffff" emissiveMap={tex[i]} emissiveIntensity={venue?.08:1.35} roughness={venue?.78:.48} polygonOffset polygonOffsetFactor={-2}/>
+        </mesh>:<group key={i} position={b.pos} quaternion={b.quat}>
           <mesh rotation-x={-Math.PI / 2} position={[0, 0.03, 0]}>
             <planeGeometry args={[b.length, b.width]} />
-            <meshStandardMaterial map={tex[i]} emissive="#ffffff" emissiveMap={tex[i]} emissiveIntensity={2.6} roughness={0.35} polygonOffset polygonOffsetFactor={-2} toneMapped={false} />
+            <meshStandardMaterial map={tex[i]} emissive="#ffffff" emissiveMap={tex[i]} emissiveIntensity={venue?.08:2.6} roughness={venue?.78:.35} polygonOffset polygonOffsetFactor={-2} toneMapped={venue} />
           </mesh>
         </group>
       ))}

@@ -1,0 +1,7 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync,existsSync}from'node:fs';
+import{trackingReviewFrames}from'./tracking-review-frames.mjs';
+const fixture=()=>({fps:60,timeline:{raceStart:0},marbles:[{finishFrame:239,dqFrame:null}],shots:[{kind:'lead',start:0,end:120},{kind:'action',start:120,end:240}],frames:Array.from({length:240},(_,f)=>[[0,0,f]]),cams:Array.from({length:240},(_,f)=>[0,3,f+(f<120?8:-8),0,0,f,55,f<120?'lead':'action',0])});
+test('a moving rear action shot satisfies rear inspection without a chase label',()=>{const d=fixture(),r=trackingReviewFrames(d);assert.equal(r.chase.shotKind,'action');assert.equal(r.chase.frame,180);assert.ok(r.chase.maxAlong<=-2);assert.ok(r.lead.minAlong>=2);});
+test('a chase label cannot pass a camera that is actually in front',()=>{const d=fixture();d.shots[1].kind='chase';for(let f=120;f<240;f++)d.cams[f][2]=f+8;assert.throws(()=>trackingReviewFrames(d),/Missing verified chase/);});
+const path='out/tcr/track-review/germany-heat1-world-v21-grand-tour-v3-seed65/race.json';
+test('saved Germany65 preserves existing coverage and selects a genuine moving rear view',{skip:!existsSync(path)},()=>{const d=JSON.parse(readFileSync(path)),before=JSON.stringify(d),r=trackingReviewFrames(d);assert.equal(r.chase.shotKind,'wide');assert.equal(r.chase.frame,1188);assert.ok(r.chase.maxAlong< -5);assert.ok(r.chase.cameraTravel>30);assert.equal(JSON.stringify(d),before);});

@@ -1,14 +1,16 @@
-import { AbsoluteFill, interpolate, Sequence, spring, useCurrentFrame } from "remotion";
+import { AbsoluteFill, interpolate, Sequence, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { GrandPrix } from "./GrandPrix";
 import { getRace } from "./race";
 import { shortRange } from "./short-range";
+import {ChannelCTA} from './ChannelCTA';
 
 // The vertical Short: the final lap to the results card, with a title chip.
 // `season` (optional, passed by scripts/factory.mjs) puts the season in the chip,
 // so every season's Shorts differ: "MFC 2027 · SEASON 3 · ROUND 1".
 export const GrandPrixShort = ({ id, season }: { id: string; season?: number }) => {
   const race = getRace(id);
-  const { offset } = shortRange(race.data as unknown as Parameters<typeof shortRange>[0]);
+  const { offset,frames } = shortRange(race.data as unknown as Parameters<typeof shortRange>[0]);
+  const {width,height}=useVideoConfig();
   const f = useCurrentFrame();
   const fps = race.fps;
   const inn = spring({ frame: f - 4, fps, config: { damping: 15 } });
@@ -19,7 +21,7 @@ export const GrandPrixShort = ({ id, season }: { id: string; season?: number }) 
   return (
     <AbsoluteFill style={{ backgroundColor: "#111216" }}>
       <Sequence from={-offset}>
-        <GrandPrix id={id} layout="portrait" fadeInFrom={offset} />
+        <GrandPrix id={id} layout="portrait" fadeInFrom={offset} channelCTA={false} />
       </Sequence>
       <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: 736, opacity: inn * out, pointerEvents: "none" }}>
         <div
@@ -43,6 +45,7 @@ export const GrandPrixShort = ({ id, season }: { id: string; season?: number }) 
           </div>
         </div>
       </AbsoluteFill>
+      <ChannelCTA frame={f} fps={fps} timeline={{results:{at:race.timeline.results.at+(race.intro?.total??0)-offset},total:frames}} shortEnd={frames} width={width} height={height}/>
     </AbsoluteFill>
   );
 };

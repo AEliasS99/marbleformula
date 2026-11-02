@@ -1,8 +1,10 @@
+import {useMemo} from "react";
 import { AbsoluteFill, Html5Audio, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { Overlay } from "./Overlay";
-import { getRace, type Layout } from "./race";
+import { getRace, buildRace, type RoundData, type Layout } from "./race";
 import { Stage } from "./Stage";
 import { Intro } from "./Intro";
+import {ChannelCTA} from './ChannelCTA';
 
 // One round of the Marble Formula Championship. The race, camera direction and
 // sound are all baked by scripts/season.mjs; this only looks them up by frame.
@@ -10,8 +12,8 @@ import { Intro } from "./Intro";
 // P1 live on the left (top, in portrait), and on the right a slow-motion
 // replay, the lift tower, or action elsewhere, each with its own clock.
 
-export const GrandPrix = ({ id, layout, clean = false, fadeInFrom }: { id: string; layout: Layout; clean?: boolean; fadeInFrom?: number }) => {
-  const race = getRace(id);
+export const GrandPrix = ({ id, layout, clean = false, fadeInFrom, data, audioId = id, channelCTA = true }: { id: string; layout: Layout; clean?: boolean; fadeInFrom?: number; data?: RoundData; audioId?: string; channelCTA?:boolean }) => {
+  const race = useMemo(() => data ? buildRace(data) : getRace(id), [id, data]);
   const video = useCurrentFrame();
   const { width, height } = useVideoConfig();
   // The intro plays first; the race's frame 0 follows it.
@@ -22,12 +24,12 @@ export const GrandPrix = ({ id, layout, clean = false, fadeInFrom }: { id: strin
     <>
       {I > 0 && (
         <Sequence durationInFrames={I + race.fps} layout="none">
-          <Html5Audio src={staticFile(`gp/${id}-intro.wav`)} />
+          <Html5Audio src={staticFile(`gp/${audioId}-intro.wav`)} />
         </Sequence>
       )}
       <Sequence from={I} layout="none">
         <Html5Audio
-          src={staticFile(`gp/${id}.wav`)}
+          src={staticFile(`gp/${audioId}.wav`)}
           volume={
             fadeInFrom !== undefined
               ? (f) => interpolate(f, [raceAudioStart, raceAudioStart + 20], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
@@ -70,6 +72,7 @@ export const GrandPrix = ({ id, layout, clean = false, fadeInFrom }: { id: strin
         </div>
       )}
       {!clean && <Overlay race={race} frame={frame} t={t} section={section} shot={shot} layout={layout} width={width} height={height} split={split} />}
+      {!clean && channelCTA && <ChannelCTA frame={frame} fps={race.fps} timeline={race.timeline} width={width} height={height}/>}
     </AbsoluteFill>
   );
 };

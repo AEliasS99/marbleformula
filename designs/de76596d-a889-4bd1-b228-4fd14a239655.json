@@ -1,0 +1,366 @@
+{
+  "schemaVersion": 1,
+  "id": "de76596d-a889-4bd1-b228-4fd14a239655",
+  "revision": 1,
+  "name": "Valle Esmeralda",
+  "mode": "marbles",
+  "theme": "alpine",
+  "width": 4.2,
+  "laps": 2,
+  "seed": 17,
+  "points": [
+    {
+      "x": -48,
+      "z": 28,
+      "y": 5,
+      "id": "b63a3c61-42fb-4f62-8f82-3e30b5890107"
+    },
+    {
+      "x": -48,
+      "z": -20,
+      "y": 10,
+      "id": "faf134de-8910-4376-9392-1d357633e212"
+    },
+    {
+      "x": -30,
+      "z": -38,
+      "y": 16,
+      "id": "19133a10-5f1c-4079-b45d-1965b2cc04f8"
+    },
+    {
+      "x": 10,
+      "z": -38,
+      "y": 18,
+      "id": "8fe83a00-54c0-4fe2-a186-7414aeb6794a"
+    },
+    {
+      "x": 43,
+      "z": -20,
+      "y": 12,
+      "id": "7abb5381-c8f7-4a9c-9819-a35919854296"
+    },
+    {
+      "x": 40,
+      "z": 12,
+      "y": 7,
+      "id": "6f051302-a9bb-4e10-b752-2f73930757cb"
+    },
+    {
+      "x": 18,
+      "z": 23,
+      "y": 5,
+      "id": "bbff46cb-a594-42ef-8547-a8223b7867e8"
+    },
+    {
+      "x": 5,
+      "z": 4,
+      "y": 9,
+      "id": "6fde7fc9-1378-4621-8b6a-4a7da52d3a8d"
+    },
+    {
+      "x": -18,
+      "z": 8,
+      "y": 7,
+      "id": "3d534537-e65c-4183-bb28-4f606adb9a1f"
+    },
+    {
+      "x": -20,
+      "z": 30,
+      "y": 5,
+      "id": "275c7ef9-6f6d-4ef4-a500-2b6b7a1454c5"
+    }
+  ],
+  "elements": [
+    {
+      "id": "f84c210e-b5f5-4e72-b911-740060dd12ba",
+      "assetId": "checkpoint",
+      "name": "Checkpoint 1",
+      "at": 0.27,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "0c2498bc-1c7c-433b-bd6d-c829f0359341",
+      "assetId": "checkpoint",
+      "name": "Checkpoint 2",
+      "at": 0.54,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "99ae7372-20eb-4ce7-851d-c042864e1f48",
+      "assetId": "checkpoint",
+      "name": "Checkpoint 3",
+      "at": 0.79,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "027b2962-6807-488c-a193-ef6b2d03e4a5",
+      "assetId": "spinner",
+      "name": "Molino del bosque",
+      "at": 0.12,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "663a1e6d-deaa-4838-ae9d-14850b4f2d31",
+      "assetId": "vortex",
+      "name": "El gran vórtice",
+      "at": 0.39,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "02c97fb0-ea37-4a1c-bee1-72a25d7e2097",
+      "assetId": "jump",
+      "name": "Salto del valle",
+      "at": 0.65,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "24b00063-6eec-4cc1-941c-da73dfbe210d",
+      "assetId": "pine",
+      "name": "Pinos del mirador",
+      "at": 0.19,
+      "offset": 10,
+      "scale": 1
+    },
+    {
+      "id": "f509e707-98f8-4526-a8d9-46e65fd70f31",
+      "assetId": "stand",
+      "name": "Grada principal",
+      "at": 0.93,
+      "offset": 9,
+      "scale": 1
+    }
+  ],
+  "participants": [
+    {
+      "id": "ESP",
+      "name": "España",
+      "color": "#e5ad38",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "BRA",
+      "name": "Brasil",
+      "color": "#46a575",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "ARG",
+      "name": "Argentina",
+      "color": "#83bddd",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "AUT",
+      "name": "Austria",
+      "color": "#db6763",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "JPN",
+      "name": "Japón",
+      "color": "#dc8889",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "DEU",
+      "name": "Alemania",
+      "color": "#d5ab49",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "ITA",
+      "name": "Italia",
+      "color": "#62a886",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "GBR",
+      "name": "Reino Unido",
+      "color": "#789bc2",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "MEX",
+      "name": "México",
+      "color": "#559b83",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "NLD",
+      "name": "Países Bajos",
+      "color": "#ea9153",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "FRA",
+      "name": "Francia",
+      "color": "#6e91bd",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "USA",
+      "name": "Estados Unidos",
+      "color": "#c16c7e",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "BEL",
+      "name": "Bélgica",
+      "color": "#c5a35d",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "SWE",
+      "name": "Suecia",
+      "color": "#799eb7",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "CAN",
+      "name": "Canadá",
+      "color": "#cf7262",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "CHN",
+      "name": "China",
+      "color": "#be5d58",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "POL",
+      "name": "Polonia",
+      "color": "#ca8c99",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "IRL",
+      "name": "Irlanda",
+      "color": "#86aa73",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "DNK",
+      "name": "Dinamarca",
+      "color": "#bf7582",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "IND",
+      "name": "India",
+      "color": "#ddac67",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    }
+  ],
+  "notes": [],
+  "intent": "Una carrera fácil de seguir, con un tramo técnico y una llegada muy visible.",
+  "stage": "draft",
+  "source": null,
+  "updatedAt": "2026-10-25T20:07:28.702Z"
+}

@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {spawn} from 'node:child_process';import {once} from 'node:events';
+test('complete editor adapters and shared geometry',{timeout:120000},async()=>{const child=spawn(process.execPath,['scripts/factory.mjs','--shared-lock','--',process.execPath,'designer/adapters-checks.mjs'],{stdio:['ignore','pipe','pipe']});let out='';child.stdout.on('data',c=>out+=c);child.stderr.on('data',c=>out+=c);const [code]=await once(child,'close');assert.equal(code,0,out);console.log(out.trim());});

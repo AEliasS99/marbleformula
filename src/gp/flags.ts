@@ -30,6 +30,20 @@ const disc = (color: string, r: number) => (g: CanvasRenderingContext2D, x: numb
 };
 
 export const FLAGS = {
+  CHE: {name:'Switzerland',colors:['#e30613','#ffffff'],draw:((g,x,y,w,h)=>{
+    g.fillStyle='#e30613';g.fillRect(x,y,w,h);g.fillStyle='#ffffff';
+    g.fillRect(x+w/2-h*.11,y+h*.18,h*.22,h*.64);g.fillRect(x+w/2-h*.32,y+h*.39,h*.64,h*.22);
+  }) as Draw},
+  EGY: {name:'Egypt',colors:['#ce1126','#ffffff','#000000'],draw:((g,x,y,w,h)=>{
+    stripesH(['#ce1126','#ffffff','#000000'])(g,x,y,w,h);
+    g.fillStyle='#c6a348';g.beginPath();g.moveTo(x+w*.5,y+h*.36);g.lineTo(x+w*.43,y+h*.42);g.lineTo(x+w*.47,y+h*.6);g.lineTo(x+w*.53,y+h*.6);g.lineTo(x+w*.57,y+h*.42);g.closePath();g.fill();
+  }) as Draw},
+  AUS: {name:'Australia',colors:['#012169','#ffffff','#c8102e'],draw:((g,x,y,w,h)=>{
+    g.fillStyle='#012169';g.fillRect(x,y,w,h);FLAGS.GBR.draw(g,x,y,w*.5,h*.5);
+    const star=(cx:number,cy:number,r:number,points=7)=>{g.fillStyle='#ffffff';g.beginPath();for(let j=0;j<points*2;j++){const a=j*Math.PI/points-Math.PI/2,rr=j%2?r*.43:r;if(j)g.lineTo(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr);else g.moveTo(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr);}g.closePath();g.fill();};
+    star(x+w*.25,y+h*.75,h*.13);for(const [xx,yy,r]of [[.75,.18,.07],[.63,.47,.07],[.87,.43,.07],[.75,.8,.07],[.81,.59,.04]])star(x+w*xx,y+h*yy,h*r,r===.04?5:7);
+  }) as Draw},
+  COL: {name:'Colombia',colors:['#fcd116','#003893','#ce1126'],draw:stripesH(['#fcd116','#003893','#ce1126'],[2,1,1])},
   ESP: {
     name: "Spain",
     colors: ["#c60b1e", "#ffc400"],

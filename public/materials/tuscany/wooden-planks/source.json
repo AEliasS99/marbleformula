@@ -1,0 +1,30 @@
+{
+  "asset": "wooden_planks",
+  "source": "https://polyhaven.com/a/wooden_planks",
+  "license": "CC0",
+  "licenseURL": "https://polyhaven.com/license",
+  "photography": "Charlotte Baglioni",
+  "processing": "Dario Barresi",
+  "physicalWidthMeters": 2,
+  "resolution": 2048,
+  "maps": [
+    {
+      "map": "Diffuse",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/wooden_planks/wooden_planks_diff_2k.jpg",
+      "bytes": 1940468,
+      "sha256": "02a124390e368fe7ae4bb98235fd02113cd4159fd5a7ea580ccba3e319b3577b"
+    },
+    {
+      "map": "nor_gl",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/wooden_planks/wooden_planks_nor_gl_2k.jpg",
+      "bytes": 3135183,
+      "sha256": "a7ff9954729e7d4dd678b1e35a2edacef9246e45d25a714c000ce95e3cc4e436"
+    },
+    {
+      "map": "Rough",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/wooden_planks/wooden_planks_rough_2k.jpg",
+      "bytes": 1010429,
+      "sha256": "6b9761d9955a6405e73d0040348cf856bfa3d94127baab3b177cdd8d27390f95"
+    }
+  ]
+}

@@ -15,6 +15,20 @@ export const TRACK = {
   wall: 0.16, // shell thickness
 };
 const HALF = TRACK.width / 2;
+// Exactly the same orthonormal sweep used by the visible road and tyre queries.
+export function densifyTrackSamples(samples,k=2){
+ const out=[],lerp=(a,b,t)=>a.map((v,j)=>v+(b[j]-v)*t),unit=v=>{const l=Math.hypot(...v)||1;return v.map(x=>x/l);};
+ for(let i=0;i<samples.length-1;i++){
+  const A=samples[i],B=samples[i+1];
+  for(let j=0;j<k;j++){
+   const t=j/k,tt=unit(lerp(A.t,B.t,t)),r0=unit(lerp(A.r,B.r,t));
+   const n=unit([r0[1]*tt[2]-r0[2]*tt[1],r0[2]*tt[0]-r0[0]*tt[2],r0[0]*tt[1]-r0[1]*tt[0]]);
+   const r=unit([tt[1]*n[2]-tt[2]*n[1],tt[2]*n[0]-tt[0]*n[2],tt[0]*n[1]-tt[1]*n[0]]);
+   out.push({u:A.u+(B.u-A.u)*t,p:lerp(A.p,B.p,t),t:tt,r,n,curv:A.curv+(B.curv-A.curv)*t,w:(A.w??2.1)+((B.w??2.1)-(A.w??2.1))*t,...(j===0?(A.gap?{gap:true}:{}):A.gap&&B.gap?{gap:true}:{})});
+  }
+ }
+ out.push(samples.at(-1));return out;
+}
 export const TRACK_DEPTH = TRACK.wallHeight;
 export const BANK_PIVOT = 0; // flat floor: banking turns about the floor's centre line
 
@@ -102,7 +116,7 @@ const at = (s, lateral, up) => [
  * `caps` (end plates) — plus one merged triangle soup for the physics collider.
  * UVs: u = units along the track / 4, v = 0..1 across.
  */
-export function buildTrackMesh(samples, { arcSteps = FILLET_STEPS, endCaps = true, wallHeight = TRACK.wallHeight } = {}) {
+export function buildTrackMesh(samples, { arcSteps = FILLET_STEPS, endCaps = true, wallHeight = TRACK.wallHeight, strictGaps = false } = {}) {
   const limits = sideLimits(samples);
   const parts = { floor: geo(), rim: geo(), shell: geo() };
   const profiles = samples.map((s) => troughProfile(arcSteps, s.w ?? HALF, wallHeight));
@@ -116,12 +130,13 @@ export function buildTrackMesh(samples, { arcSteps = FILLET_STEPS, endCaps = tru
       ring.forEach((pt, j) => {
         g.position.push(...at(s, clampLateral(pt[0], limits[k]), pt[1]));
         g.uv.push(s.u / 4, vOf(pt, j, ring.length));
+        if(g===parts.floor)g.roadCoordinates.push(s.u,clampLateral(pt[0],limits[k]),pt[1]);
       });
     });
     for (let k = 0; k < samples.length - 1; k++) {
       // A gap (the track ends at a vortex bowl and resumes under its hole):
       // no quads where both ends are gap samples.
-      if (samples[k].gap && samples[k + 1].gap) continue;
+      if (strictGaps ? (samples[k].gap || samples[k + 1].gap) : (samples[k].gap && samples[k + 1].gap)) continue;
       for (let j = 0; j < width - 1; j++) {
         const a = base + k * width + j;
         const b = a + width;
@@ -148,7 +163,8 @@ export function buildTrackMesh(samples, { arcSteps = FILLET_STEPS, endCaps = tru
       ]
     : [];
   // Where the track resumes after a gap, a plate closes its open end.
-  for (let k = 0; k < samples.length - 1; k++) if (samples[k].gap && !samples[k + 1].gap) capAt.push([samples[k], k, false]);
+  // Authored flight gaps need open ends, without the legacy full-width stop plate.
+  if (!strictGaps) for (let k = 0; k < samples.length - 1; k++) if (samples[k].gap && !samples[k + 1].gap) capAt.push([samples[k], k, false]);
   for (const [s, k, flip] of capAt) {
     const { outer } = profiles[k];
     const base = caps.position.length / 3;
@@ -178,7 +194,7 @@ export function buildTrackMesh(samples, { arcSteps = FILLET_STEPS, endCaps = tru
 }
 
 function geo() {
-  return { position: [], uv: [], index: [] };
+  return { position: [], uv: [], index: [], roadCoordinates: [] };
 }
 
 /** World position `up` above the inner surface at a lateral offset. */

@@ -1,0 +1,339 @@
+{
+  "schemaVersion": 1,
+  "id": "97749ddf-ebcd-44df-aa7c-5746fa5211ad",
+  "revision": 1,
+  "name": "Coches · Física actual · Revisión 25 octubre",
+  "mode": "cars",
+  "theme": "night",
+  "width": 6,
+  "laps": 1,
+  "seed": 17,
+  "points": [
+    {
+      "id": "4c84e670-620f-4b46-a4c6-f4daab6eea80",
+      "x": 0,
+      "y": 5,
+      "z": 30
+    },
+    {
+      "id": "8c139d86-b9c6-4903-9960-6b81d6f8f9e4",
+      "x": 14.999999999999998,
+      "y": 5,
+      "z": 25.98076211353316
+    },
+    {
+      "id": "7af872d3-352b-4984-a226-453679012dd3",
+      "x": 25.980762113533157,
+      "y": 5,
+      "z": 15.000000000000004
+    },
+    {
+      "id": "bfe23553-635c-4be0-a4f8-eedb5cb33bc7",
+      "x": 30,
+      "y": 5,
+      "z": 1.83697019872103e-15
+    },
+    {
+      "id": "5994766f-2691-40f9-a6e0-55b83a92688d",
+      "x": 25.98076211353316,
+      "y": 5,
+      "z": -14.999999999999993
+    },
+    {
+      "id": "701d4cc5-1523-471c-a135-6f05cfaa111c",
+      "x": 14.999999999999998,
+      "y": 5,
+      "z": -25.98076211353316
+    },
+    {
+      "id": "b3167f9f-68aa-449f-bdf7-110c7712eb2c",
+      "x": 3.67394039744206e-15,
+      "y": 5,
+      "z": -30
+    },
+    {
+      "id": "8b1a935a-087c-4862-ae4a-0d88693863ba",
+      "x": -14.999999999999991,
+      "y": 5,
+      "z": -25.980762113533164
+    },
+    {
+      "id": "82bbf145-dca5-4d77-8636-8b581ec567dd",
+      "x": -25.980762113533153,
+      "y": 5,
+      "z": -15.000000000000014
+    },
+    {
+      "id": "9e4e6cc1-cffc-4772-9627-c20e07989e21",
+      "x": -30,
+      "y": 5,
+      "z": -5.510910596163089e-15
+    },
+    {
+      "id": "4f9172b8-f2f0-4b58-9612-eb2105892394",
+      "x": -25.980762113533157,
+      "y": 5,
+      "z": 15.000000000000004
+    },
+    {
+      "id": "ff6c46f1-e750-4aff-8568-d15199a3210e",
+      "x": -15.000000000000014,
+      "y": 5,
+      "z": 25.980762113533153
+    }
+  ],
+  "elements": [
+    {
+      "id": "8a8e6c57-1267-45d9-bf7f-c57f216dfb0a",
+      "assetId": "checkpoint",
+      "name": "Checkpoint 1",
+      "at": 0.27,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "c5123290-67c9-432f-8f04-de4fa5661ea6",
+      "assetId": "checkpoint",
+      "name": "Checkpoint 2",
+      "at": 0.54,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "91c3579d-4595-4cec-a7ad-9aff01483f1a",
+      "assetId": "checkpoint",
+      "name": "Checkpoint 3",
+      "at": 0.79,
+      "offset": 0,
+      "scale": 1
+    }
+  ],
+  "participants": [
+    {
+      "id": "ESP",
+      "name": "España",
+      "color": "#e5ad38",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "BRA",
+      "name": "Brasil",
+      "color": "#46a575",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "ARG",
+      "name": "Argentina",
+      "color": "#83bddd",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "AUT",
+      "name": "Austria",
+      "color": "#db6763",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "JPN",
+      "name": "Japón",
+      "color": "#dc8889",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "DEU",
+      "name": "Alemania",
+      "color": "#d5ab49",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "ITA",
+      "name": "Italia",
+      "color": "#62a886",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "GBR",
+      "name": "Reino Unido",
+      "color": "#789bc2",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "MEX",
+      "name": "México",
+      "color": "#559b83",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "NLD",
+      "name": "Países Bajos",
+      "color": "#ea9153",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "FRA",
+      "name": "Francia",
+      "color": "#6e91bd",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "USA",
+      "name": "Estados Unidos",
+      "color": "#c16c7e",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "BEL",
+      "name": "Bélgica",
+      "color": "#c5a35d",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "SWE",
+      "name": "Suecia",
+      "color": "#799eb7",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "CAN",
+      "name": "Canadá",
+      "color": "#cf7262",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "CHN",
+      "name": "China",
+      "color": "#be5d58",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "POL",
+      "name": "Polonia",
+      "color": "#ca8c99",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "IRL",
+      "name": "Irlanda",
+      "color": "#86aa73",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "DNK",
+      "name": "Dinamarca",
+      "color": "#bf7582",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "IND",
+      "name": "India",
+      "color": "#ddac67",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    }
+  ],
+  "notes": [],
+  "intent": "Circuito de laboratorio compatible con física. Modifica puntos y piezas y compara los ensayos.",
+  "stage": "draft",
+  "source": "racecraft-physics-lab",
+  "wallHeight": 1.5,
+  "updatedAt": "2026-10-25T21:31:36.147Z"
+}

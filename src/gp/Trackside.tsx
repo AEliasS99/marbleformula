@@ -4,6 +4,7 @@ import { TRACK } from "./trackMesh.js";
 import { venueLayout, yawAlong } from "./venue.js";
 import { getCircuitTheme } from "./Themes";
 import type { Race, Vec3 } from "./race";
+import {tuscanVenue} from './tuscany-sites.js';
 
 // Everything around the circuit, so wide shots show a race venue instead of a
 // void: the service road under the track, grandstands with seated crowds, a
@@ -45,6 +46,7 @@ const BOARDS: [string, string, string][] = [
 
 export function Trackside({ race }: { race: Race }) {
   const theme = getCircuitTheme(race);
+  const tuscan = tuscanVenue(race.data);
   const built = useMemo(() => {
     const samples = race.data.samples as unknown as Sample[];
     const layout = venueLayout(samples, race.L) as unknown as {
@@ -221,16 +223,16 @@ export function Trackside({ race }: { race: Race }) {
       <group position={built.pit.base} rotation-y={built.pit.yaw + (built.pit.side > 0 ? Math.PI : 0)}>
         <mesh position={[0, 1.6, 0]} castShadow receiveShadow>
           <boxGeometry args={[26, 3.2, 7]} />
-          <meshStandardMaterial color="#e6e6e2" roughness={0.75} />
+          <meshStandardMaterial color={tuscan ? '#c9b99a' : '#e6e6e2'} roughness={tuscan ? .92 : .75} />
         </mesh>
         <mesh position={[0, 3.3, 0]} castShadow>
           <boxGeometry args={[26.6, 0.25, 7.6]} />
-          <meshStandardMaterial color="#9ea3ad" roughness={0.6} metalness={0.4} />
+          <meshStandardMaterial color={tuscan ? '#884f35' : '#9ea3ad'} roughness={tuscan ? .93 : .6} metalness={tuscan ? 0 : .4} />
         </mesh>
         {Array.from({ length: 7 }, (_, k) => (
           <mesh key={k} position={[(k - 3) * 3.4, 1.3, 3.51]}>
             <planeGeometry args={[2.6, 2.3]} />
-            <meshStandardMaterial color="#1d2430" roughness={0.2} metalness={0.5} />
+            <meshStandardMaterial color={tuscan ? '#423e2c' : '#1d2430'} roughness={tuscan ? .85 : .2} metalness={tuscan ? 0 : .5} />
           </mesh>
         ))}
         <mesh position={[0, 2.95, 3.52]}>

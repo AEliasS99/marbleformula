@@ -4,9 +4,20 @@ description: Complete project context, YouTube channel rules, video storage poli
 
 # Marble Formula (@MarbleFormula) — Project & Conversation Handoff Rule
 
+## Current storage and publication policy (user update, 2026-10-25)
+
+This overrides the old Mac's disk-space workaround and any older mount/auto-upload instructions below.
+- Generate and keep work-in-progress videos on this Mac, outside Git repositories, in $VIDEO_OUT (currently ~/GoogleCloud, a LOCAL directory despite its name).
+- Do not mount the cloud bucket over this working directory or enable automatic synchronization of renders.
+- Required order: finish the video locally → review and validate it with the user → upload to YouTube and confirm success → archive the finished, validated video in gs://elias-marmot-races.
+- Do not archive drafts, failed renders, or unvalidated videos in Google Cloud. Paying for cloud storage is acceptable; early uploads are not desired.
+- Do not automatically delete the local master after archiving; deletion requires a separate user instruction.
+- The updated overnight script prepares/renders locally only and defaults to --prepare. See marbleformula/RENDER-WORKFLOW.md (RENDER-WORKFLOW.md from the repository root). Upload is a separate step after user validation; older auto-upload descriptions below are historical.
+
+
 ## 1. Non-Negotiable Video Storage & Quality Rules
 1. **Video Storage (`$HOME/GoogleCloud` ONLY)**:
-   - Save ALL `.mp4`, `.mov`, and video renders exclusively in `$HOME/GoogleCloud` (`gs://elias-marmot-races`).
+   - Save ALL `.mp4`, `.mov`, and video renders exclusively in the local `$HOME/GoogleCloud` working directory; `gs://elias-marmot-races` is the final archive destination only.
    - NEVER save `.mp4` or `.mov` files inside `./out`, anywhere else in `~/marmot`, or on external drives.
    - Code, JSON telemetry (`src/gp/races/*.json`), images, and `.wav` audio stay in the project repo.
 2. **Never Downgrade or Trim Renders**:

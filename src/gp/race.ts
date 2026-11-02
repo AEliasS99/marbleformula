@@ -1,4 +1,7 @@
+import {productionIntro} from "./car-showcase.js";
+import {cockpitCamera,cockpitRoadOptions,cockpitSpeedAt} from './car-cockpit.js';
 import * as THREE from "three";
+import {createCarContactSolver,carWheelAnimationAt} from './car-contact.js';
 import { rounds, season } from "./races";
 
 // One baked Grand Prix (from scripts/season.mjs) plus everything derived from
@@ -9,7 +12,7 @@ export type Quat = [number, number, number, number];
 export type Layout = "landscape" | "portrait";
 export type Section = "race" | "replay" | "results" | "standings" | "constructors";
 export type RoundData = (typeof rounds)[number];
-export type Shot = { pos: Vec3; target: Vec3; fov: number; kind: string; marble: number | null };
+export type Shot = { pos: Vec3; target: Vec3; up?:Vec3; fov: number; kind: string; marble: number | null };
 /** One half of the picture (or the whole of it): its own clock (video frame → simulation frame) and camera. */
 export type View = { tAt: (videoFrame: number) => number; shotAt: (videoFrame: number) => Shot };
 export type Split = {
@@ -24,7 +27,7 @@ export type Split = {
   cams?: number[][];
 };
 export type IntroCard = { type: string; u: number; label: string; count: number; from: number; to: number };
-export type IntroPlan = { scenes: { id: string; frames: number; at: number }[]; total: number; highlight: number | null; coldFrom?: number; L: number; cards: IntroCard[] };
+export type IntroPlan = { scenes: { id: string; frames: number; at: number }[]; total: number; highlight: number | null; coldFrom?: number; L: number; cards: IntroCard[]; vehicle?: string; carFrames?: number; profile?:string; teamFrames?:number };
 /** A highlight (or a drain blooper): replayed in slow motion in a split screen from the live frame `insert`. */
 export type Highlight = { f: number; marble: number; label: string; feature: string; from: number; to: number; speed: number; frames: number; insert: number; dq?: boolean };
 
@@ -39,20 +42,20 @@ const jump = (A: ArrayLike<unknown>, B: ArrayLike<unknown>) =>
 
 export { rounds, season };
 
-const cache = new Map<string, ReturnType<typeof build>>();
+const cache = new Map<string, ReturnType<typeof buildRace>>();
 export const getRace = (id: string) => {
   let r = cache.get(id);
   if (!r) {
     const data = rounds.find((d) => d.id === id);
     if (!data) throw new Error(`No round ${id}`);
-    r = build(data);
+    r = buildRace(data);
     cache.set(id, r);
   }
   return r;
 };
 export type Race = ReturnType<typeof getRace>;
 
-function build(data: RoundData) {
+export function buildRace(data: RoundData) {
   const { fps, timeline, marbles } = data;
   const frames = data.frames as number[][][];
   const lastFrame = frames.length - 1;
@@ -95,7 +98,11 @@ function build(data: RoundData) {
 
   const qa = new THREE.Quaternion();
   const qb = new THREE.Quaternion();
-  const marblePose = (i: number, t: number) => {
+  const contactQuality=(data as unknown as {visualQuality?:{tyreContact?:boolean}}).visualQuality?.tyreContact;
+  const contactSolver=contactQuality?createCarContactSolver(data.samples):null;
+  const contactPoses=new Map<string,{pos:Vec3;quat:Quat;wheelY?:number[]}>();
+  const marblePose = (i: number, t: number):{pos:Vec3;quat:Quat;wheelY?:number[]} => {
+    const key=i+':'+t;if(contactSolver&&contactPoses.has(key))return contactPoses.get(key)!;
     const f0 = Math.max(0, Math.min(Math.floor(t), lastFrame));
     const f1 = Math.min(f0 + 1, lastFrame);
     const a = Math.min(Math.max(t - f0, 0), 1);
@@ -104,10 +111,15 @@ function build(data: RoundData) {
     qa.set(A[3], A[4], A[5], A[6]);
     qb.set(B[3], B[4], B[5], B[6]);
     qa.slerp(qb, a);
-    return {
+    const pose={
       pos: [0, 1, 2].map((k) => A[k] + (B[k] - A[k]) * a) as Vec3,
       quat: [qa.x, qa.y, qa.z, qa.w] as Quat,
     };
+    if(!contactSolver)return pose;
+    const cls=(marbles[i] as unknown as {stats?:{cls?:string}}).stats?.cls??'F1';
+    const style=({F1:0,GT:1,BGY:2,JET:3} as Record<string,number>)[cls]??0;
+    const result=contactSolver.solve(pose,A[7]+(B[7]-A[7])*a,style,carWheelAnimationAt(frames,i,t,pose.quat));
+    if(contactPoses.size>=4096)contactPoses.clear();contactPoses.set(key,result);return result;
   };
   const progress = (i: number, f: number) => frames[f][i][7]; // total: lap * L + u
   const GRID = 9.5;
@@ -170,11 +182,7 @@ function build(data: RoundData) {
     const p1 = progress(i, ff);
     return p1 > p0 ? ff - 1 + Math.max(0, Math.min(1, (uFin - p0) / (p1 - p0))) : ff;
   });
-  for (let pos = 1; pos < order.length; pos++) {
-    const prev = exactFinish[order[pos - 1]];
-    const cur = exactFinish[order[pos]];
-    if (prev !== null && cur !== null && cur <= prev + 0.35) exactFinish[order[pos]] = prev + 0.35;
-  }
+  // Preserve measured ties and sub-frame gaps. Presentation must never invent finish times.
 
   // Finishers by time, then the rest by progress, then the disqualified (later checkpoint out ranks higher; tie-break by progress at DQ).
   const rankKey = (i: number, f: number): [number, number] => {
@@ -280,13 +288,13 @@ function build(data: RoundData) {
       shotIx[f] = i < 0 ? shots.length - 1 : i; // as shotInfo
     }
     const edges = new Set(splits.flatMap((sp) => [sp.start, sp.end]));
-    const inSplit = new Uint8Array(cams.length);
-    for (const sp of splits) for (let f = Math.max(0, sp.start); f < Math.min(cams.length, sp.end); f++) inSplit[f] = 1;
     for (let f = 0; f + 1 < cams.length; f++) {
       const A = cams[f];
       const B = cams[f + 1];
-      const leader = A[7] === "leader" || B[7] === "leader" || inSplit[f] || inSplit[f + 1];
-      raceCut[f] = shotIx[f] !== shotIx[f + 1] || A[7] !== B[7] || edges.has(f + 1) || (leader && jump(A, B) > CUT_JUMP) ? 1 : 0;
+      // A fallback can change rigs or widen the lens inside a finish shot.
+      // Cut abrupt optical changes too: blending them double-exposes the scene.
+      const lensJump = Math.abs(Number(A[6]) - Number(B[6])) > 10;
+      raceCut[f] = shotIx[f] !== shotIx[f + 1] || A[7] !== B[7] || edges.has(f + 1) || jump(A, B) > CUT_JUMP || lensJump ? 1 : 0;
     }
   }
   /** Cuts in a list of camera rows that has no shot list (a split's own camera, a highlight's replay camera): only jumps. */
@@ -334,14 +342,29 @@ function build(data: RoundData) {
   const shotAt = (videoFrame: number): Shot => {
     const vf = clampSample(videoFrame);
     const { section, t } = simAt(vf);
-    if (section === "race") return camAt(cams, raceCut, t, simAt(Math.round(vf)).t);
+    if (section === "race") {
+      const shot=camAt(cams,raceCut,t,simAt(Math.round(vf)).t);
+      if(shot.kind==='cockpit'&&shot.marble!==null){
+        const i=shot.marble,pose=marblePose(i,t),f=Math.max(0,Math.min(lastFrame-1,Math.floor(t))),a=t-f;
+        const u=frames[f][i][7]+(frames[f+1][i][7]-frames[f][i][7])*a;
+        const speed=cockpitSpeedAt(frames,i,t,fps);
+        const presentation=(data as unknown as {carConditions?:{racecraft?:{cockpitPresentation?:string}}}).carConditions?.racecraft?.cockpitPresentation;
+        const options=cockpitRoadOptions(data.samples,u,speed,presentation);
+        const camera=cockpitCamera(pose.pos,pose.quat,options);
+        return {...shot,...camera,pos:camera.pos as Vec3,target:camera.target as Vec3,up:camera.up as Vec3};
+      }
+      return shot;
+    }
     if (section === "replay") {
       const f0 = Math.floor(t);
       const a = t - f0;
       const A = winnerPath[Math.min(f0, lastFrame)];
       const B = winnerPath[Math.min(f0 + 1, lastFrame)];
       const target = A.map((v, k) => v + (B[k] - v) * a) as Vec3;
-      return { pos: data.replayCam as Vec3, target, fov: 30, kind: "replay", marble: winner };
+      // An isolated production may supply a rig validated across the entire
+      // replay, including the winner's body passing beneath the finish gantry.
+      const replayCamera = (data as unknown as { replayCamera?: { pos: Vec3; fov: number } }).replayCamera;
+      return { pos: replayCamera?.pos ?? data.replayCam as Vec3, target, fov: replayCamera?.fov ?? 30, kind: "replay", marble: winner };
     }
     // Slow drone orbit of the whole circuit behind the result cards.
     const k = (vf - timeline.results.at) / (timeline.total - timeline.results.at);
@@ -407,7 +430,10 @@ function build(data: RoundData) {
   const leaderAt = (f: number) => ranking(Math.max(0, Math.min(lastFrame, Math.round(f))))[0];
 
   const isCar = (data.info as { vehicle?: string })?.vehicle === "car";
-  const intro = isCar ? null : (((data as unknown as { intro?: IntroPlan }).intro ?? null) as IntroPlan | null);
+  const storedIntro = (data as unknown as {intro?:IntroPlan}).intro ?? null;
+  // Historical car data may carry the marble intro; only explicitly authored
+  // car presentations opt in. Existing car masters keep their original clock.
+  const intro = productionIntro(storedIntro,isCar) as IntroPlan | null;
 
   return {
     data,

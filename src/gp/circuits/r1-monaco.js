@@ -10,6 +10,13 @@ export default {
   seed: 17,
   scale: 0.56,
   start: "auto",
+  // Meltwater on the inside of three existing bends. Keep the original outline,
+  // elevation and scenery; dry outside lines remain available to passing cars.
+  carChallenges: { racecraft:{boostSeconds:3.2,boostSpeed:3.4,brakingBase:0.94,brakingSpread:0.25}, patches: [
+    { id: "glacier-entry", label: "GLACIER MELTWATER", u0: 113, u1: 127, lat: 0.98, halfWidth: 0.92 },
+    { id: "village-bend", label: "ALPINE MELTWATER", u0: 233, u1: 248, lat: 0.98, halfWidth: 0.92 },
+    { id: "final-hairpin", label: "FINAL HAIRPIN · WET INSIDE", u0: 482, u1: 497, lat: -0.98, halfWidth: 0.92 },
+  ] },
   // High-speed alpine valley straight + cascading glacier switchbacks + ridge sweep
   outline: [
     [-72, -78], [74, -78],

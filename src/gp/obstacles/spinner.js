@@ -22,17 +22,18 @@ export default {
   restitution: 0.35,
   collection: "spinners",
   card: { difficulty: 4, chaos: 5, seconds: 3, summary: "A two-blade rotor with hooked tips: scoops marbles in batches and flings them out." },
-  build(f, { frameAt, out, sync }) {
+  build(f, { frameAt, out, sync, physicsProfile }) {
     const s = frameAt(f.u);
     const dir = out.spinners.length % 2 ? -1 : 1;
     const speed = dir * 3.4; // fast: it flings, not just stirs
+    const contact=physicsProfile==='contact-flow-v2';
     out.spinners.push({
       kind: "spinner",
       pos: pointInFrame(s, 0, 0.3).map(r3),
       quat: quatArr(frameQuat(s)),
-      size: [0.12, 0.5, 1.82], // blade: thickness, height, reach from the axis
+      size: [0.12, 0.5, contact?Math.min(1.82,(s.w??2.1)-.88):1.82], // blade: thickness, height, reach from the axis
       arms: 2,
-      hook: 0.5, // hook length, on the leading side
+      hook: contact?.22:.5, // leave a full marble-width escape around the moving tip
       dir,
       speed,
       // A blade lies across the track's centre line, sweeping toward the field, as the leader arrives.

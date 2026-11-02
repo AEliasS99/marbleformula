@@ -1,0 +1,127 @@
+{
+  "source": {
+    "raceSHA256": "936ba6a93eeedd9d928fc8a710662f80aeaa93a50a51e7b4d3489466acaefcf0",
+    "country": "ITA",
+    "firstOriginalFrame": 2309,
+    "reportedRecoveriesInOldProductionCheck": 0,
+    "description": "Actual six consecutive poses around a4.899m recovery teleport in delivered Italy67. Other runners omitted; no pose values invented."
+  },
+  "fps": 60,
+  "info": {
+    "gp": "Italy",
+    "title": "Italian Vineyard Grand Prix",
+    "country": "Italy",
+    "flag": [
+      "#009246",
+      "#ffffff",
+      "#ce2b37"
+    ],
+    "location": "Tuscany (stylised)",
+    "circuit": "Tuscan Hills Rush",
+    "realLength": 16857,
+    "length": 857.81,
+    "laps": 2,
+    "trackEnd": 844.11,
+    "finish": 824.11,
+    "drop": 128.636,
+    "scale": 1,
+    "vehicle": "marble"
+  },
+  "marbleRadius": 0.35,
+  "timeline": {
+    "raceStart": 0
+  },
+  "marbles": [
+    {
+      "abbr": "ITA",
+      "finishFrame": null,
+      "dqFrame": null
+    }
+  ],
+  "features": [
+    {
+      "type": "spinner",
+      "u": 282.072,
+      "label": "THE WHIRLWIND",
+      "span": [
+        2,
+        3
+      ]
+    }
+  ],
+  "frames": [
+    [
+      [
+        42.975,
+        -49.78,
+        5.561,
+        0.309,
+        0.658,
+        0.625,
+        -0.283,
+        278.049
+      ]
+    ],
+    [
+      [
+        42.979,
+        -49.78,
+        5.558,
+        0.34,
+        0.65,
+        0.608,
+        -0.306,
+        278.044
+      ]
+    ],
+    [
+      [
+        42.983,
+        -49.779,
+        5.556,
+        0.369,
+        0.641,
+        0.588,
+        -0.328,
+        278.04
+      ]
+    ],
+    [
+      [
+        41.048,
+        -50.256,
+        10.031,
+        0.396,
+        0.631,
+        0.568,
+        -0.35,
+        282
+      ]
+    ],
+    [
+      [
+        40.952,
+        -50.276,
+        10.097,
+        0.396,
+        0.631,
+        0.568,
+        -0.35,
+        282.117
+      ]
+    ],
+    [
+      [
+        40.855,
+        -50.303,
+        10.164,
+        0.396,
+        0.631,
+        0.568,
+        -0.35,
+        282.238
+      ]
+    ]
+  ],
+  "carDiagnostics": []
+}

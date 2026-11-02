@@ -1,0 +1,30 @@
+import {useEffect,useMemo} from 'react';
+import {buildSceneryMeshes} from './scenery-mesh.js';
+import {frenchScenery,FRANCE_MATERIALS} from './france-scenery.js';
+import {italianScenery,ITALY_MATERIALS} from './italy-scenery.js';
+import {italianTerrain,italyTerrainGeometry} from './italy-terrain.js';
+import type {BufferGeometry} from 'three';
+import type {Race} from './race';
+import {realismMaterials} from './visual-realism.js';
+import {applyRealismSurface} from './realism-surfaces.js';
+import {TUSCAN_VENUE_PROFILE} from './tuscany-sites.js';
+import {TUSCAN_VENUE_MATERIALS} from './tuscany-venue.js';
+import {tuscanLandscape} from './tuscany-landscape.js';
+import {landscapeGroundTexture,applyLandscapeGround} from './landscape-ground.js';
+import {applyVenueSurface,applyVineyardGround} from './venue-surfaces.js';
+export function ItalyScenery({race,region='italy'}:{race:Race;region?:'italy'|'france'}){
+ const realistic=realismMaterials(race.data);
+ const sceneryProfile=(race.data.info as {sceneryProfile?:string}).sceneryProfile;
+ const venue=region==='italy'&&sceneryProfile===TUSCAN_VENUE_PROFILE;
+ const detailed=realistic||(region==='italy'&&sceneryProfile==='tuscany-rich-v2')||venue;
+ const materials=useMemo(()=>region==='france'?FRANCE_MATERIALS:venue?{...ITALY_MATERIALS,...TUSCAN_VENUE_MATERIALS}:ITALY_MATERIALS,[region,venue]);
+ const surface=useMemo(()=>italianTerrain(race.data.samples,{profile:sceneryProfile,length:race.L}),[race,sceneryProfile]);
+ const recipe=useMemo(()=>region==='italy'?italianScenery(race.data.samples,{profile:sceneryProfile,length:race.L}):frenchScenery(race.data.samples),[race,region,sceneryProfile]);
+ const groundMap=useMemo(()=>venue?landscapeGroundTexture(tuscanLandscape(race.data.samples)):null,[race,venue]);
+ useEffect(()=>()=>groundMap?.texture.dispose(),[groundMap]);
+ const fields=useMemo(()=>recipe.groups.filter(g=>g.kind==='venue-vineyard'),[recipe]);
+ const meshes=useMemo(()=>buildSceneryMeshes(recipe.parts,materials,{localCoordinates:venue}),[recipe,materials,venue]);
+ const terrain=useMemo<BufferGeometry[]>(()=> (venue?[{positions:surface.tiles.flatMap((tile:{positions:number[]})=>tile.positions)}]:surface.tiles).map((tile:{positions:number[]})=>italyTerrainGeometry(tile,detailed?surface:undefined)),[race,detailed,surface,venue]);
+ useEffect(()=>()=>{meshes.forEach(m=>m.geometry.dispose());terrain.forEach(g=>g.dispose());},[meshes,terrain]);
+ return <group>{terrain.map((geometry,i)=><mesh key={'terrain-'+i} geometry={geometry} receiveShadow><meshStandardMaterial {...materials.hill} onBeforeCompile={shader=>{if(detailed)applyRealismSurface(shader,'ground');if(venue&&groundMap){applyVineyardGround(shader,fields);applyLandscapeGround(shader,groundMap);}}} customProgramCacheKey={()=>venue?'venue-connected-landscape-v2-'+fields.length:detailed?'detailed-ground-v1':'legacy-ground'}/></mesh>)}{meshes.map(m=><mesh key={m.key} geometry={m.geometry} castShadow receiveShadow><meshStandardMaterial {...m.material} onBeforeCompile={shader=>{if(venue&&['hill','ridge'].includes(m.key))applyRealismSurface(shader,'ground');else if(venue)applyVenueSurface(shader,m.key==='wood'?'wood':['limestone','cream','ochre','paving'].includes(m.key)?'stone':'other');else if(detailed&&!['glass','red','white','green','gold','black','navy','clock','hand'].includes(m.key))applyRealismSurface(shader,['leaf','hedge','ridge','pine','cypress','vine'].includes(m.key)?'ground':'stone');}} customProgramCacheKey={()=>venue?'venue-local-v1-'+m.key:detailed?'detailed-surface-v1-'+m.key:'legacy-surface'}/></mesh>)}</group>;
+}

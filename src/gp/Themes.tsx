@@ -1,9 +1,18 @@
 import { useMemo } from "react";
+import {sceneryLayout} from "./scenery-layout.js";
+import {buildAlpineMountainGeo} from "./alpine-mountain.js";
+import {SpainScenery} from './SpainScenery';
+import {ItalyScenery} from './ItalyScenery';
+import {GermanyScenery} from './GermanyScenery';
+import {BritainScenery} from './BritainScenery';
+import {ColombiaScenery} from './ColombiaScenery';
+import {SydneyScenery} from './SydneyScenery';
+import {newYorkBuildings} from './newyork-scenery.js';
 import * as THREE from "three";
 import { TRACK, TRACK_DEPTH } from "./trackMesh.js";
 import type { Race, Vec3 } from "./race";
 
-export type CircuitThemeId = "tokyo" | "alps" | "cairo" | "sydney" | "newyork";
+export type CircuitThemeId = "tokyo" | "alps" | "cairo" | "sydney" | "newyork" | "spain" | "colombia" | "italy" | "germany" | "britain" | "france";
 
 export interface CircuitTheme {
   id: CircuitThemeId;
@@ -44,6 +53,84 @@ export interface CircuitTheme {
 export function getCircuitTheme(race: Race): CircuitTheme {
   const gp = (race.data.info?.gp ?? "").toLowerCase();
   const id = (race.data.id ?? "").toLowerCase();
+
+  if(gp.includes('britain')||id==='r10-britain')return {
+    id:'britain',skyColor:'#8ca4b1',fogColor:'#b9c8bd',fogNear:160,fogFar:700,
+    groundColor:'#73885a',groundRoughness:1,groundMetalness:0,
+    trackFloorColor:'#343a3e',trackSpeckleRgb:[155,161,164],trackEdgeColor:'#e5dfcf',trackDashColor:'#faf7e9',
+    innerWallColor:'#c3c8bf',outerShellColor:'#56665e',outerShellMetalness:.08,outerShellRoughness:.86,
+    rimColor:'#d9ded6',capsColor:'#657367',kerbColorA:'#b52738',kerbColorB:'#f3eddf',
+    sunColor:'#f6e8c9',sunIntensity:2.4,rimLightColor:'#b8d3e1',rimLightIntensity:.62,
+    hemiSkyColor:'#d0e1e5',hemiGroundColor:'#687e50',hemiIntensity:.65,
+    hoopRibColor:'#abb0a4',hoopLedColor:'#e3e6cd',hoopLedEmissive:'#c5cbb0',
+    neonPalette:['#173653','#f3eddf','#b52738','#8eac80'],extraNeonArches:false,
+    boards:[['BRITAIN','#173653','#f3eddf'],['COTSWOLD RIDGE','#b52738','#ffffff'],['PICK YOUR CAR','#173653','#f3eddf'],['RIDGE GRAND TOUR','#405c3a','#ffffff'],['VILLAGE SPRINT','#b52738','#ffffff']],
+  };
+
+  if(gp.includes('germany')||id==='r9-blackforest')return {
+    id:'germany',skyColor:'#839a9e',fogColor:'#a1b6b0',fogNear:150,fogFar:650,
+    groundColor:'#677f59',groundRoughness:1,groundMetalness:0,
+    trackFloorColor:'#32373a',trackSpeckleRgb:[158,162,159],trackEdgeColor:'#eee6d3',trackDashColor:'#faf5df',
+    innerWallColor:'#c7c8bd',outerShellColor:'#657268',outerShellMetalness:.12,outerShellRoughness:.8,
+    rimColor:'#deddd2',capsColor:'#637269',kerbColorA:'#d62228',kerbColorB:'#f1c545',
+    sunColor:'#f5e3c3',sunIntensity:2.5,rimLightColor:'#b8d1d7',rimLightIntensity:.65,
+    hemiSkyColor:'#cbdedc',hemiGroundColor:'#607953',hemiIntensity:.65,
+    hoopRibColor:'#aaa58e',hoopLedColor:'#f2e6b8',hoopLedEmissive:'#d9bf79',
+    neonPalette:['#191a1a','#d62228','#f1c545','#d5d9cf'],extraNeonArches:false,
+    boards:[['GERMANY · BLACK FOREST','#191a1a','#f1c545'],['GRAND TOUR','#d62228','#ffffff'],['CHOOSE YOUR COUNTRY','#f1c545','#191a1a'],['FOREST · VILLAGES · RACING','#294d3d','#ffffff'],['BLACK FOREST GRAND PRIX','#191a1a','#f1c545']],
+  };
+
+  if(gp.includes('france')||id==='r11-provence')return {
+    id:'france',skyColor:'#8ba6ab',fogColor:'#c6b89a',fogNear:135,fogFar:560,
+    groundColor:'#93916a',groundRoughness:.98,groundMetalness:0,
+    trackFloorColor:'#353b38',trackSpeckleRgb:[167,166,153],trackEdgeColor:'#e8dcc4',trackDashColor:'#fff8e8',
+    innerWallColor:'#ded3b8',outerShellColor:'#8b8063',outerShellMetalness:.15,outerShellRoughness:.75,
+    rimColor:'#eee4c9',capsColor:'#8e846b',kerbColorA:'#244c91',kerbColorB:'#ce2b37',
+    sunColor:'#ffe1ac',sunIntensity:2.6,rimLightColor:'#adcbd4',rimLightIntensity:.7,
+    hemiSkyColor:'#d6e3dd',hemiGroundColor:'#8c8054',hemiIntensity:.62,
+    hoopRibColor:'#cdb88d',hoopLedColor:'#f4e5b9',hoopLedEmissive:'#e9be75',
+    neonPalette:['#244c91','#eee9d9','#ce2b37','#d9b571'],extraNeonArches:false,
+    boards:[['FRANCE','#244c91','#ffffff'],['PROVENCE','#ce2b37','#fff4dc'],['PICK YOUR CAR','#e5d7b6','#284737'],['PLATEAU TOUR','#304c36','#ffffff'],['LAVENDER SPRINT','#ce2b37','#ffffff']],
+  };
+
+  if(gp.includes('italy')||id==='r8-tuscany')return {
+    id:'italy',skyColor:'#8ba6ab',fogColor:'#c6b89a',fogNear:135,fogFar:560,
+    groundColor:'#8b8e60',groundRoughness:.98,groundMetalness:0,
+    trackFloorColor:'#353b38',trackSpeckleRgb:[167,166,153],trackEdgeColor:'#e8dcc4',trackDashColor:'#fff8e8',
+    innerWallColor:'#ded3b8',outerShellColor:'#8b8063',outerShellMetalness:.15,outerShellRoughness:.75,
+    rimColor:'#eee4c9',capsColor:'#8e846b',kerbColorA:'#009246',kerbColorB:'#ce2b37',
+    sunColor:'#ffe1ac',sunIntensity:2.6,rimLightColor:'#adcbd4',rimLightIntensity:.7,
+    hemiSkyColor:'#d6e3dd',hemiGroundColor:'#8c8054',hemiIntensity:.62,
+    hoopRibColor:'#cdb88d',hoopLedColor:'#f4e5b9',hoopLedEmissive:'#e9be75',
+    neonPalette:['#009246','#eee9d9','#ce2b37','#d9b571'],extraNeonArches:false,
+    boards:[['ITALIA · TUSCAN HILLS','#009246','#ffffff'],['VINEYARD GRAND PRIX','#ce2b37','#fff4dc'],['SCEGLI LA TUA AUTO','#e5d7b6','#284737'],['COLLINE · CURVE · CORSE','#304c36','#ffffff'],['TUSCAN HILLS RUSH','#ce2b37','#ffffff']],
+  };
+
+  if(gp.includes('colombia')||id==='r7-coffeeandes')return {
+    id:'colombia',skyColor:'#365f69',fogColor:'#799285',fogNear:120,fogFar:520,
+    groundColor:'#63814b',groundRoughness:.98,groundMetalness:0,
+    trackFloorColor:'#303d3c',trackSpeckleRgb:[161,174,156],trackEdgeColor:'#fbe7a3',trackDashColor:'#fff4db',
+    innerWallColor:'#e9dfc0',outerShellColor:'#55775f',outerShellMetalness:.22,outerShellRoughness:.65,
+    rimColor:'#fff0be',capsColor:'#53745b',kerbColorA:'#fcd116',kerbColorB:'#003893',
+    sunColor:'#ffe4b4',sunIntensity:2.65,rimLightColor:'#a8d8ca',rimLightIntensity:.8,
+    hemiSkyColor:'#d0e6df',hemiGroundColor:'#6a7940',hemiIntensity:.64,
+    hoopRibColor:'#e8d6a5',hoopLedColor:'#ffe8a0',hoopLedEmissive:'#f5bb47',
+    neonPalette:['#fcd116','#003893','#ce1126','#63c4ad'],extraNeonArches:false,
+    boards:[['COLOMBIA · COFFEE ANDES','#fcd116','#003893'],['EJE CAFETERO','#003893','#ffffff'],['ELIGE TU COCHE','#ce1126','#ffffff'],['CURVAS · CAFÉ · VELOCIDAD','#39785b','#fff0c0'],['COFFEE ANDES RUSH','#fcd116','#003893']],
+  };
+
+  if(gp.includes('spain')||id==='r6-barcelona')return {
+    id:'spain',skyColor:'#22394b',fogColor:'#967564',fogNear:110,fogFar:480,
+    groundColor:'#b6a079',groundRoughness:.9,groundMetalness:.04,
+    trackFloorColor:'#303c44',trackSpeckleRgb:[166,166,152],trackEdgeColor:'#ffdf9e',trackDashColor:'#fff4dc',
+    innerWallColor:'#eee0c5',outerShellColor:'#c29a66',outerShellMetalness:.4,outerShellRoughness:.45,
+    rimColor:'#fff0c0',capsColor:'#9e7751',kerbColorA:'#aa151b',kerbColorB:'#f1bf00',
+    sunColor:'#ffe0a8',sunIntensity:2.8,rimLightColor:'#89d5e6',rimLightIntensity:.85,
+    hemiSkyColor:'#c6dce4',hemiGroundColor:'#a3784f',hemiIntensity:.52,
+    hoopRibColor:'#e7c99a',hoopLedColor:'#fff0b5',hoopLedEmissive:'#ffc45d',
+    neonPalette:['#f1bf00','#aa151b','#70cbd9','#ffe9b7'],extraNeonArches:false,
+    boards:[['ESPAÑA · COAST RUSH','#aa151b','#f1bf00'],['BARCELONA COAST','#f1bf00','#3b281c'],['COSTA · ACTION CUP','#276e7d','#ffffff'],['ELIGE TU COCHE','#f0dfb8','#aa151b'],['FRENA · GIRA · ACELERA','#aa151b','#ffffff']],
+  };
 
   // Round 2: Swiss Alpine Grand Prix (Matterhorn Glacier Switchbacks)
   if (gp.includes("switz") || gp.includes("alpine") || id === "r1-monaco") {
@@ -143,9 +230,9 @@ export function getCircuitTheme(race: Race): CircuitTheme {
       fogColor: "#0a283e",
       fogNear: 90,
       fogFar: 400,
-      groundColor: "#08304b",
-      groundRoughness: 0.38,
-      groundMetalness: 0.35,
+      groundColor: "#b49b76",
+      groundRoughness: 0.95,
+      groundMetalness: 0,
       trackFloorColor: "#0f423d",
       trackSpeckleRgb: [110, 225, 205],
       trackEdgeColor: "#ffcd00",
@@ -378,100 +465,10 @@ function makeBillboardTexture(title: string, sub: string, bg: string, fg: string
   return t;
 }
 
-const alpineGeoCache = new Map<string, THREE.BufferGeometry>();
 /**
  * Builds a jagged, faceted 3D Matterhorn / Eiger Alpine mountain massif with sharp pyramidal arête ridges,
  * glacier snow couloirs, and a wide natural mountain skirt extending all the way down to -cliffH (groundY).
  */
-function buildAlpineMountainGeo(baseR: number, peakH: number, cliffH: number, seed: number): THREE.BufferGeometry {
-  const key = `${baseR.toFixed(1)}_${peakH.toFixed(1)}_${cliffH.toFixed(1)}_${seed}`;
-  const cached = alpineGeoCache.get(key);
-  if (cached) return cached;
-
-  const rings = 7;
-  const segs = 8; // 8-sided staggered geodesic diamond triangulation -> broad, bold chiseled Alpine rock & snow faces!
-  const nRidges = 4; // 4 main pyramidal Matterhorn faces
-  const phase = seed * 1.37;
-  const leanX = Math.cos(seed * 2.1) * baseR * 0.14;
-  const leanZ = Math.sin(seed * 2.1) * baseR * 0.14;
-
-  // Compute vertex grid (rings x segs) with half-step angular stagger on odd rings (eliminates vertical stripes!)
-  const pts: [number, number, number, number][] = []; // [x, y, z, ridgeVal]
-  for (let rIdx = 0; rIdx <= rings; rIdx++) {
-    const u = rIdx / rings; // 0 = groundY (-cliffH), 0.32 = track level (0), 1.0 = summit (+peakH)
-    const y = u < 0.32 ? -cliffH * (1 - u / 0.32) : ((u - 0.32) / 0.68) * peakH;
-    const hNorm = Math.max(0, (u - 0.32) / 0.68);
-    const baseProfile = u < 0.32 ? 1.0 + (1 - u / 0.32) * 0.45 : Math.pow(1 - hNorm, 0.78);
-    const stagger = (rIdx % 2) * 0.5;
-
-    for (let sIdx = 0; sIdx < segs; sIdx++) {
-      if (rIdx === rings) {
-        pts.push([leanX, peakH, leanZ, 1.0]);
-        continue;
-      }
-      const a = ((sIdx + stagger) / segs) * Math.PI * 2 + hNorm * 0.22;
-      const ridgeWave = Math.abs(Math.cos((a * nRidges) / 2 + phase));
-      const arête = Math.pow(ridgeWave, 0.65);
-      const crag = (hash(rIdx * 23 + sIdx * 11 + seed) - 0.5) * 0.24;
-      const rad = baseR * baseProfile * (0.76 + arête * 0.36 + crag);
-      const cx = Math.pow(hNorm, 1.45) * leanX;
-      const cz = Math.pow(hNorm, 1.45) * leanZ;
-      pts.push([cx + Math.cos(a) * rad, y, cz + Math.sin(a) * rad, arête]);
-    }
-  }
-
-  const positions: number[] = [];
-  const colors: number[] = [];
-  const pushTri = (
-    p0: [number, number, number, number],
-    p1: [number, number, number, number],
-    p2: [number, number, number, number],
-    fSeed: number,
-  ) => {
-    positions.push(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]);
-    const avgY = (p0[1] + p1[1] + p2[1]) / 3;
-    const avgRidge = (p0[3] + p1[3] + p2[3]) / 3;
-    const hFrac = avgY / Math.max(1, peakH);
-    const snowLine = 0.14 + avgRidge * 0.16 - (hash(fSeed) - 0.5) * 0.08;
-    let col: THREE.Color;
-    if (hFrac > snowLine) {
-      // Bright gleaming Alpine snow & glacier ice
-      const shade = 0.94 + hash(fSeed * 3.1) * 0.06;
-      col = new THREE.Color(0.95 * shade, 0.98 * shade, 1.0 * shade);
-    } else if (hFrac > -0.05) {
-      // Frosted blue-grey Alpine granite & snow ledges
-      const shade = 0.85 + hash(fSeed * 1.7) * 0.25;
-      col = new THREE.Color(0.36 * shade, 0.48 * shade, 0.62 * shade);
-    } else {
-      // Lower alpine valley rock & dark pine-forest slate
-      const shade = 0.85 + hash(fSeed * 2.3) * 0.22;
-      col = new THREE.Color(0.22 * shade, 0.32 * shade, 0.42 * shade);
-    }
-    for (let k = 0; k < 3; k++) colors.push(col.r, col.g, col.b);
-  };
-
-  for (let rIdx = 0; rIdx < rings; rIdx++) {
-    for (let sIdx = 0; sIdx < segs; sIdx++) {
-      const nextS = (sIdx + 1) % segs;
-      const i00 = rIdx * segs + sIdx;
-      const i10 = rIdx * segs + nextS;
-      const i01 = (rIdx + 1) * segs + sIdx;
-      const i11 = (rIdx + 1) * segs + nextS;
-      const fSeed = rIdx * 31 + sIdx * 17 + seed;
-      pushTri(pts[i00], pts[i10], pts[i11], fSeed);
-      if (rIdx + 1 < rings) {
-        pushTri(pts[i00], pts[i11], pts[i01], fSeed + 7);
-      }
-    }
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  geo.computeVertexNormals();
-  alpineGeoCache.set(key, geo);
-  return geo;
-}
 
 /**
  * 3D Swiss National Flag (Red square/rectangular cloth with bold white equilateral Swiss Cross on a flagpole).
@@ -828,187 +825,7 @@ function SwissCableCarSpan({ spanW, cabOffset = 0 }: { spanW: number; cabOffset?
 export function WorldScenery({ race }: { race: Race }) {
   const theme = getCircuitTheme(race);
 
-  const built = useMemo(() => {
-    const samples = race.data.samples as unknown as Sample[];
-    const ys = samples.map((s) => s.p[1]);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const midY = (minY + maxY) * 0.5;
-    const groundY = minY - 1.4;
-    const xs = samples.map((s) => s.p[0]);
-    const zs = samples.map((s) => s.p[2]);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minZ = Math.min(...zs);
-    const maxZ = Math.max(...zs);
-    const cx = (minX + maxX) / 2;
-    const cz = (minZ + maxZ) / 2;
-    const rx = Math.max(68, (maxX - minX) / 2 + 52);
-    const rz = Math.max(68, (maxZ - minZ) / 2 + 52);
-
-    // Helper to check if a world (x, z) point is safely away from all track samples (including local track half-width)
-    const isClearOfTrack = (x: number, z: number, minDist = 18.0) => {
-      for (let i = 0; i < samples.length; i++) {
-        const dx = samples[i].p[0] - x;
-        const dz = samples[i].p[2] - z;
-        const req = minDist + (samples[i].w ?? 2.5);
-        if (dx * dx + dz * dz < req * req) return false;
-      }
-      return true;
-    };
-
-    // 3D height-aware track clearance for self-contained alpine knolls/props on serpentine circuits
-    const isClearOfTrack3D = (x: number, y: number, z: number, minDist = 5.0, yTol = 11.5) => {
-      for (let i = 0; i < samples.length; i++) {
-        if (Math.abs(samples[i].p[1] - y) > yTol) continue;
-        const dx = samples[i].p[0] - x;
-        const dz = samples[i].p[2] - z;
-        const req = minDist + (samples[i].w ?? 2.2);
-        if (dx * dx + dz * dz < req * req) return false;
-      }
-      return true;
-    };
-
-    // Find the nearest sample's elevation so perimeter landmarks sit at camera eye-level
-    const nearestTrackY = (x: number, z: number) => {
-      let bestD = Infinity;
-      let bestY = midY;
-      for (let i = 0; i < samples.length; i += 4) {
-        const dx = samples[i].p[0] - x;
-        const dz = samples[i].p[2] - z;
-        const d = dx * dx + dz * dz;
-        if (d < bestD) {
-          bestD = d;
-          bestY = samples[i].p[1];
-        }
-      }
-      return bestY;
-    };
-
-    // Trackside props & landmarks placed 26m-50m from the track at the local track elevation (`s.p[1] - 1.2`)
-    // so cameras and the track are NEVER clipped by mountain layers or buildings!
-    const props: { x: number; y: number; groundY: number; z: number; scale: number; rotY: number; variant: number }[] = [];
-    for (let i = 0; i < 130; i++) {
-      const s = samples[Math.floor((i / 130) * samples.length)];
-      const side = i % 2 === 0 ? 1 : -1;
-      const dist = 26.0 + hash(i * 7.3) * 24;
-      const rxDir = s.r[0];
-      const rzDir = s.r[2];
-      const len = Math.hypot(rxDir, rzDir) || 1;
-      const x = s.p[0] + (rxDir / len) * side * dist + (hash(i * 3.1) - 0.5) * 4;
-      const z = s.p[2] + (rzDir / len) * side * dist + (hash(i * 5.7) - 0.5) * 4;
-      if (!isClearOfTrack(x, z, 22.0)) continue;
-      props.push({
-        x,
-        y: s.p[1] - 1.2,
-        groundY,
-        z,
-        scale: 0.92 + hash(i * 11.3) * 0.65,
-        rotY: Math.atan2(s.p[0] - x, s.p[2] - z),
-        variant: i % 5,
-      });
-    }
-
-    // Dense Trackside Swiss Vignettes (Swiss Flags, Grazing Cows with Cowbells, Roadside Chalets & Snow Pines)
-    // planted on BOTH sides of the sleek 0.58m barrier every ~7m so every camera angle is packed with Swiss life!
-    const alpsTrackFlags: { x: number; y: number; z: number; rotY: number; variant: number }[] = [];
-    for (let i = 10; i < samples.length - 14; i += 14) {
-      const s = samples[i];
-      const rxDir = s.r[0];
-      const rzDir = s.r[2];
-      const len = Math.hypot(rxDir, rzDir) || 1;
-      for (const side of [-1, 1] as const) {
-        if ((Math.floor(i / 14) + (side > 0 ? 0 : 1)) % 3 === 2) continue; // natural staggered rhythm on both sides
-        const variant = (Math.floor(i / 14) + (side > 0 ? 0 : 2)) % 3;
-        const offset = variant === 1 ? 2.55 : variant === 0 ? 1.95 : 1.35;
-        const wTrack = (s.w ?? 2.2) + offset;
-        const fx = s.p[0] + (rxDir / len) * side * wTrack;
-        const fz = s.p[2] + (rzDir / len) * side * wTrack;
-        const reqClear = variant === 1 ? 1.65 : variant === 0 ? 1.15 : 0.55;
-        if (isClearOfTrack3D(fx, s.p[1], fz, reqClear, 9.5)) {
-          alpsTrackFlags.push({
-            x: fx,
-            y: s.p[1] - 0.05,
-            z: fz,
-            rotY: Math.atan2(s.p[0] - fx, s.p[2] - fz),
-            variant,
-          });
-        }
-      }
-    }
-
-    // Overhead 3D Swiss Alpine Teleférico / Gondola Cable Car Spans across the track
-    const alpsGondolas: { pos: [number, number, number]; rotY: number; spanW: number; cabOffset: number }[] = [];
-    for (let i = 28; i < samples.length - 30; i += 58) {
-      const s = samples[i];
-      const rxDir = s.r[0];
-      const rzDir = s.r[2];
-      const len = Math.hypot(rxDir, rzDir) || 1;
-      const spanW = (s.w ?? 2.2) + 3.2;
-      const lx = s.p[0] - (rxDir / len) * spanW;
-      const lz = s.p[2] - (rzDir / len) * spanW;
-      const rxP = s.p[0] + (rxDir / len) * spanW;
-      const rzP = s.p[2] + (rzDir / len) * spanW;
-      if (isClearOfTrack3D(lx, s.p[1], lz, 1.2, 9.0) && isClearOfTrack3D(rxP, s.p[1], rzP, 1.2, 9.0)) {
-        alpsGondolas.push({
-          pos: [s.p[0], s.p[1], s.p[2]],
-          rotY: Math.atan2(s.t[0], s.t[2]),
-          spanW,
-          cabOffset: ((Math.floor(i / 58) % 3) - 1) * 1.15,
-        });
-      }
-    }
-
-    // Close-Mid Swiss Alpine Pastures & Chalet Villages (8.0m-14.5m from the track, at s.p[1] + 0.35m so they sit
-    // right at eye-level outside the 0.58m barrier in every follow-cam shot, using self-contained alpine knolls!)
-    const alpsPastures: { x: number; y: number; groundY: number; z: number; scale: number; rotY: number; variant: number }[] = [];
-    for (let i = 0; i < 180; i++) {
-      const s = samples[Math.floor((i / 180) * samples.length)];
-      const side = i % 2 === 0 ? 1 : -1;
-      const dist = 8.2 + hash(i * 6.1) * 6.0;
-      const rxDir = s.r[0];
-      const rzDir = s.r[2];
-      const len = Math.hypot(rxDir, rzDir) || 1;
-      const x = s.p[0] + (rxDir / len) * side * dist;
-      const z = s.p[2] + (rzDir / len) * side * dist;
-      if (!isClearOfTrack3D(x, s.p[1], z, 5.2, 11.5)) continue;
-      if (alpsPastures.some((ap) => Math.hypot(ap.x - x, ap.z - z) < 8.2 && Math.abs(ap.y - s.p[1]) < 10.0)) continue;
-      alpsPastures.push({
-        x,
-        y: s.p[1] + 0.35,
-        groundY,
-        z,
-        scale: 1.05 + hash(i * 8.3) * 0.32,
-        rotY: Math.atan2(s.p[0] - x, s.p[2] - z),
-        variant: i % 3,
-      });
-    }
-
-    // Outer perimeter ring (360 degrees around the entire circuit, strictly >= 44m clear of any track segment)
-    const ring: { x: number; y: number; groundY: number; z: number; scale: number; rotY: number; variant: number }[] = [];
-    const ringCount = 56;
-    for (let i = 0; i < ringCount; i++) {
-      const a = (i / ringCount) * Math.PI * 2;
-      const radMul = 0.96 + (i % 3) * 0.14 + hash(i * 9.1) * 0.12;
-      const x = cx + Math.cos(a) * rx * radMul;
-      const z = cz + Math.sin(a) * rz * radMul;
-      if (!isClearOfTrack(x, z, 42.0)) continue;
-      const ty = nearestTrackY(x, z);
-      ring.push({
-        x,
-        y: ty - 2.5,
-        groundY,
-        z,
-        scale: 1.05 + hash(i * 4.7) * 0.55,
-        rotY: Math.atan2(cx - x, cz - z),
-        variant: i % 5,
-      });
-    }
-
-    const portals: { pos: [number, number, number]; basis: THREE.Matrix4; w: number; color: string }[] = [];
-
-    return { groundY, cx, cz, rx, rz, props, ring, portals, alpsTrackFlags, alpsPastures, alpsGondolas };
-  }, [race, theme.extraNeonArches, theme.neonPalette]);
+  const built = useMemo(() => sceneryLayout(race.data.samples), [race]);
 
   const towerTextures = useMemo(() => {
     if (theme.id === "tokyo") {
@@ -1061,6 +878,12 @@ export function WorldScenery({ race }: { race: Race }) {
   return (
     <group>
       {/* High-Clearance 3D Cyber-Torii Gates (Tokyo) & Overhead Neon Portals (New York) */}
+      {theme.id==='spain'&&<SpainScenery race={race}/>}
+      {theme.id==='colombia'&&<ColombiaScenery race={race}/>}
+      {theme.id==='france'&&<ItalyScenery race={race} region='france'/>}
+      {theme.id==='italy'&&<ItalyScenery race={race}/>}
+      {theme.id==='germany'&&<GermanyScenery race={race}/>}
+      {theme.id==='britain'&&<BritainScenery race={race}/>}
       {built.portals.map((pt, i) => {
         const q = new THREE.Quaternion().setFromRotationMatrix(pt.basis);
         const h = 3.6;
@@ -1762,81 +1585,14 @@ export function WorldScenery({ race }: { race: Race }) {
         </group>
       )}
 
-      {/* ==================== SYDNEY: OPERA HOUSE SAILS, HARBOUR BRIDGE ARCHES & OCEAN YACHTS ==================== */}
-      {theme.id === "sydney" && (
-        <group>
-          {built.ring.map((m, i) => {
-            const pierH = Math.max(1, m.y - m.groundY);
-            return (
-              <group key={`syd-ring-${i}`} position={[m.x, m.y, m.z]} rotation-y={m.rotY}>
-                <mesh position={[0, -pierH * 0.5, 0]}>
-                  <boxGeometry args={[14 * m.scale, pierH, 10 * m.scale]} />
-                  <meshStandardMaterial color="#2a4858" roughness={0.8} />
-                </mesh>
-                {i % 2 === 0 ? (
-                  /* Iconic Sydney Opera House Interlocking Vaulted White Sails */
-                  <group scale={m.scale * 1.1}>
-                    <mesh position={[0, 0.8, 0]}>
-                      <boxGeometry args={[16, 1.6, 10]} />
-                      <meshStandardMaterial color="#d8cfc4" roughness={0.75} />
-                    </mesh>
-                    {[-4.0, 0, 4.0].map((ox, k) => (
-                      <group key={k} position={[ox, 1.6, 0]} rotation-z={-0.18 + k * 0.06}>
-                        <mesh position={[0, 4.8 + k * 1.0, 0]} rotation-x={0.28} scale={[0.65, 1.35, 1.0]}>
-                          <coneGeometry args={[4.2, 8.2 + k * 1.2, 5, 1, false, 0, Math.PI]} />
-                          <meshStandardMaterial color="#f7fbff" emissive="#bfefff" emissiveIntensity={0.35} roughness={0.28} metalness={0.15} side={THREE.DoubleSide} />
-                        </mesh>
-                      </group>
-                    ))}
-                  </group>
-                ) : (
-                  /* Sydney Harbour Bridge Steel Arch Span & Pylons */
-                  <group scale={m.scale * 1.05}>
-                    <mesh position={[0, 1.5, 0]}>
-                      <torusGeometry args={[12, 0.75, 8, 32, Math.PI]} />
-                      <meshStandardMaterial color="#4a6274" metalness={0.85} roughness={0.3} />
-                    </mesh>
-                    <mesh position={[0, 1.5, 0]}>
-                      <torusGeometry args={[11.3, 0.22, 8, 32, Math.PI]} />
-                      <meshBasicMaterial color={new THREE.Color("#00f5d4").multiplyScalar(3.4)} toneMapped={false} />
-                    </mesh>
-                    {[-12, 12].map((px) => (
-                      <mesh key={px} position={[px, 5.5, 0]}>
-                        <boxGeometry args={[2.4, 11, 3.2]} />
-                        <meshStandardMaterial color="#c8c2b8" roughness={0.75} />
-                      </mesh>
-                    ))}
-                  </group>
-                )}
-              </group>
-            );
-          })}
-
-          {/* Trackside Illuminated Harbour Yachts & Opera Sails */}
-          {built.props.map((p, i) => (
-            <group key={`syd-prop-${i}`} position={[p.x, p.y, p.z]} rotation-y={p.rotY} scale={p.scale}>
-              {/* Yacht Hull */}
-              <mesh position={[0, 0.6, 0]}>
-                <boxGeometry args={[2.2, 1.2, 5.4]} />
-                <meshStandardMaterial color="#ffffff" roughness={0.3} />
-              </mesh>
-              {/* Illuminated Sail */}
-              <mesh position={[0, 4.4, 0]}>
-                <coneGeometry args={[1.8, 6.8, 3]} />
-                <meshStandardMaterial color="#ffffff" emissive={i % 2 === 0 ? "#00f5d4" : "#ffcd00"} emissiveIntensity={0.6} roughness={0.35} />
-              </mesh>
-            </group>
-          ))}
-        </group>
-      )}
+      {/* Existing Opera House, bridge and grounded harbour boatyard. */}
+      {theme.id === "sydney" && <SydneyScenery race={race}/>}
 
       {/* ==================== NEW YORK: TIMES SQUARE SKYSCRAPERS, EMPIRE STATE SPIRE & GIANT BILLBOARDS ==================== */}
       {theme.id === "newyork" && (
         <group>
-          {[...built.ring, ...built.props.filter((_, i) => i % 2 === 0)].map((b, i) => {
-            const topY = b.y + (11 + (i % 4) * 5) * b.scale;
-            const totalH = Math.max(13, topY - b.groundY);
-            const w = (5.2 + (i % 3) * 2.0) * b.scale;
+          {newYorkBuildings(built).map((b, i) => {
+            const {totalH,w} = b;
             const tex = towerTextures[i % towerTextures.length];
             const bill = billboards[i % billboards.length];
             const neonCol = theme.neonPalette[i % theme.neonPalette.length];

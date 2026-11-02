@@ -83,6 +83,9 @@ export function vortexGeometry(v, segments = 96, rings = 28) {
   // point, and a flat apron at rim level between the track end and the rim.
   if (v.chute) {
     const { x0, z: zw } = v.chute;
+    // Optional tapered entry for authored track widths. Legacy bowls stay straight.
+    const zEnd = v.chute.zEnd ?? zw;
+    const wallZ = (x) => zw + (zEnd - zw) * ((x - x0) / -x0);
     const quad = (g, a, b, c, d) => {
       const base = g.position.length / 3;
       for (const p of [a, b, c, d]) {
@@ -98,11 +101,11 @@ export function vortexGeometry(v, segments = 96, rings = 28) {
       const za = Math.sqrt(Math.max(0, v.radius * v.radius - xa * xa));
       const zb = Math.sqrt(Math.max(0, v.radius * v.radius - xb * xb));
       // Floor (facing up): from the rim out to the wall.
-      quad(parts.apron, [xa, 0, za], [xa, 0, zw], [xb, 0, zw], [xb, 0, zb]);
+      quad(parts.apron, [xa, 0, za], [xa, 0, wallZ(xa)], [xb, 0, wallZ(xb)], [xb, 0, zb]);
     }
     // Wall inner face (facing the bowl, -z) and outer face.
-    quad(parts.chute, [x0, 0, zw], [x0, v.lip, zw], [0, v.lip, zw], [0, 0, zw]);
-    quad(parts.chute, [x0, 0, zw + 0.16], [0, 0, zw + 0.16], [0, v.lip, zw + 0.16], [x0, v.lip, zw + 0.16]);
+    quad(parts.chute, [x0, 0, zw], [x0, v.lip, zw], [0, v.lip, zEnd], [0, 0, zEnd]);
+    quad(parts.chute, [x0, 0, zw + 0.16], [0, 0, zEnd + 0.16], [0, v.lip, zEnd + 0.16], [x0, v.lip, zw + 0.16]);
   }
   return parts;
 }

@@ -1,3 +1,4 @@
+import {ReplayComposition} from "./replay/Replay";
 import { Composition, Folder } from "remotion";
 import { GrandPrix } from "./gp/GrandPrix";
 import { GrandPrixShort } from "./gp/Short";
@@ -10,6 +11,7 @@ import { fps, timeline } from "./tower/race";
 
 export const Root = () => (
   <>
+    <ReplayComposition />
     <Folder name="GrandPrix">
       <Composition id="GP-channel-icon" component={ChannelIcon} durationInFrames={1} fps={60} width={1000} height={1000} />
       <Composition id="GP-channel-banner" component={ChannelBanner} durationInFrames={1} fps={60} width={2560} height={1440} />
@@ -26,7 +28,7 @@ export const Root = () => (
           <Composition
             id={`GP-${r.id}`}
             component={GrandPrix}
-            durationInFrames={r.timeline.total + ((r as { intro?: { total: number } }).intro?.total ?? 0)}
+            durationInFrames={r.timeline.total + ((r as { intro?: { total: number } | null }).intro?.total ?? 0)}
             fps={r.fps}
             width={1920}
             height={1080}
@@ -37,7 +39,7 @@ export const Root = () => (
           <Composition
             id={`GP-${r.id}-4k`}
             component={GrandPrix}
-            durationInFrames={r.timeline.total + ((r as { intro?: { total: number } }).intro?.total ?? 0)}
+            durationInFrames={r.timeline.total + ((r as { intro?: { total: number } | null }).intro?.total ?? 0)}
             fps={r.fps}
             width={3840}
             height={2160}
@@ -56,7 +58,7 @@ export const Root = () => (
           <Composition
             id={`GP-${r.id}-vertical`}
             component={GrandPrix}
-            durationInFrames={r.timeline.total + ((r as { intro?: { total: number } }).intro?.total ?? 0)}
+            durationInFrames={r.timeline.total + ((r as { intro?: { total: number } | null }).intro?.total ?? 0)}
             fps={r.fps}
             width={1080}
             height={1920}

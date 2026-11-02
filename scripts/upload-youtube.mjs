@@ -14,7 +14,7 @@
 //   npm run upload -- --season 3 --round r1-monaco       # upload one round (4K video + Short + thumb)
 //   npm run upload -- --season 3 --only video            # only full-length 16:9 videos (or --only short)
 //   npm run upload -- --file out/gp/r5-monza.mp4 --round r5-monza   # upload a single render from out/gp/
-//   npm run upload -- --season 3 --privacy unlisted      # public (default) | unlisted | private
+//   npm run upload -- --season 3 --privacy unlisted      # unlisted (default) | private | explicitly approved public
 //   npm run upload -- --season 3 --dry-run               # preview titles, descriptions, files without uploading
 
 import { execFile } from "node:child_process";
@@ -25,6 +25,8 @@ import { setDefaultAutoSelectFamily } from "node:net";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { CIRCUITS } from "../src/gp/circuits/index.js";
+import {publicVideoMetadata} from './public-video-metadata.mjs';
+import {assertVideoDelivery} from './video-delivery-gate.mjs';
 
 setDefaultResultOrder("ipv4first");
 setDefaultAutoSelectFamily(false);
@@ -47,12 +49,14 @@ function parseArgs(argv) {
     round: null,
     only: null, // "video" | "short" | null (both)
     file: null,
-    privacy: "public",
+    privacy: "unlisted",
     publishAt: null,
     dryRun: false,
     force: false,
     authOnly: false,
     channelOnly: false,
+    checkAuth: false,
+    qualityReview: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -61,16 +65,19 @@ function parseArgs(argv) {
     else if (a === "--only") o.only = argv[++i];
     else if (a === "--file") o.file = argv[++i];
     else if (a === "--privacy") o.privacy = argv[++i];
+    else if (a === "--quality-review") o.qualityReview = argv[++i];
     else if (a === "--publish-at") o.publishAt = argv[++i];
     else if (a === "--dry-run") o.dryRun = true;
     else if (a === "--force") o.force = true;
     else if (a === "--auth") o.authOnly = true;
     else if (a === "--channel") o.channelOnly = true;
+    else if (a === "--check-auth") o.checkAuth = true;
     else throw new Error(`Unknown option: ${a}`);
   }
   if (!["public", "unlisted", "private"].includes(o.privacy)) {
     throw new Error(`--privacy must be public, unlisted, or private (got ${o.privacy})`);
   }
+  if(o.qualityReview&&!o.file)throw new Error('--quality-review requires a single --file');
   return o;
 }
 
@@ -78,11 +85,13 @@ function loadClient() {
   if (process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET) {
     return { clientId: process.env.YOUTUBE_CLIENT_ID, clientSecret: process.env.YOUTUBE_CLIENT_SECRET };
   }
-  if (!existsSync(CLIENT_FILE) && existsSync(`${VIDEO_CLOUD_DIR}/.youtube-auth/.youtube-client.json`)) {
-    copyFileSync(`${VIDEO_CLOUD_DIR}/.youtube-auth/.youtube-client.json`, CLIENT_FILE);
-  }
-  if (!existsSync(TOKEN_FILE) && existsSync(`${VIDEO_CLOUD_DIR}/.youtube-auth/.youtube-token.json`)) {
-    copyFileSync(`${VIDEO_CLOUD_DIR}/.youtube-auth/.youtube-token.json`, TOKEN_FILE);
+  for (const [destination, sources] of [
+    [CLIENT_FILE, ['youtube-auth/youtube-client.json', '.youtube-auth/.youtube-client.json']],
+    [TOKEN_FILE, ['youtube-auth/youtube-token.json', '.youtube-auth/.youtube-token.json']],
+  ]) {
+    if (existsSync(destination)) continue;
+    const source = sources.map((name) => `${VIDEO_CLOUD_DIR}/${name}`).find(existsSync);
+    if (source) copyFileSync(source, destination);
   }
   if (!existsSync(CLIENT_FILE)) {
     // Auto-import from ~/Downloads/client_secret*.json if the user just downloaded it!
@@ -206,7 +215,9 @@ async function printChannelInfo(accessToken) {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const data = await res.json();
+  if (!res.ok) throw new Error(`YouTube channel lookup failed (HTTP ${res.status})`);
   const ch = data.items?.[0]?.snippet;
+  if (!ch) throw new Error("No YouTube channel found for this account");
   if (ch) {
     console.log(`Connected YouTube Channel: ${ch.title} (${ch.customUrl ?? ""})`);
   }
@@ -460,10 +471,10 @@ async function main() {
     await printChannelInfo(token);
     return;
   }
-  if (opts.channelOnly) {
+  if (opts.channelOnly || opts.checkAuth) {
     const token = await getAccessToken();
     await printChannelInfo(token);
-    await updateChannelBranding(token);
+    if (opts.channelOnly) await updateChannelBranding(token);
     return;
   }
 
@@ -552,6 +563,7 @@ async function main() {
     }
   }
 
+  for(const job of jobs)Object.assign(job,publicVideoMetadata(job));
   if (!jobs.length) {
     console.log("Nothing to upload (all matching videos are already uploaded or not rendered yet).");
     return;
@@ -564,6 +576,10 @@ async function main() {
     console.log(`    Title: ${j.title}`);
     if (j.thumbPath) console.log(`    Thumb: ${j.thumbPath.replace(ROOT, "")}`);
   }
+
+  // Fail before OAuth, upload-session creation or resuming any byte transfer.
+  // --force only concerns old upload records; it cannot bypass this gate.
+  for(const j of jobs)await assertVideoDelivery({filePath:j.filePath,reviewPath:opts.qualityReview??j.filePath+'.quality.json',privacy:opts.privacy,publishAt:opts.publishAt,root:ROOT});
 
   if (opts.dryRun) {
     console.log(`\n--dry-run specified: no files were uploaded.`);

@@ -1,25 +1,67 @@
 import { Vector3 } from "three";
+import {islandContact} from '../src/gp/car-island.js';
+import {improvedPace,cornerSpeedLimit} from '../src/gp/car-pace.js';
 
-// ============================================================================
-// DEDICATED TCR CAR ENGINE (scripts/car-engine.mjs)
-// - Separate physics & OBB (Oriented Bounding Box) Car-to-Car collision solver
-//   so 3D car bodies (1.38m long x 0.76m wide) NEVER blend or clip into each other.
-// - Car-specific track features only (Guided Shortcut Splits, FIA Tire Chicanes,
-//   Nitro Boosters, Rumble Strips, Rally Crests — zero marble hammers/spinners/pegs/lifts).
-// - Zero-White-Noise Harmonic Audio & Synthwave Soundtrack.
-// ============================================================================
+// Existing surface-constrained TCR engine. It combines Rapier contact with an
+// assisted road-following powertrain and OBB car separation; it is not a full
+// tyre/suspension model. Swiss circuit conditions add grip-limited decisions.
 
 export const CAR_LEN = 1.54; // Full physical bumper-to-bumper car length (m)
 export const CAR_WID = 0.88; // Full physical wheel-to-wheel car width (m)
+export function carHalfExtents(yaw=0) {
+  const c=Math.abs(Math.cos(yaw)),s=Math.abs(Math.sin(yaw));
+  return {length:(CAR_LEN*c+CAR_WID*s)/2,width:(CAR_WID*c+CAR_LEN*s)/2};
+}
+
+// Full assisted-car envelope against the physical safety islands. The regular
+// Rapier body is a floor/contact probe; it must not let the visible chassis
+// pass through an island before the probe reaches it.
+export function solveCarIslandCollisions({bodies,course,gates,carYaw,finishFrame,dqFrame,onContact}) {
+  if(!gates?.length)return;
+  for(let i=0;i<bodies.length;i++) {
+    if(finishFrame[i]!==null||dqFrame[i]!==null)continue;
+    const body=bodies[i],extent=carHalfExtents(carYaw[i]);
+    for(const gate of gates) {
+      const s=course.frameAt(gate.u),p=body.translation();
+      const rel=[p.x-s.p[0],p.y-s.p[1],p.z-s.p[2]];
+      const du=rel.reduce((n,v,k)=>n+v*s.t[k],0),lat=rel.reduce((n,v,k)=>n+v*s.r[k],0);
+      const height=rel.reduce((n,v,k)=>n+v*s.n[k],0);
+      if(Math.abs(height)>gate.height+1)continue;
+      if(Math.abs(du)>extent.length+gate.length/2||Math.abs(lat-gate.lat)>extent.width+gate.width/2)continue;
+      const contact=islandContact(gate,du,lat,extent);
+      if(!contact)continue;
+      const axis=s.t.map((v,k)=>v*contact.along+s.r[k]*contact.across);
+      // A contact skin covers the next saved-frame yaw interpolation at speed.
+      const depth=contact.depth+.06;
+      body.setTranslation({x:p.x+axis[0]*depth,y:p.y+axis[1]*depth,z:p.z+axis[2]*depth},true);
+      const velocity=body.linvel(),vn=velocity.x*axis[0]+velocity.y*axis[1]+velocity.z*axis[2];
+      const change=vn<0?-vn*(gate.profile==='soft-island'?1.02:1.05):0;
+      body.setLinvel({x:velocity.x+axis[0]*change,y:velocity.y+axis[1]*change,z:velocity.z+axis[2]*change},true);
+      onContact?.(i,{longitudinal:change*contact.along,lateral:change*contact.across,strength:Math.abs(change),gate:gate.u});
+    }
+  }
+}
 
 /**
  * Replaces marble-only obstacles (spinners, hammers, peg forests, rollers, pushers, vortices, lifts, AND middle splitter walls)
- * with clean F1/GT DRS Attack Zones placed only on genuine straights.
+ * with car attack zones. Authored circuits can supply curvature to enforce straight placement.
  */
-export function sanitizeCarFeatures(features, END) {
-  // Keep zero middle-of-the-track splitter walls so cars have the full 4.2m asphalt width for real racing lines!
+export function sanitizeCarFeatures(features, END, geometry, challenges) {
+  if(challenges?.lanes){
+    const pads=challenges.lanes.map(l=>({type:"booster",label:"TURBO ACCELERATION LANE",span:[1,l.length+1],...l}));
+    const islands=(challenges.gates??[]).map(g=>({type:"car-chicane",label:g.lat===0?"SPLIT-LINE ISLAND":"ALPINE SLALOM",span:[3,g.length+3],...g}));
+    for(const f of [...pads,...islands])if(f.u<12||f.u+(f.length??2)>END-35)throw Error("Car feature outside racing section");
+    return [...pads,...islands].sort((a,b)=>a.u-b.u);
+  }
+  // Preserve the full racing width; meltwater is a separate, draped surface condition.
   const out = [];
   for (let u = 58; u < END - 48; u += 108) {
+    // Search forward for 18m of genuinely straight road, including the exit.
+    if (geometry) {
+      const start = u;
+      while (u < start + 60 && u < END - 48 && geometry.us.some((x, k) => x >= u - 6 && x <= u + 12 && Math.abs(geometry.curv[k]) > 0.025)) u += 1;
+      if (u >= start + 60 || u >= END - 48) continue;
+    }
     out.push({ type: "booster", label: "DRS ATTACK ZONE", span: [1, 7], u: Math.round(u) });
   }
   return out;
@@ -33,7 +75,7 @@ export function sanitizeCarFeatures(features, END) {
  *  2) `racingLat[k]`: Continuous Optimal Racing Line (Outside on corner entry -> Inside Apex kerb
  *     at peak curvature -> Outside on corner exit), smoothed with a 16-pass Gaussian filter.
  */
-export function buildCarTelemetryProfile(course) {
+export function buildCarTelemetryProfile(course, tuning = {}) {
   const samples = course.samples;
   const M = samples.length;
   const ds = course.SAMPLE ?? 0.5;
@@ -63,13 +105,15 @@ export function buildCarTelemetryProfile(course) {
   }
 
   // 2. Maximum cornering speed at each sample from lateral tire grip: v = sqrt(a_lat_max / |curv|)
-  const V_TOP = 18.0; // Baseline straight-line top speed (m/s) before slipstream/DRS
+  const V_TOP = tuning.topSpeed ?? 18.0; // Baseline straight-line top speed (m/s) before slipstream/DRS
   const V_MIN_APEX = 8.5; // Hairpin apex speed (m/s) — creates visible braking zones & corner-exit acceleration!
-  const A_LAT_MAX = 8.4; // Lateral tire grip limit (m/s^2)
+  const A_LAT_MAX = tuning.cornerAcceleration ?? 8.4; // Lateral tire grip limit (m/s^2)
   const vTarget = new Float32Array(M);
   for (let k = 0; k < M; k++) {
     const absC = Math.max(Math.abs(curvSmooth[k]), Math.abs(curvMacro[k]) * 0.9);
-    if (absC < 0.015) {
+    if (improvedPace(tuning)) {
+      vTarget[k]=Math.min(V_TOP,cornerSpeedLimit(absC,A_LAT_MAX));
+    } else if (absC < 0.015) {
       vTarget[k] = V_TOP;
     } else {
       const vGrip = Math.sqrt(A_LAT_MAX / absC);
@@ -78,14 +122,14 @@ export function buildCarTelemetryProfile(course) {
   }
 
   // 3. Backward pass: propagate Braking Zones upstream from every corner apex (a_brake = 11.5 m/s^2)
-  const A_BRAKE = 11.5;
+  const A_BRAKE = tuning.braking ?? 11.5;
   for (let k = M - 2; k >= 0; k--) {
     const vMaxBrake = Math.sqrt(vTarget[k + 1] * vTarget[k + 1] + 2 * A_BRAKE * ds);
     if (vMaxBrake < vTarget[k]) vTarget[k] = vMaxBrake;
   }
 
   // 4. Forward pass: propagate progressive Corner-Exit Acceleration downstream (a_accel = 6.4 m/s^2)
-  const A_ACCEL = 6.4;
+  const A_ACCEL = tuning.acceleration ?? 6.4;
   vTarget[0] = Math.min(vTarget[0], 9.5);
   for (let k = 1; k < M; k++) {
     const vMaxAccel = Math.sqrt(vTarget[k - 1] * vTarget[k - 1] + 2 * A_ACCEL * ds);
@@ -163,6 +207,8 @@ export function solveCarChassisCollisions({
   lastImpact,
   finishFrame,
   dqFrame,
+  onContact,
+  carYaw,
 }) {
   const N = bodies.length;
   if (N < 2) return;
@@ -211,11 +257,17 @@ export function solveCarChassisCollisions({
         const absU = Math.abs(du);
         const absLat = Math.abs(dLat);
 
-        if (absU >= CAR_LEN || absLat >= CAR_WID) continue;
+        const extentI=carHalfExtents(carYaw?.[i]||0),extentJ=carHalfExtents(carYaw?.[j]||0);
+        const spanU=extentI.length+extentJ.length,spanLat=extentI.width+extentJ.width;
+        if (absU >= spanU || absLat >= spanLat) continue;
+
+        // Keep the contact response in the powertrain state too. Otherwise the
+        // surface controller replaces it on the very next physics substep.
+        if(iter===0)onContact?.(i,j,bestS);
 
         // Cars i and j overlap in their OBB footprint
-        const penU = CAR_LEN - absU;
-        const penLat = CAR_WID - absLat;
+        const penU = spanU - absU;
+        const penLat = spanLat - absLat;
 
         // Weight separation by Constructor EST (Estabilidad 1-5: heavier cars hold their ground)
         const estI = MARBLES[i]?.stats?.est ?? 3;
@@ -229,7 +281,7 @@ export function solveCarChassisCollisions({
         // Cap per-pass positional shift so cars separate cleanly without 1-frame teleports
         const maxStepShift = 0.045;
 
-        if (penU / CAR_LEN <= (penLat / CAR_WID) * 1.15) {
+        if (penU / spanU <= (penLat / spanLat) * 1.15) {
           // NOSE-TO-TAIL BUMPER CONTACT: smooth longitudinal separation along tg
           const signU = du >= 0 ? 1 : -1; // +1 means j is ahead of i
           const shift = Math.min(maxStepShift, penU * 0.65 + 0.005);
@@ -304,11 +356,11 @@ export function solveCarChassisCollisions({
           const shiftI = -signLat * shift * wI;
           const shiftJ = signLat * shift * wJ;
 
-          const wMax = (bestS.w ?? 2.1) - 0.44;
+          const wMaxI=(bestS.w??2.1)-extentI.width,wMaxJ=(bestS.w??2.1)-extentJ.width;
           const latI = (pi.x - bestS.p[0]) * rg[0] + (pi.y - bestS.p[1]) * rg[1] + (pi.z - bestS.p[2]) * rg[2];
           const latJ = (pj.x - bestS.p[0]) * rg[0] + (pj.y - bestS.p[1]) * rg[1] + (pj.z - bestS.p[2]) * rg[2];
-          const clampedShiftI = Math.max(-wMax - latI, Math.min(wMax - latI, shiftI));
-          const clampedShiftJ = Math.max(-wMax - latJ, Math.min(wMax - latJ, shiftJ));
+          const clampedShiftI = Math.max(-wMaxI - latI, Math.min(wMaxI - latI, shiftI));
+          const clampedShiftJ = Math.max(-wMaxJ - latJ, Math.min(wMaxJ - latJ, shiftJ));
 
           bodies[i].setTranslation(
             {
@@ -476,6 +528,18 @@ export function carSoundtrack(result) {
         0.25 * Math.exp(-tt / (decay * 0.6)) * Math.sin(2 * Math.PI * freq * 1.58 * tt) +
         0.10 * Math.exp(-tt / (decay * 0.35)) * Math.sin(2 * Math.PI * freq * 2.24 * tt);
       add(start + k, amp * Math.exp(-tt / decay) * ring, pan);
+    }
+  }
+
+  // Short harmonic tyre chirps only for measured, sustained grip loss.
+  // Keep the established soundtrack free of continuous white-noise hiss.
+  for(const incident of data.carIncidents||[]) {
+    const {gain,pan}=hear(incident.f,frames[incident.f][incident.marble]);
+    const start=Math.round(incident.f/fps*RATE),duration=.42;
+    for(let k=0;k<duration*RATE;k++) {
+      const t=k/RATE,envelope=Math.sin(Math.PI*t/duration)*Math.exp(-t*3);
+      const phase=2*Math.PI*(680*t+260*t*t);
+      add(start+k,.08*gain*envelope*(Math.sin(phase)+.22*Math.sin(phase*1.97)),pan);
     }
   }
 

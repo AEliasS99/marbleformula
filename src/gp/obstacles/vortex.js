@@ -1,4 +1,4 @@
-import { Quaternion, Vector3 } from "three";
+import { Matrix4, Quaternion, Vector3 } from "three";
 import { frameQuat, pointInFrame, quatArr, r3, rot, TRACK } from "./kit.js";
 import { agitatorArm, agitatorQuat, vortexSoup } from "../vortex.js";
 
@@ -23,6 +23,21 @@ VORTEX.depth = Math.round(VORTEX.k * (1 / VORTEX.hole - 1 / VORTEX.radius) * 100
 // the parameters stay for the day a faster agitator earns its place.
 export const AGITATOR = { arms: 0, rIn: 1.8, rOut: 2.9, clearance: 0.05, height: 0.4, thickness: 0.1, speed: -1.2 };
 
+// Fit the existing diagonal to the measured ramp, extrapolating only the
+// short end above the bowl apron instead of following the lower gap samples.
+export function vortexEntryGuide(feature,frameAt){
+ const half=TRACK.width/2,dl=half-.14,du=dl/Math.tan(VORTEX.guide*Math.PI/180),end=feature.u+VORTEX.centre-3.22,start=end-du,probe=feature.u+VORTEX.entry-.2;
+ const a=frameAt(start),b=frameAt(probe),before=frameAt(probe-.5);
+ const along=new Vector3(...b.p).sub(new Vector3(...before.p)).multiplyScalar(2);
+ const p0=new Vector3(...a.p).addScaledVector(new Vector3(...a.r),-(half-.04));
+ const p1=new Vector3(...b.p).addScaledVector(along,end-probe).addScaledVector(new Vector3(...b.r),-(half-.04)+dl);
+ const axis=p1.clone().sub(p0),len=axis.length();axis.normalize();
+ const normal=new Vector3(...b.r).cross(along).normalize(),cross=axis.clone().cross(normal).normalize(),up=cross.clone().cross(axis).normalize();
+ const q=new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(axis,up,cross));
+ const pos=p0.add(p1).multiplyScalar(.5).addScaledVector(up,.3);const round=x=>Math.round(x*1000)/1000;
+ return {kind:'fin',shape:'box',profile:'ramp-fitted-v1',pos:pos.toArray().map(round),quat:q.toArray().map(round),size:[len+.04,.6,.08],restitution:.6};
+}
+
 export default {
   type: "vortex",
   label: "THE VORTEX",
@@ -32,11 +47,13 @@ export default {
   restitution: 0.2,
   collection: "vortices",
   card: { difficulty: 4, chaos: 5, seconds: 4, summary: "A drain: the field swirls round the wall, the fast ones ride high and crash into the slow ones, then down the hole." },
-  build(f, { frameAt, statics, out }) {
+  build(f, { frameAt, statics, out, physicsProfile }) {
     const W2 = TRACK.width / 2;
     // A long, gentle guide from the left wall to the centre line: the field drifts right without losing speed,
     // and the opening it leaves (2.1, three marbles) cannot clog.
-    {
+    if (physicsProfile === "contact-flow-v2") {
+      statics.push(vortexEntryGuide(f, frameAt));
+    } else {
       const side = -1;
       const dl = W2 - 0.14;
       const du = dl / Math.tan((VORTEX.guide * Math.PI) / 180);

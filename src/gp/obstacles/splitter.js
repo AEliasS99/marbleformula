@@ -1,5 +1,5 @@
 import { Matrix4, Quaternion, Vector3 } from "three";
-import { frameQuat, pointInFrame, quatArr, r3, surfaceHeight } from "./kit.js";
+import { frameQuat, pointInFrame, quatArr, r3, surfaceHeight, TRACK } from "./kit.js";
 
 // Split lanes + Guided Shortcut Channel:
 // A physical divider wall with an upstream angled guide rail ("fin") that funnels cars on the inside line
@@ -10,7 +10,7 @@ export default {
   place: { before: 3, after: 9, maxCurv: 0.035 },
   dq: false,
   card: { difficulty: 2, chaos: 3, seconds: 2, summary: "Guided shortcut chute with a speed booster on one side and obstacle bumpers on the other." },
-  build(f, { frameAt, statics, cylinder, out }) {
+  build(f, { frameAt, statics, cylinder, out, physicsProfile }) {
     const side = Math.round(f.u) % 2 === 0 ? 1 : -1; // +1 = left/right staggered switchback
     if (process.env.GP_CARS === "1") {
       // In Car Mode: ZERO mid-track walls or pinball posts!
@@ -122,6 +122,17 @@ export default {
         latHalf: 0.85,
       });
     } else {
+      if(physicsProfile==='contact-flow-v2'){
+        // The old wall/post and post/outer-wall openings were .48–.65,
+        // narrower than the .70 marble. Keep the existing split and hazard
+        // lane, but give each staggered post two physically passable sides.
+        const mainHalf=((frameAt(f.u+3.8).w??TRACK.width/2)-(.11+wallLat*side))/2;
+        const centre=side*(wallLat*side+.11+mainHalf);
+        cylinder('bumper',f.u+2.3,centre-side*.06,.18,.85,.45,{friction:.03});
+        cylinder('bumper',f.u+5.2,centre+side*.06,.16,.85,.45,{friction:.03});
+        cylinder('peg',f.u+3.8,centre,.10,.85,.38,{friction:.03});
+        return;
+      }
       // Main Hazard Lane Obstacles for Marbles
       cylinder("bumper", f.u + 2.3, side * 0.92, 0.34, 0.85, 0.45);
       cylinder("bumper", f.u + 5.2, side * 1.28, 0.32, 0.85, 0.45);

@@ -2,14 +2,19 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import { ThreeCanvas } from "@remotion/three";
-import { AbsoluteFill, interpolate, spring } from "remotion";
+import { AbsoluteFill, cancelRender, interpolate, spring } from "remotion";
 import { lensFov, project, type IntroPlan, type Layout, type Race, type Shot, type Vec3, type View } from "./race";
 import { Stage } from "./Stage";
 import { flyPacing, TEAM_FRAMES } from "./intro-plan.js";
 import { disposeScene, marbleTextures, studioScene } from "./Scene";
 import { flagDataUrl } from "./flags";
 import { TEAMS, teamOf } from "./teams.js";
+import {CarBody, createCarGeometries, carLiveryTexture} from "./CarModel";
+import {carShowcaseAt} from "./car-showcase.js";
 import { quality } from "./quality";
+import {realismMaterials} from './visual-realism.js';
+import {motorsportCarMaps} from './surfaces';
+import {knockoutCopy,marbleShowroomTeams,marbleIntroSample,marbleLineupShot} from './marble-presentation.js';
 
 // The intro before every round (its running order: src/gp/intro-plan.js):
 // a cold open on the race's best moment in slow motion, the championship's
@@ -125,12 +130,17 @@ function introViews(race: Race, plan: IntroPlan) {
 
   // The drone lap: swoops in low and close over every obstacle so each 3D machine is clearly presented, high and smooth between them.
   const fly = at.flyover;
+  if (fly) {
   const pace = flyPacing(plan.L, plan.cards, fly.frames);
   views.flyover = {
     tAt: clock,
     shotAt: (vf) => {
-      const u = pace.uAt(vf - fly.at);
-      const slow = pace.slow(u);
+      const local=marbleIntroSample(plan,vf)-fly.at;
+      const card=plan.profile==='marble-race-first-v1'?plan.cards.find(c=>local>=c.from&&local<c.to)??plan.cards.at(-1):null;
+      // Short presentation: hold on the two real machines, rather than rush an
+      // entire circuit or spend editorial time explaining the transport lift.
+      const u = card ? card.u-4+8*smooth(Math.max(0,Math.min(1,(local-card.from)/(card.to-card.from)))) : pace.uAt(local);
+      const slow = card ? 1 : pace.slow(u);
       const back = 15 - 7.5 * slow;
       const height = 8.2 - 4.8 * slow;
       const pos = add(mean(u - back - 6, u - back + 2), [0, 1, 0], height);
@@ -139,6 +149,8 @@ function introViews(race: Race, plan: IntroPlan) {
     },
   };
 
+  }
+
   // Along the grid: sweep steadily across all 10 lanes (20 Countries & Scuderias) over 0..0.82, then push in to Pole Position.
   const g = gridGeometry(race);
   const line = at.lineup;
@@ -146,6 +158,10 @@ function introViews(race: Race, plan: IntroPlan) {
     tAt: clock,
     shotAt: (vf) => {
       const p = (vf - line.at) / line.frames;
+      if (plan.profile === 'marble-race-first-v1') {
+        const sh = marbleLineupShot(g, p);
+        return shot(sh.pos as Vec3, sh.target as Vec3, sh.fov, "lineup");
+      }
       const sgn = Math.sign(g.pole.lat || 1);
       const latStart = -sgn * g.wide * 0.96;
       const latEnd = sgn * g.wide * 0.96;
@@ -160,6 +176,7 @@ function introViews(race: Race, plan: IntroPlan) {
       return shot(pos, target, 30 - 4 * push, "lineup");
     },
   };
+  if (plan.vehicle === 'car') views.lineup = {tAt:()=>0,shotAt:()=>race.mainView.shotAt(0)};
   return views;
 }
 
@@ -194,7 +211,7 @@ function gridGeometry(race: Race) {
 
 // --- The showroom (round 1) ----------------------------------------------------------
 
-function ShowroomScene({ race, k, x, portrait }: { race: Race; k: number; x: number; portrait: boolean }) {
+function ShowroomScene({ race, k, x, portrait, car, carFrames = 300 }: { race: Race; k: number; x: number; portrait: boolean; car?: number; carFrames?: number }) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
@@ -209,9 +226,10 @@ function ShowroomScene({ race, k, x, portrait }: { race: Race; k: number; x: num
     scene.background = new THREE.Color("#0b0d12");
     scene.fog = new THREE.Fog("#0b0d12", 8, 22);
   }, [gl, scene]);
-  const team = TEAMS[k];
-  const idx = team.drivers.map((abbr) => race.marbles.findIndex((m) => (m as { abbr?: string }).abbr === abbr));
-  const tex = useMemo(() => idx.map((i) => (i >= 0 ? marbleTextures(race.marbles[i].name, (race.marbles[i] as { flag?: string }).flag ?? "", (race.marbles[i] as { color?: string }).color) : null)), [k]);
+  useEffect(()=>{const environment=scene.environment;return()=>{environment?.dispose();if(scene.environment===environment)scene.environment=null;};},[scene]);
+  const team = (marbleShowroomTeams(TEAMS,race.data) as typeof TEAMS)[k];
+  const idx = car !== undefined ? [car] : team.drivers.map((abbr) => race.marbles.findIndex((m) => (m as { abbr?: string }).abbr === abbr));
+  const tex = useMemo(() => idx.map((i) => (i >= 0 ? marbleTextures(race.marbles[i].name, (race.marbles[i] as { flag?: string }).flag ?? "", (race.marbles[i] as { color?: string }).color) : null)), [race, k, car]);
   // Two 1024×512 maps per marble, a new pair of marbles every team: free each team's when the next one comes on.
   useEffect(
     () => () =>
@@ -221,22 +239,31 @@ function ShowroomScene({ race, k, x, portrait }: { race: Race; k: number; x: num
       }),
     [tex],
   );
+  const carGeoms = useMemo(() => car !== undefined ? createCarGeometries() : null, [car !== undefined]);
+  const realistic=realismMaterials(race.data);
+  const carMaterials=useMemo(()=>realistic?motorsportCarMaps():undefined,[realistic]);
+  useEffect(()=>()=>{if(carMaterials)Object.values(carMaterials).forEach(t=>t.dispose());},[carMaterials]);
+  const entrant = car === undefined ? null : race.marbles[car] as typeof race.marbles[number] & {color?:string;flag?:string;stats?:{cls?:string}};
+  const livery = useMemo(() => entrant ? carLiveryTexture(entrant.flag ?? '', entrant.color, (car ?? 0)+1) : null, [entrant,car]);
+  useEffect(()=>()=>{livery?.dispose();},[livery]);
+  useEffect(()=>()=>{if(carGeoms)for(const g of Object.values(carGeoms).flat())if(g instanceof THREE.BufferGeometry)g.dispose();},[carGeoms]);
+  useEffect(()=>{const lost=(event:Event)=>{event.preventDefault();cancelRender(new Error('Showroom WebGL context lost'));};gl.domElement.addEventListener('webglcontextlost',lost);return()=>gl.domElement.removeEventListener('webglcontextlost',lost);},[gl]);
   const R = race.data.marbleRadius;
-  const p = x / TEAM_FRAMES;
+  const p = car === undefined ? x / TEAM_FRAMES : carShowcaseAt(x,1,carFrames).progress;
   // A slow arc round the podium, pushing in; the marbles sit right of the
   // team's card (above it, in portrait).
-  const a = -0.45 + 0.8 * p;
-  const d = (portrait ? 6.2 : 4.4) - 0.5 * p;
+  const a = car === undefined ? -0.45 + 0.8 * p : -.25;
+  const d = car === undefined ? (portrait ? 6.2 : 4.4) - 0.5 * p : portrait ? 4.8 : 4.2;
   camera.fov = 28;
   camera.near = 0.05;
   camera.far = 60;
   camera.updateProjectionMatrix();
-  const side = portrait ? 0 : -0.95;
-  const look = new THREE.Vector3(side * Math.cos(a), portrait ? -0.15 : 0.35, -side * Math.sin(a));
+  const side = portrait ? 0 : car === undefined ? -.95 : -.75;
+  const look = new THREE.Vector3(side * Math.cos(a), portrait ? (car === undefined ? -.15 : .43) : .35, -side * Math.sin(a));
   camera.position.set(look.x + Math.sin(a) * d, 1.15 + 0.1 * p, look.z + Math.cos(a) * d);
   camera.lookAt(look);
-  const spin = (x / 60) * 1.4;
-  const c0 = new THREE.Color(team.colors[0]);
+  const spin = car === undefined ? (x / 60) * 1.4 : carShowcaseAt(x,1,carFrames).angle;
+  const c0 = new THREE.Color(entrant?.color ?? team.colors[0]);
   const c1 = new THREE.Color(team.colors[1]);
   return (
     <>
@@ -272,7 +299,10 @@ function ShowroomScene({ race, k, x, portrait }: { race: Race; k: number; x: num
           <meshStandardMaterial color={c0} emissive={c0} emissiveIntensity={2.4} />
         </mesh>
       </group>
-      {idx.map((i, j) =>
+      {entrant && carGeoms && livery && <group position={[0,.2+.92*(realistic?(entrant.stats?.cls==='BGY'?.341:.329):(.185+.144)),0]} rotation={[0,spin,0]}>
+        <CarBody carGeoms={carGeoms} carStyle={({F1:0,GT:1,BGY:2,JET:3}[entrant.stats?.cls ?? 'F1'] ?? 0) as 0|1|2|3} teamColor={entrant.color ?? '#e10600'} texture={livery} helmetTexture={tex[0]?.map ?? livery} realistic={realistic} materials={carMaterials} wheelY={realistic?(entrant.stats?.cls==='BGY'?[-.195,-.195,-.195,-.195]:[-.197,-.197,-.185,-.185]):undefined}/>
+      </group>}
+      {car === undefined && idx.map((i, j) =>
         i < 0 || !tex[j] ? null : (
           <mesh key={`${k}-${j}`} position={[j === 0 ? -0.48 : 0.48, 0.2 + R, 0]} rotation={[0.25, spin + j * Math.PI, 0.1]} castShadow>
             <sphereGeometry args={[R, 96, 64]} />
@@ -285,12 +315,50 @@ function ShowroomScene({ race, k, x, portrait }: { race: Race; k: number; x: num
 }
 
 function Showroom({ race, frame, width, height }: { race: Race; frame: number; width: number; height: number }) {
-  const k = Math.min(TEAMS.length - 1, Math.floor(frame / TEAM_FRAMES));
+  const frames=race.intro?.teamFrames??TEAM_FRAMES;
+  const k = Math.min(TEAMS.length - 1, Math.floor(frame / frames));
   return (
     <ThreeCanvas width={width} height={height} dpr={quality().dpr} shadows gl={{ antialias: true, alpha: false }}>
-      <ShowroomScene race={race} k={k} x={frame - k * TEAM_FRAMES} portrait={height > width} />
+      <ShowroomScene race={race} k={k} x={(frame-k*frames)*TEAM_FRAMES/frames} portrait={height > width} />
     </ThreeCanvas>
   );
+}
+
+// Car races extend the same lit podium with their real production meshes.
+function CarShowroom({race,frame,width,height}:{race:Race;frame:number;width:number;height:number}) {
+  const slot=carShowcaseAt(frame,race.marbles.length,race.intro!.carFrames!);
+  return <ThreeCanvas width={width} height={height} dpr={quality().dpr} shadows gl={{antialias:true,alpha:false,preserveDrawingBuffer:true}}>
+    <ShowroomScene race={race} k={0} car={slot.index} carFrames={race.intro!.carFrames} x={slot.local} portrait={height>width}/>
+  </ThreeCanvas>;
+}
+
+function CarShowcaseGraphics({race,scene,frame,width,height}:{race:Race;scene:string;frame:number;width:number;height:number}) {
+  const land=width>height,s=Math.min(width,height)/1080;
+  const slot=carShowcaseAt(frame,race.marbles.length,race.intro!.carFrames!);
+  const m=race.marbles[slot.index] as typeof race.marbles[number] & {color?:string;flag?:string;abbr?:string;stats?:{cls?:string;teamName?:string;vel?:number;est?:number;int?:number}};
+  const stats=m.stats ?? {};
+  const labels:Record<string,string>={F1:'FORMULA',GT:'GRAND TOURER',BGY:'RALLY BUGGY',JET:'JET STREAMLINER'};
+  const strengths=[{value:stats.vel??0,text:'STRAIGHT-LINE SPEED'},{value:stats.est??0,text:'STABILITY & CONTROL'},{value:stats.int??0,text:'RACING LINE & ATTACK'}].sort((a,b)=>b.value-a.value);
+  const roster=<div style={{display:'flex',justifyContent:'center',gap:land?26*s:14*s,flexWrap:'wrap'}}>{race.marbles.map((r,i)=><div key={i} style={{display:'flex',alignItems:'center',gap:8*s,opacity:scene!=='cars'||slot.index===i?1:.4,fontSize:24*s,fontWeight:850}}><Flag code={(r as {flag?:string}).flag??''} h={24*s}/>{(r as {abbr?:string}).abbr}</div>)}</div>;
+  return <AbsoluteFill style={{color:'#fff',fontFamily:font}}>
+    <div style={{position:'absolute',left:60*s,top:42*s,right:60*s,display:'flex',justifyContent:'space-between',fontSize:24*s,fontWeight:850,letterSpacing:3*s}}><span>MARBLE FORMULA</span><span>{scene==='cars'?`MEET THE CARS · ${slot.index+1}/${race.N}`:'CHOOSE YOUR COUNTRY'}</span></div>
+    {scene==='cars'?<>
+      <div style={{position:'absolute',left:60*s,...(land?{top:'29%',width:650*s}:{bottom:185*s,width:width-120*s}),padding:30*s,boxSizing:'border-box',borderRadius:18*s,background:'rgba(9,15,25,.9)',borderLeft:`${8*s}px solid ${m.color??'#ffcc00'}`,boxShadow:'0 12px 40px rgba(0,0,0,.3)'}}>
+        <div style={{display:'flex',gap:16*s,alignItems:'center',fontSize:27*s,fontWeight:800}}><Flag code={m.flag??''} h={40*s}/><span>#{slot.index+1} · {labels[stats.cls??'']??stats.cls}</span></div>
+        <div style={{fontSize:(land?65:54)*s,lineHeight:1.08,fontWeight:950,marginTop:20*s}}>{m.name}</div>
+        <div style={{fontSize:25*s,opacity:.72,marginTop:8*s}}>{stats.teamName}</div>
+        <div style={{marginTop:24*s,display:'grid',gap:12*s}}>{[['SPEED',stats.vel],['STABILITY',stats.est],['RACECRAFT',stats.int]].map(([label,value])=><div key={String(label)} style={{display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:22*s,fontWeight:800}}><span>{label}</span><span style={{display:'flex',gap:7*s}}>{[1,2,3,4,5].map(n=><span key={n} style={{width:32*s,height:10*s,borderRadius:3*s,background:n<=Number(value)?m.color??'#ffcc00':'#35404e'}}/>)}</span></div>)}</div>
+        <div style={{fontSize:21*s,fontWeight:850,color:'#ffcc00',marginTop:22*s}}>{strengths[0].text}</div>
+        <div style={{marginTop:22*s,height:3*s,background:'#35404e'}}><div style={{width:`${slot.progress*100}%`,height:'100%',background:'#ffcc00'}}/></div>
+        <div style={{fontSize:17*s,letterSpacing:2*s,opacity:.6,marginTop:8*s}}>360° WALKAROUND</div>
+      </div>
+    </>:<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',background:'rgba(5,12,20,.36)',gap:22*s}}>
+      <div style={{fontSize:(land?76:64)*s,fontWeight:950,textAlign:'center'}}>PICK YOUR CAR</div>
+      <div style={{fontSize:30*s,fontWeight:750,textAlign:'center'}}>{scene==='title'?String((race.data.info as {circuit?:string}).circuit??''):'WHO ARE YOU BACKING?'}</div>
+      {scene==='lineup'&&<div style={{fontSize:23*s,textAlign:'center'}}>Comment your country before the lights go out.</div>}
+    </div>}
+    <div style={{position:'absolute',bottom:45*s,left:50*s,right:50*s,padding:18*s,borderRadius:14*s,background:'rgba(9,15,25,.82)'}}>{roster}</div>
+  </AbsoluteFill>;
 }
 
 // --- Graphics -------------------------------------------------------------------------
@@ -358,7 +426,7 @@ function TitleGraphics({ race, x, frames, s, layout }: { race: Race; x: number; 
       <div style={{ textAlign: "center", color: "#fff", textShadow: "0 6px 30px rgba(0,0,0,0.45)" }}>
         <div style={{ fontSize: 118 * s * big, fontWeight: 900, letterSpacing: 4 * s, lineHeight: 1, transform: `translateY(${(1 - a) * 40 * s}px)`, opacity: a }}>DON&apos;T BE LAST!</div>
         <div style={{ fontSize: 40 * s * big, fontWeight: 800, letterSpacing: 6 * s * big, marginTop: 10 * s, opacity: b, transform: `scaleX(${0.8 + 0.2 * b})` }}>ONLY THE LAST MARBLE AT EACH CHECKPOINT IS ELIMINATED</div>
-        <div style={{ fontSize: 78 * s * big, fontWeight: 900, color: yellow, lineHeight: 1.1, marginTop: 14 * s, transform: `scale(${0.6 + 0.4 * yr})`, opacity: Math.min(1, yr * 1.5) }}>20 → 19 → 18 → 17 · TOP 15 SCORE POINTS</div>
+        <div style={{ fontSize: 68 * s * big, fontWeight: 900, color: yellow, lineHeight: 1.1, marginTop: 14 * s, transform: `scale(${0.6 + 0.4 * yr})`, opacity: Math.min(1, yr * 1.5) }}>{knockoutCopy(race.data).flow} · {knockoutCopy(race.data).points.toUpperCase()}</div>
         <div style={{ marginTop: 36 * s, opacity: sub, transform: `translateY(${(1 - sub) * 24 * s}px)`, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 * s }}>
           <Chip s={s} size={30}>{`EPISODE ${round} OF ${rounds}`}</Chip>
           <div style={{ fontSize: 56 * s * big, fontWeight: 900 }}>{info.title.toUpperCase()}</div>
@@ -376,9 +444,10 @@ function TitleGraphics({ race, x, frames, s, layout }: { race: Race; x: number; 
 
 function TeamGraphics({ race, x, s, layout, width }: { race: Race; x: number; s: number; layout: Layout; width: number }) {
   const fps = race.fps;
-  const k = Math.min(TEAMS.length - 1, Math.floor(x / TEAM_FRAMES));
-  const lx = x - k * TEAM_FRAMES;
-  const team = TEAMS[k];
+  const frames=race.intro?.teamFrames??TEAM_FRAMES;
+  const k = Math.min(TEAMS.length - 1, Math.floor(x / frames));
+  const lx = (x-k*frames)*TEAM_FRAMES/frames;
+  const team = (marbleShowroomTeams(TEAMS,race.data) as typeof TEAMS)[k];
   const inn = spring({ frame: lx - 3, fps, config: { damping: 15 } });
   const d1 = spring({ frame: lx - 12, fps, config: { damping: 15 } });
   const d2 = spring({ frame: lx - 18, fps, config: { damping: 15 } });
@@ -645,14 +714,15 @@ export function Intro({ race, layout, frame, width, height }: { race: Race; layo
   const view = views[sc.id];
   return (
     <AbsoluteFill style={{ fontFamily: font }}>
-      {sc.id === "teams" ? <Showroom race={race} frame={x} width={width} height={height} /> : <Stage key={sc.id} race={race} view={view} layout={layout} frame={frame} width={width} height={height} />}
+      {sc.id === "cars" ? <CarShowroom race={race} frame={x} width={width} height={height}/> : sc.id === "teams" ? <Showroom race={race} frame={x} width={width} height={height} /> : <Stage key={sc.id} race={race} view={view} layout={layout} frame={frame} width={width} height={height} />}
       <AbsoluteFill style={{ fontFamily: font, color: ink }}>
         {sc.id === "cold" && <ColdGraphics race={race} plan={plan} x={x} s={s} width={width} height={height} />}
-        {sc.id === "title" && <TitleGraphics race={race} x={x} frames={sc.frames} s={s} layout={layout} />}
+        {sc.id === "title" && plan.vehicle !== "car" && <TitleGraphics race={race} x={x} frames={sc.frames} s={s} layout={layout} />}
+        {plan.vehicle === "car" && <CarShowcaseGraphics race={race} scene={sc.id} frame={x} width={width} height={height}/>}
         {sc.id === "teams" && <TeamGraphics race={race} x={x} s={s} layout={layout} width={width} />}
         {sc.id === "stakes" && <StakesGraphics race={race} x={x} frames={sc.frames} s={s} layout={layout} width={width} />}
         {sc.id === "flyover" && <FlyoverGraphics race={race} plan={plan} x={x} s={s} layout={layout} width={width} />}
-        {sc.id === "lineup" && <LineupGraphics race={race} view={view} frame={frame} x={x} frames={sc.frames} s={s} layout={layout} width={width} height={height} />}
+        {sc.id === "lineup" && plan.vehicle !== "car" && <LineupGraphics race={race} view={view} frame={frame} x={x} frames={sc.frames} s={s} layout={layout} width={width} height={height} />}
       </AbsoluteFill>
       {flash > 0 && <AbsoluteFill style={{ background: "#fff", opacity: flash }} />}
     </AbsoluteFill>

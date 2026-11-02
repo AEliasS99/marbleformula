@@ -59,6 +59,7 @@
 // runs the command while holding the shared lock (waiting for it if needed).
 // Seed sweeps (--round) only read the circuits, so they run without the lock.
 import { spawn, spawnSync } from "node:child_process";
+import {publicVideoMetadata} from './public-video-metadata.mjs';
 import { createHash } from "node:crypto";
 import {
   closeSync,
@@ -76,11 +77,11 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { cpus } from "node:os";
+import { cpus, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const VIDEO_CLOUD_DIR = "/Users/eli/GoogleCloud/factory/";
+const VIDEO_CLOUD_DIR = `${process.env.VIDEO_OUT || `${homedir()}/GoogleCloud`}/factory/`;
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const FACTORY = `${ROOT}out/factory/`;
 const SHARED_LOCK = `${FACTORY}shared.lock`;
@@ -959,7 +960,7 @@ async function factoryMain() {
     const cons = (d.constructors ?? []).slice(0, 5).map((s) => `${s.pos}. ${TEAMS.find((t) => t.id === s.team)?.name} — ${s.points} pts`);
     const nice = (l) => l.toLowerCase().replace(/(^|\s)\S/g, (x) => x.toUpperCase()).replace(/^The /, "the ");
     const obstacles = [...new Set(d.features.map((f) => f.label))].filter((l) => l !== "THE LIFT TOWER" && l !== "THE STAIRWAY").map(nice);
-    const description = [
+    const description = publicVideoMetadata({title,description:[
       `Season ${season}, round ${round} of ${d.rounds} of the Marble Formula Championship 2027 — Don't Be Last!: the ${gp} at ${d.info.circuit}. Twenty marbles, ten Scuderia teams, ${d.info.laps} laps, a Twin-Chain Marble Scoop Lift carrying them back up between laps, and 3 Knockout Checkpoints eliminating the slowest marbles at the back (20 → 17 → 14 → 10) while the Top 10 finishers score Championship Points!`,
       ``,
       `On the track: ${obstacles.join(", ")}.`,
@@ -968,8 +969,6 @@ async function factoryMain() {
       ``,
       `Chapters`,
       ...chapters.map(([t, l]) => `${ts(t)} ${l}`),
-      ``,
-      `Every race is a real physics simulation (Rapier): nothing is scripted. Rendered in 4K.`,
       ``,
       `⚠️ Spoilers below ⚠️`,
       ...Array(12).fill("."),
@@ -984,13 +983,13 @@ async function factoryMain() {
       ...cons,
       ``,
       `#marblerace #marblerun #f1 #satisfying`,
-    ].join("\n");
+    ].join("\n")}).description;
     const short = {
       title: fitTitle([
         `Final lap at ${d.info.location ?? gp}! Who takes it? 🏁 MFC Season ${season} #marblerace #shorts`,
         `Final lap at ${d.info.location ?? gp}! Who takes it? 🏁 #marblerace #shorts`,
       ]),
-      description: `The final lap of the ${gp}, Marble Formula Championship 2027 season ${season}, round ${round}. Full race on the channel.\n#marblerace #marblerun #f1 #shorts`,
+      description: publicVideoMetadata({title:'',description:`The final lap of the ${gp}, Marble Formula Championship 2027 season ${season}, round ${round}. Full race on the channel.\n\n#marblerace #marblerun #f1 #shorts`}).description,
     };
     const tags = tagList([
       "marble race",

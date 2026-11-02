@@ -10,6 +10,7 @@ import { ViewContext } from "./view";
 import { createSubframe, SubframeContext } from "./subframe";
 import { quality } from "./quality";
 import { isNight } from "./look";
+import {tuscanVenue} from './tuscany-sites.js';
 import { Hoops, Neon } from "./Neon";
 import { Boosters, DistributorFlap } from "./Boosts";
 import { getCircuitTheme, WorldScenery } from "./Themes";
@@ -28,19 +29,19 @@ export function Stage({ race, view, layout, frame, width, height }: { race: Race
           The scene is drawn only into the effect composer's own render targets (src/gp/Effects.tsx); the
           canvas's drawing buffer just receives the finished picture as one full-screen copy. So it needs no
           multisampling, depth or stencil of its own (at 4K, MSAA alone cost ~265 MB per canvas). */}
-      <ThreeCanvas width={width} height={height} dpr={quality().dpr} shadows="variance" gl={{ antialias: false, alpha: false, depth: false, stencil: false }}>
+      <ThreeCanvas width={width} height={height} dpr={quality().dpr} shadows="variance" gl={{ antialias: false, alpha: false, depth: false, stencil: false, preserveDrawingBuffer: true }}>
         <ViewContext.Provider value={view}>
           <SubframeContext.Provider value={sub}>
-            <fog attach="fog" args={isNight() ? [theme.fogColor, theme.fogNear, theme.fogFar] : [STUDIO.fog, 220, 1400]} />
+            <fog attach="fog" args={tuscanVenue(race.data)?["#b7c5bd",180,1100]:isNight() ? [theme.fogColor, theme.fogNear, theme.fogFar] : [STUDIO.fog, 220, 1400]} />
             <Environment race={race} />
-            <hemisphereLight args={isNight() ? [theme.hemiSkyColor, theme.hemiGroundColor, theme.hemiIntensity] : ["#bfd8f5", "#5a7a3c", 0.22]} />
+            <hemisphereLight args={tuscanVenue(race.data)?['#c6dcf1','#52663e',.8]:isNight() ? [theme.hemiSkyColor, theme.hemiGroundColor, theme.hemiIntensity] : ["#bfd8f5", "#5a7a3c", 0.22]} />
             <Sun target={shot.target} pos={shot.pos} race={race} />
             <CameraRig race={race} layout={layout} frame={frame} />
             <Circuit race={race} />
             <TrackDetails race={race} />
             <Decals race={race} />
             <TimingGate race={race} />
-            {isNight() && <Neon race={race} />}
+            {isNight() && !tuscanVenue(race.data) && <Neon race={race} />}
             <Trackside race={race} />
             <WorldScenery race={race} />
             <Obstacles race={race} t={t} />
@@ -51,7 +52,7 @@ export function Stage({ race, view, layout, frame, width, height }: { race: Race
             <Lifts race={race} t={t} />
             <Gantries race={race} frame={Math.round(t)} />
             <Gate race={race} t={t} />
-            <Marbles race={race} t={t} />
+            <Marbles race={race} t={t} frame={frame} />
             <ImpactSparks race={race} t={t} />
             <Confetti race={race} t={t} />
             {/* Keep <Effects> the LAST child. On mount it renders the canvas once more from a passive effect,

@@ -1,0 +1,358 @@
+{
+  "schemaVersion": 1,
+  "id": "8b3d36f6-408c-4737-bcbd-5150ba53327e",
+  "revision": 1,
+  "name": "Alpine Touring Club",
+  "mode": "cars",
+  "theme": "night",
+  "width": 6,
+  "laps": 1,
+  "seed": 17,
+  "points": [
+    {
+      "x": -48,
+      "z": 28,
+      "y": 5,
+      "id": "2032ae47-0549-443c-8d98-6014dfed49bb"
+    },
+    {
+      "x": -48,
+      "z": -20,
+      "y": 10,
+      "id": "b307cc5c-e730-484b-81e5-533d03603f30"
+    },
+    {
+      "x": -30,
+      "z": -38,
+      "y": 16,
+      "id": "4439bb0d-1ffc-4955-8ce5-7d72c63f9b3d"
+    },
+    {
+      "x": 10,
+      "z": -38,
+      "y": 18,
+      "id": "2c53df94-b5ba-431c-a2cc-8ad7837c89e5"
+    },
+    {
+      "x": 43,
+      "z": -20,
+      "y": 12,
+      "id": "547c9657-44e8-474a-af63-8c597cfc1440"
+    },
+    {
+      "x": 40,
+      "z": 12,
+      "y": 7,
+      "id": "88511719-3637-4cba-bbec-f19d4cd7b8e3"
+    },
+    {
+      "x": 18,
+      "z": 23,
+      "y": 5,
+      "id": "5c0d35ef-4f59-4cb1-8472-e127b5e34920"
+    },
+    {
+      "x": 5,
+      "z": 4,
+      "y": 9,
+      "id": "aee17e90-d61b-42de-bdd7-6457032c37f0"
+    },
+    {
+      "x": -18,
+      "z": 8,
+      "y": 7,
+      "id": "d4b44729-6ab3-4256-aec8-7ed254955608"
+    },
+    {
+      "x": -20,
+      "z": 30,
+      "y": 5,
+      "id": "11e184cc-92fe-430e-90b7-db9ac59aca58"
+    }
+  ],
+  "elements": [
+    {
+      "id": "822070c7-dd75-467c-934c-46b9a764143a",
+      "assetId": "checkpoint",
+      "name": "Checkpoint 1",
+      "at": 0.27,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "811111e6-0235-4dc1-9cda-a0712ca63714",
+      "assetId": "checkpoint",
+      "name": "Checkpoint 2",
+      "at": 0.54,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "cb3b2ded-2122-4e5c-b161-24e87ccbc0c8",
+      "assetId": "checkpoint",
+      "name": "Checkpoint 3",
+      "at": 0.79,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "6b4bf952-2f85-44f0-b17f-93e19a418f44",
+      "assetId": "drs",
+      "name": "Recta de ataque",
+      "at": 0.15,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "dffe40e0-4079-46a1-90ae-29c97d3360de",
+      "assetId": "chicane",
+      "name": "Chicane del mirador",
+      "at": 0.66,
+      "offset": 0,
+      "scale": 1
+    },
+    {
+      "id": "1aecab86-92ba-49b3-b640-9dc70a4d71b1",
+      "assetId": "pine",
+      "name": "Pinos del mirador",
+      "at": 0.19,
+      "offset": 10,
+      "scale": 1
+    },
+    {
+      "id": "2e43b730-a0b3-4d05-a8ec-3c20109647bd",
+      "assetId": "stand",
+      "name": "Grada principal",
+      "at": 0.93,
+      "offset": 9,
+      "scale": 1
+    }
+  ],
+  "participants": [
+    {
+      "id": "ESP",
+      "name": "España",
+      "color": "#e5ad38",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "BRA",
+      "name": "Brasil",
+      "color": "#46a575",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "ARG",
+      "name": "Argentina",
+      "color": "#83bddd",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "AUT",
+      "name": "Austria",
+      "color": "#db6763",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "JPN",
+      "name": "Japón",
+      "color": "#dc8889",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "DEU",
+      "name": "Alemania",
+      "color": "#d5ab49",
+      "enabled": true,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "ITA",
+      "name": "Italia",
+      "color": "#62a886",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "GBR",
+      "name": "Reino Unido",
+      "color": "#789bc2",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "MEX",
+      "name": "México",
+      "color": "#559b83",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "NLD",
+      "name": "Países Bajos",
+      "color": "#ea9153",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "FRA",
+      "name": "Francia",
+      "color": "#6e91bd",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "USA",
+      "name": "Estados Unidos",
+      "color": "#c16c7e",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "BEL",
+      "name": "Bélgica",
+      "color": "#c5a35d",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "SWE",
+      "name": "Suecia",
+      "color": "#799eb7",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "CAN",
+      "name": "Canadá",
+      "color": "#cf7262",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "CHN",
+      "name": "China",
+      "color": "#be5d58",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "POL",
+      "name": "Polonia",
+      "color": "#ca8c99",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "GT",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "IRL",
+      "name": "Irlanda",
+      "color": "#86aa73",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "F1",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "DNK",
+      "name": "Dinamarca",
+      "color": "#bf7582",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "BGY",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    },
+    {
+      "id": "IND",
+      "name": "India",
+      "color": "#ddac67",
+      "enabled": false,
+      "size": 1,
+      "vehicleClass": "JET",
+      "speed": 3,
+      "grip": 3,
+      "intelligence": 4
+    }
+  ],
+  "notes": [],
+  "intent": "Una carrera fácil de seguir, con un tramo técnico y una llegada muy visible.",
+  "stage": "draft",
+  "source": null,
+  "updatedAt": "2026-10-25T20:07:28.703Z"
+}

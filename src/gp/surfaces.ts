@@ -171,21 +171,38 @@ export function wearChrome(g: CanvasRenderingContext2D, w: number, h: number, se
 }
 
 /** Asphalt: fine aggregate grain (normal), near-constant roughness. New textures on every call. */
-export function asphaltMaps() {
-  const px = once("asphalt", () => {
+export function asphaltMaps(premium=false) {
+  const px = once(premium?'asphalt-motorsport-v1':"asphalt", () => {
     const size = 1024;
-    const grain = noiseField(size, 256, 2, 5);
-    const fine = noiseField(size, 512, 1, 6);
+    const grain = noiseField(size, premium?96:256, 2, 5);
+    const fine = noiseField(size, premium?384:512, 1, 6);
     const h = new Float32Array(size * size);
-    for (let i = 0; i < h.length; i++) h[i] = grain[i] * 0.7 + fine[i] * 0.3;
+    for (let i = 0; i < h.length; i++) h[i] = grain[i] * (premium?.35:.7) + fine[i] * (premium?.15:.3);
     const rough = new Uint8Array(size * size * 4);
     for (let i = 0; i < size * size; i++) {
-      rough[i * 4 + 1] = (0.78 + (grain[i] - 0.5) * 0.2) * 255;
+      rough[i * 4 + 1] = (premium?.84+(grain[i]-.5)*.07:.78+(grain[i]-.5)*.2) * 255;
       rough[i * 4 + 3] = 255;
     }
-    return { size, normal: normalPixels(h, size, 2.6), rough };
+    return { size, normal: normalPixels(h, size, premium?1.2:2.6), rough };
   });
   return { normal: dataTexture(px.size, px.normal), roughness: dataTexture(px.size, px.rough) };
+}
+
+/** Subtle unpainted motorsport materials; fresh textures per production canvas. */
+export function motorsportCarMaps(){
+ const px=once('motorsport-car-v1',()=>{
+  const size=256,grain=noiseField(size,96,2,41),rubberRough=new Uint8Array(size*size*4),carbon=new Uint8Array(size*size*4),height=new Float32Array(size*size);
+  for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+   const i=y*size+x,k=i*4,tow=(Math.floor(x/4)+Math.floor(y/4))%2;
+   rubberRough[k+1]=(0.86+(grain[i]-.5)*.06)*255;rubberRough[k+3]=255;
+   const shade=22+tow*5+(grain[i]-.5)*3;carbon[k]=shade;carbon[k+1]=shade+2;carbon[k+2]=shade+4;carbon[k+3]=255;
+   height[i]=.46+tow*.035+Math.sin((tow?x:y)*Math.PI/2)*.012;
+  }
+  return {size,rubberNormal:normalPixels(grain,size,.35),rubberRough,carbon,carbonNormal:normalPixels(height,size,.7)};
+ });
+ const rubberNormal=dataTexture(px.size,px.rubberNormal),rubberRoughness=dataTexture(px.size,px.rubberRough),carbonColor=dataTexture(px.size,px.carbon,true),carbonNormal=dataTexture(px.size,px.carbonNormal);
+ carbonColor.repeat.set(6,6);carbonNormal.repeat.set(6,6);
+ return {rubberNormal,rubberRoughness,carbonColor,carbonNormal};
 }
 
 /** Mown grass: green with broad tonal patches, mowing stripes and fine blade grain. New textures on every call. */

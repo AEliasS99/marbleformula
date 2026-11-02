@@ -120,6 +120,8 @@ function outward(points: [number, number][], i: number, d: number): [number, num
 }
 
 export function TrackDetails({ race }: { race: Race }) {
+  // Grounded regional supports are shared with the scenery camera model.
+  const regionalSupports = ["Italy","Germany"].includes(race.data.info.country);
   const built = useMemo(() => {
     const samples = race.data.samples as unknown as Sample[];
     const { outer } = troughProfile(18) as Profile;
@@ -310,16 +312,19 @@ export function TrackDetails({ race }: { race: Race }) {
       <mesh geometry={built.seams}>
         <meshStandardMaterial color="#b4b9c3" roughness={0.6} />
       </mesh>
-      <mesh geometry={built.saddles} castShadow receiveShadow>
+      {!regionalSupports && <mesh geometry={built.saddles} castShadow receiveShadow>
         <meshStandardMaterial color={isNight() ? "#2c3038" : "#d6d9df"} metalness={isNight() ? 0.85 : 1} roughness={isNight() ? 0.32 : 0.22} envMapIntensity={isNight() ? 0.42 : 1} />
       </mesh>
+      }
       <primitive object={built.boltMesh} />
+      {!regionalSupports && <>
       <primitive object={built.pillarMesh} />
       <primitive object={built.sleeveMesh} />
       <primitive object={built.blockMesh} />
       <primitive object={built.plateMesh} />
       <primitive object={built.collarMesh} />
       <primitive object={built.tapeMesh} />
+      </>}
     </>
   );
 }

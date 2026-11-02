@@ -17,8 +17,8 @@ export default {
       // Asymmetric DRS / Overtake Attack Strip on one side of the track (-1.12 or +1.12):
       // Trailing cars dive into the Attack Lane to slingshot past cars on the standard racing line!
       const side = Math.round(f.u * 1.3) % 2 === 0 ? -1 : 1;
-      const latCenter = r3(side * 1.08);
-      const len = 6.2;
+      const latCenter = r3(f.latCenter ?? side * 1.08);
+      const len = f.length ?? 6.2;
       const s = frameAt(f.u + len / 2);
       out.boosters.push({
         kind: "booster",
@@ -27,11 +27,12 @@ export default {
         pos: pointInFrame(s, latCenter, 0.008).map(r3),
         quat: quatArr(frameQuat(s)),
         length: len,
-        width: 1.42,
-        target: 19.8,
-        accel: 72,
+        width: f.width ?? 1.42,
+        target: f.target ?? 19.8,
+        accel: f.accel ?? 72,
         latCenter,
-        latHalf: 0.88,
+        latHalf: (f.width ?? 1.42)/2,
+        ...(f.tier?{tier:f.tier,label:f.label,boostSeconds:f.boostSeconds,risk:f.risk}:{}),
       });
       return;
     }
