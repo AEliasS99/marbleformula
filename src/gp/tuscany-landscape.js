@@ -43,6 +43,18 @@ export function tuscanLandscape(samples){
    neighborhoods.push({x,z,rotY:p.rotY,scale:.9+hash(i+side*31)*.15,halfX:3,halfZ:3.2,parent:i,style:i+side+1});
   }
  }
+ // Admit whole Tuscan focal precincts before grading and planting. They share
+ // the same land-use plan as villages, ground colour and camera geometry.
+ const landmarks=[];
+ for(const spec of [{kind:'cathedral',u:140,halfX:7.5,halfZ:8.5},{kind:'civic-loggia',u:780,halfX:7.2,halfZ:6.5}]){
+  const q=samples.reduce((a,b)=>Math.abs(b.u-spec.u)<Math.abs(a.u-spec.u)?b:a),radius=Math.hypot(spec.halfX,spec.halfZ),candidates=[];
+  for(const off of [18,24,32,40,50,62])for(const side of [-1,1])for(const along of [0,-12,12,-24,24]){
+   const x=q.p[0]+q.r[0]*off*side+q.t[0]*along,z=q.p[2]+q.r[2]*off*side+q.t[2]*along;
+   if(!roadClear(x,z,radius+3)||[...sites,...neighborhoods].some(p=>Math.hypot(x-p.x,z-p.z)<siteRadius(p)+radius+3)||landmarks.some(p=>Math.hypot(x-p.x,z-p.z)<p.radius+radius+8))continue;
+   candidates.push({...spec,x,z,radius,scale:1,rotY:-Math.atan2(q.t[2],q.t[0]),u:q.u,score:off+Math.abs(along)*.15});
+  }
+  candidates.sort((a,b)=>a.score-b.score);if(candidates[0])landmarks.push(candidates[0]);
+ }
  // Minimum connecting tree plus short village-to-field branches, rather than
  // disconnected decorative pads. Surface lanes remain on the actual earth.
  const paths=[],connected=new Set([0]);
@@ -51,13 +63,15 @@ export function tuscanLandscape(samples){
   if(!best)break;paths.push({a:sites[best.i],b:sites[best.j],width:1.5});connected.add(best.j);
  }
  for(const p of neighborhoods)paths.push({a:sites[p.parent],b:p,width:1.25});
+ for(const p of landmarks){const nearest=sites.reduce((a,b)=>Math.hypot(b.x-p.x,b.z-p.z)<Math.hypot(a.x-p.x,a.z-p.z)?b:a);paths.push({a:nearest,b:p,width:1.7});}
  const parcels=[];
  for(let ix=0,x=bounds.minX+8;x<bounds.maxX;x+=22,ix++)for(let iz=0,z=bounds.minZ+8;z<bounds.maxZ;z+=22,iz++){
   const seed=ix*73+iz*109,px=x+(hash(seed)-.5)*5,pz=z+(hash(seed+1)-.5)*5;
-  if(!roadClear(px,pz,9)||sites.some(q=>Math.hypot(px-q.x,pz-q.z)<siteRadius(q)+9)||neighborhoods.some(q=>Math.hypot(px-q.x,pz-q.z)<12))continue;
+  if(!roadClear(px,pz,9)||sites.some(q=>Math.hypot(px-q.x,pz-q.z)<siteRadius(q)+9)||neighborhoods.some(q=>Math.hypot(px-q.x,pz-q.z)<12)||landmarks.some(q=>Math.hypot(px-q.x,pz-q.z)<q.radius+12))continue;
   parcels.push({x:px,z:pz,yaw:Math.floor(hash(seed+3)*4)*Math.PI/4,kind:['vineyard','olive','meadow','wheat'][Math.floor(hash(seed+2)*4)],seed,half:8});
  }
- const out={sites,neighborhoods,paths,parcels,bounds,roadClear};cache.set(samples,out);return out;
+ const landmarkClear=(x,z,r)=>landmarks.every(p=>Math.hypot(x-p.x,z-p.z)>p.radius+r);
+ const out={sites,neighborhoods,landmarks,landmarkClear,paths,parcels,bounds,roadClear};cache.set(samples,out);return out;
 }
 
 export function appendTuscanLandscape({samples,terrain,parts,groups,house}){
@@ -88,7 +102,7 @@ export function appendTuscanLandscape({samples,terrain,parts,groups,house}){
    const x=path.a.x+(path.b.x-path.a.x)*t/d,z=path.a.z+(path.b.z-path.a.z)*t/d;
    for(const side of [-1,1]){
     const px=x+nx*side*2.9,pz=z+nz*side*2.9;
-    if(!plan.roadClear(px,pz,2.1)||plan.sites.some(q=>Math.hypot(px-q.x,pz-q.z)<Math.hypot(q.halfX,q.halfZ)*q.scale+1)||plan.neighborhoods.some(q=>Math.hypot(px-q.x,pz-q.z)<4))continue;
+    if(!plan.roadClear(px,pz,2.1)||!plan.landmarkClear(px,pz,2.1)||plan.sites.some(q=>Math.hypot(px-q.x,pz-q.z)<Math.hypot(q.halfX,q.halfZ)*q.scale+1)||plan.neighborhoods.some(q=>Math.hypot(px-q.x,pz-q.z)<4))continue;
     if((Math.floor(t/6.5)+i)%3===0)cypress(px,surface(px,pz),pz,4.1+hash(t+i)*2.1,i+t);
     else box(px,surface(px,pz)+.32,pz,[.48,.64,3.9],'limestone','italy-landscape-garden-wall',Math.atan2(path.b.x-path.a.x,path.b.z-path.a.z));
    }
@@ -114,7 +128,7 @@ export function appendTuscanLandscape({samples,terrain,parts,groups,house}){
   if(s.u<nextGround||s.gap)continue;nextGround=s.u+3.7;
   for(const side of [-1,1])for(let band=0;band<3;band++){
    const seed=s.u*7+band*19+side*13,offset=7+band*4.1+hash(seed)*2,x=s.p[0]+s.r[0]*offset*side,z=s.p[2]+s.r[2]*offset*side;
-   if(!plan.roadClear(x,z,1.5)||plan.sites.some(p=>Math.hypot(x-p.x,z-p.z)<Math.hypot(p.halfX,p.halfZ)*p.scale+1)||plan.neighborhoods.some(p=>Math.hypot(x-p.x,z-p.z)<4))continue;
+   if(!plan.roadClear(x,z,1.5)||!plan.landmarkClear(x,z,1.5)||plan.sites.some(p=>Math.hypot(x-p.x,z-p.z)<Math.hypot(p.halfX,p.halfZ)*p.scale+1)||plan.neighborhoods.some(p=>Math.hypot(x-p.x,z-p.z)<4))continue;
    const y=surface(x,z);
    if(hash(seed+4)<.23)add('canopy',x,y+.15,z,[.40,.22,.33,seed],'limestone','italy-landscape-rock');
    else for(let k=0;k<3;k++){
@@ -132,7 +146,7 @@ export function appendTuscanLandscape({samples,terrain,parts,groups,house}){
   const spacing=Math.max(10,Math.sqrt(Math.PI*rx*rz/160));
   for(let x=cx-rx;x<cx+rx;x+=spacing)for(let z=cz-rz;z<cz+rz;z+=spacing){
    const seed=x*3.1+z*1.7+hi*71,px=x+(hash(seed)-.5)*6,pz=z+(hash(seed+1)-.5)*6;
-   if(count>=2500||Math.hypot((px-cx)/rx,(pz-cz)/rz)>1||hash(seed+2)<.27||!plan.roadClear(px,pz,4.5))continue;
+   if(count>=2500||Math.hypot((px-cx)/rx,(pz-cz)/rz)>1||hash(seed+2)<.27||!plan.roadClear(px,pz,4.5)||!plan.landmarkClear(px,pz,4.5))continue;
    const y=surface(px,pz),h=4+hash(seed+4)*3.8;
    if(hash(seed+5)>.68)cypress(px,y,pz,h,seed);else pine(px,y,pz,h,seed);count++;
   }

@@ -579,7 +579,7 @@ function FlyoverGraphics({ race, plan, x, s, layout, width }: { race: Race; plan
   const c = cur >= 0 ? plan.cards[cur] : null;
   const inn = c ? spring({ frame: x - c.from, fps, config: { damping: 15 } }) : 0;
   const out = c ? interpolate(x, [c.to - 8, c.to], [1, 0], clamp) : 0;
-  const b = c ? BLURBS[c.type] ?? { line: "", danger: 2 } : null;
+  const b = c ? c.type === "hammer" && (race.data.info as {physicsProfile?:string}).physicsProfile === "contact-flow-v3" ? {...BLURBS.hammer,line:"Forward-sweeping hammers strike alternating sides. Time the opening and race through."} : BLURBS[c.type] ?? { line: "", danger: 2 } : null;
   return (
     <AbsoluteFill style={{ fontFamily: font, color: ink }}>
       <div style={{ position: "absolute", left: 60 * s, top: 50 * s, opacity: head * headOut, transform: `translateY(${(1 - head) * -20 * s}px)` }}>

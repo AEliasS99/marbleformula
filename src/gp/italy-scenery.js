@@ -6,7 +6,7 @@ import {italianTerrain} from './italy-terrain.js';
 import {pointInFrame,TRACK} from './trackMesh.js';
 import {regionalRelief} from './regional-relief.js';
 import {TUSCAN_VENUE_PROFILE} from './tuscany-sites.js';
-import {appendTuscanLandscape} from './tuscany-landscape.js';
+import {appendTuscanLandscape,tuscanLandscape} from './tuscany-landscape.js';
 import {appendTuscanVenue} from './tuscany-venue.js';
 const pose=(p,r=[0,0,0],s=1)=>new Matrix4().compose(new Vector3(...p),new Quaternion().setFromEuler(new Euler(...r)),new Vector3(s,s,s));
 export const ITALY_MATERIALS={
@@ -62,6 +62,34 @@ export function italianScenery(samples,{profile='tuscany',length=0}={}){
    }
    box(m,[x,1.8,z+d/2+.13],[.94,.18,.25],'limestone','italy-venue-door-lintel');
    for(let j=0;j<3;j++)box(m,[x,.08+j*.07,z+d/2+.5-j*.16],[1.1,.14,.8-j*.16],'limestone','italy-venue-door-step');
+   // Facades have real depth on every side seen by race cameras, rather than
+   // one decorated front and three blank boxes. Existing silhouettes remain.
+   for(const [fi,[fx,fz,yaw]]of [[0,d/2,0],[0,-d/2,Math.PI],[w/2,0,Math.PI/2],[-w/2,0,-Math.PI/2]].entries()){
+    const face=m.clone().multiply(pose([x+fx,0,z+fz],[0,yaw,0]));
+    for(const px of [-1,1])for(const fy of [1.1,2.75]){
+     if(fi!==0)box(face,[px,fy,.035],[.62,.94,.06],'glass','italy-venue-side-window');
+     for(const side of [-1,1]){
+      box(face,[px+side*.34,fy,.10],[.07,1.07,.13],'cream','italy-venue-window-frame');
+      if(fi!==0)box(face,[px+side*.49,fy,.10],[.23,1.05,.09],'shutter','italy-venue-side-shutter');
+      for(let k=0;k<6;k++)box(face,[px+side*(fi===0?.42:.49),fy-.40+k*.16,.16],[fi===0?.19:.23,.045,.06],'shutter','italy-venue-shutter-louvre',[.25,0,0]);
+     }
+     box(face,[px,fy+.52,.11],[.80,.085,.13],'limestone','italy-venue-window-lintel');
+     box(face,[px,fy,.13],[.035,.90,.035],'wood','italy-venue-window-mullion');
+     if(fi!==0)box(face,[px,fy-.52,.12],[.91,.12,.32],'limestone','italy-venue-window-sill');
+    }
+    if(fi%2===0){
+     cyl(face,[1.57,h/2,-.01],.045,.045,h,'iron','italy-venue-rainpipe',8);
+     for(const fy of [.35,h-.3])box(face,[1.57,fy,.02],[.13,.055,.12],'brass','italy-venue-pipe-bracket');
+    }
+   }
+   for(let k=0;k<10;k++)add(m,'cylinder',[x,h+1.10,z-2.16+k*.48],[.11,.11,.50,10],'tile','italy-venue-ridge-cap',[Math.PI/2,0,0]);
+   for(const dx of [-1,1]){
+    box(m,[x+dx,.51,z+d/2+.25],[.78,.28,.30],'terracotta','italy-venue-flower-box');
+    for(let k=0;k<4;k++){
+     add(m,'canopy',[x+dx-.27+k*.18,.78,z+d/2+.25],[.16,.20,.16,k+style],'vine','italy-venue-window-plant');
+     add(m,'sphere',[x+dx-.27+k*.18,.93,z+d/2+.25],[.065,.05,.065],k%2?'flower':'spectatorGold','italy-venue-window-flower');
+    }
+   }
   }
  };
  const tower=(m,x,z)=>{
@@ -133,7 +161,7 @@ export function italianScenery(samples,{profile='tuscany',length=0}={}){
   const settlements=parts.filter(p=>p.category==='italy-town-foundation'||p.category==='italy-farm-foundation').map(p=>({
    x:p.matrix[12],z:p.matrix[14],radius:Math.hypot(p.size[0],p.size[2])/2*Math.hypot(p.matrix[0],p.matrix[1],p.matrix[2])+15,
   }));
-  const hillClear=(x,z,r)=>roadClear(x,z,r+10)&&settlements.every(p=>Math.hypot(x-p.x,z-p.z)>r+p.radius);
+  const hillClear=(x,z,r)=>roadClear(x,z,r+10)&&settlements.every(p=>Math.hypot(x-p.x,z-p.z)>r+p.radius)&&(!venue||tuscanLandscape(samples).landmarkClear(x,z,r+5));
   // The original recipe computed relief.peaks but never added a skyline.
   // Broad, ground-connected ridges frame the existing Tuscan villages.
   relief.peaks.forEach((p,i)=>{
@@ -165,14 +193,14 @@ export function italianScenery(samples,{profile='tuscany',length=0}={}){
    const s=samples[i];if(s.u<next||s.u>samples.at(-1).u-18||s.gap)continue;next=s.u+9;
    for(const side of [-1,1]){
     const off=8.5+(Math.floor(s.u/9)%3)*1.2,x=s.p[0]+s.r[0]*side*off,z=s.p[2]+s.r[2]*side*off;
-    if(!roadClear(x,z,4))continue;
+    if(!roadClear(x,z,4)||(venue&&!tuscanLandscape(samples).landmarkClear(x,z,4)))continue;
     const m=pose([x,terrain.heightAt(x,z),z],[0,Math.atan2(s.t[0],s.t[2]),0]);
     if(Math.floor(s.u/9)%3===(side<0?0:1))olive(m,5.5+s.u%2);
     else for(let j=0;j<5;j++)for(let course=0;course<2;course++)box(m,[0,.25+course*.45,(j-2)*.85+(course?.2:0)],[.55,.44,.8],'limestone','italy-near-stone-wall');
    }
   }
   relief.plots.filter((_,i)=>i%3===0).forEach((p,i)=>{
-   const x=p.x+Math.cos(p.rotY)*10,z=p.z-Math.sin(p.rotY)*10;if(!roadClear(x,z,7))return;
+   const x=p.x+Math.cos(p.rotY)*10,z=p.z-Math.sin(p.rotY)*10;if(!roadClear(x,z,7)||(venue&&!tuscanLandscape(samples).landmarkClear(x,z,7)))return;
    const m=pose([x,terrain.heightAt(x,z),z],[0,p.rotY,0]);
    for(const ox of [-3,0,3])for(const oz of [-3,0,3]){
     const wx=x+Math.cos(p.rotY)*ox+Math.sin(p.rotY)*oz,wz=z-Math.sin(p.rotY)*ox+Math.cos(p.rotY)*oz;

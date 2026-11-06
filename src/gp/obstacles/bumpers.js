@@ -13,6 +13,18 @@ export default {
       // Zero pinball bumpers in Car Mode!
       return;
     }
+    if(physicsProfile==='contact-flow-v3'){
+      // Both bypasses exceed 2.3 marble diameters: two racers cannot form an
+      // arch between a post and the rail. The offset small caps still deflect
+      // the centre of the pack. Keep the exposed shoulder (.28-.12=.16)
+      // below half the marble radius: the old .28-high shoulder still caused
+      // head-on recoil loops in recorded ARG/BRA arrivals despite wide lanes.
+      for(const [du,lat,r]of [[0,.25,.14],[2.4,-.25,.14],[4.8,.25,.12]])
+        // A .4 rebound on this low shoulder launched fast arrivals above the
+        // actual side guard. Keep a damped .2 rebound, verified through landing.
+        cylinder('bumper',f.u+du,lat,r,.28,.20,{friction:.02});
+      return;
+    }
     const contact=physicsProfile==='contact-flow-v2'?{friction:.03}:{};
     cylinder("bumper", f.u, 0.3, 0.2, 0.75, 0.8,contact);
     cylinder("bumper", f.u + 2.3, -0.4, 0.24, 0.75, 0.8,contact);

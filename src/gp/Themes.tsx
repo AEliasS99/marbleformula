@@ -5,6 +5,8 @@ import {SpainScenery} from './SpainScenery';
 import {ItalyScenery} from './ItalyScenery';
 import {GermanyScenery} from './GermanyScenery';
 import {BritainScenery} from './BritainScenery';
+import {WachauScenery} from './WachauScenery';
+import {IndiaScenery} from './IndiaScenery';
 import {ColombiaScenery} from './ColombiaScenery';
 import {SydneyScenery} from './SydneyScenery';
 import {newYorkBuildings} from './newyork-scenery.js';
@@ -12,7 +14,7 @@ import * as THREE from "three";
 import { TRACK, TRACK_DEPTH } from "./trackMesh.js";
 import type { Race, Vec3 } from "./race";
 
-export type CircuitThemeId = "tokyo" | "alps" | "cairo" | "sydney" | "newyork" | "spain" | "colombia" | "italy" | "germany" | "britain" | "france";
+export type CircuitThemeId = "tokyo" | "alps" | "cairo" | "sydney" | "newyork" | "spain" | "colombia" | "italy" | "germany" | "britain" | "france" | "austria" | "india";
 
 export interface CircuitTheme {
   id: CircuitThemeId;
@@ -53,6 +55,32 @@ export interface CircuitTheme {
 export function getCircuitTheme(race: Race): CircuitTheme {
   const gp = (race.data.info?.gp ?? "").toLowerCase();
   const id = (race.data.id ?? "").toLowerCase();
+
+  if(gp.includes('india')||id==='r13-jaipur')return {
+    id:'india',skyColor:'#adc6d1',fogColor:'#d9c5aa',fogNear:180,fogFar:850,
+    groundColor:'#a39a73',groundRoughness:1,groundMetalness:0,
+    trackFloorColor:'#66513d',trackSpeckleRgb:[182,158,123],trackEdgeColor:'#d5bd94',trackDashColor:'#fff3d9',
+    innerWallColor:'#c88b70',outerShellColor:'#947151',outerShellMetalness:.08,outerShellRoughness:.86,
+    rimColor:'#eadac0',capsColor:'#856342',kerbColorA:'#e89136',kerbColorB:'#2c7950',
+    sunColor:'#ffebcb',sunIntensity:2.4,rimLightColor:'#b8d3d8',rimLightIntensity:.6,
+    hemiSkyColor:'#d5e4e4',hemiGroundColor:'#a7936d',hemiIntensity:.66,
+    hoopRibColor:'#b99868',hoopLedColor:'#eee3c8',hoopLedEmissive:'#d9c79c',
+    neonPalette:['#e89136','#f5f1e7','#2c7950','#aa8247'],extraNeonArches:false,
+    boards:[['INDIA · JAIPUR','#c87b69','#fff3d9'],['SHORTCUT OR CHICANE','#2c7950','#fff3d9'],['PALACE GATES RUN','#d68b39','#34291f'],['marbleformula.com','#70503b','#fff3d9']],
+  };
+
+  if(gp.includes('austria')||id==='r12-wachau')return {
+    id:'austria',skyColor:'#9ab4bb',fogColor:'#c3cec1',fogNear:170,fogFar:820,
+    groundColor:'#7f9169',groundRoughness:1,groundMetalness:0,
+    trackFloorColor:'#54483a',trackSpeckleRgb:[178,164,135],trackEdgeColor:'#ded4bc',trackDashColor:'#f5f1e7',
+    innerWallColor:'#d5c5a5',outerShellColor:'#817258',outerShellMetalness:.08,outerShellRoughness:.86,
+    rimColor:'#e5d9bd',capsColor:'#736751',kerbColorA:'#c9343d',kerbColorB:'#f5f1e7',
+    sunColor:'#ffebcb',sunIntensity:2.45,rimLightColor:'#b8d3d8',rimLightIntensity:.64,
+    hemiSkyColor:'#d5e4e4',hemiGroundColor:'#72855c',hemiIntensity:.66,
+    hoopRibColor:'#b9ac8e',hoopLedColor:'#eee3c8',hoopLedEmissive:'#d9c79c',
+    neonPalette:['#c9343d','#f5f1e7','#60837a','#b8b4a3'],extraNeonArches:false,
+    boards:[['AUSTRIA','#c9343d','#ffffff'],['WACHAU VALLEY','#456c64','#f5f1e7'],['CHOOSE YOUR COUNTRY','#c9343d','#ffffff'],['DANUBE TERRACE DESCENT','#456c64','#ffffff'],['ONE RUN · THREE CHECKPOINTS','#c9343d','#ffffff']],
+  };
 
   if(gp.includes('britain')||id==='r10-britain')return {
     id:'britain',skyColor:'#8ca4b1',fogColor:'#b9c8bd',fogNear:160,fogFar:700,
@@ -884,6 +912,8 @@ export function WorldScenery({ race }: { race: Race }) {
       {theme.id==='italy'&&<ItalyScenery race={race}/>}
       {theme.id==='germany'&&<GermanyScenery race={race}/>}
       {theme.id==='britain'&&<BritainScenery race={race}/>}
+      {theme.id==='austria'&&<WachauScenery race={race}/>}
+      {theme.id==='india'&&<IndiaScenery race={race}/>}
       {built.portals.map((pt, i) => {
         const q = new THREE.Quaternion().setFromRotationMatrix(pt.basis);
         const h = 3.6;

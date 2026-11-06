@@ -1,5 +1,5 @@
 import {DataTexture,RGBAFormat,UnsignedByteType,LinearFilter,ClampToEdgeWrapping,Vector4,Color} from 'three';
-const palette=Object.fromEntries(Object.entries({vineyard:'#4a6535',olive:'#596b3a',meadow:'#4b6435',wheat:'#8e7b46',lane:'#97805b',garden:'#627544',earth:'#635b38'}).map(([k,v])=>[k,new Color(v).toArray()]));
+const palette=Object.fromEntries(Object.entries({vineyard:'#4a6535',olive:'#596b3a',meadow:'#4b6435',wheat:'#8e7b46',lane:'#97805b',garden:'#627544',earth:'#635b38',piazza:'#b6a383'}).map(([k,v])=>[k,new Color(v).toArray()]));
 const distance=(x,z,a,b)=>{const dx=b.x-a.x,dz=b.z-a.z,t=Math.max(0,Math.min(1,((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz||1)));return Math.hypot(x-a.x-dx*t,z-a.z-dz*t);};
 // One low-frequency terrain atlas from actual layout data. A single filtered
 // lookup avoids hundreds of field/path uniforms and shader loop compilation.
@@ -24,6 +24,16 @@ export function landscapeGroundTexture(plan,size=512){
   let garden=0;for(const p of settlements)garden=Math.max(garden,1-smooth(6*p.scale,10*p.scale,Math.hypot(x-p.x,z-p.z)));
   color=color.map((v,k)=>v+(palette.garden[k]-v)*garden*.7);
   color=color.map((v,k)=>v+(palette.lane[k]-v)*lane*.90);
+  for(const p of plan.landmarks??[]){
+   const dx=x-p.x,dz=z-p.z,lx=Math.cos(p.rotY)*dx-Math.sin(p.rotY)*dz,lz=Math.sin(p.rotY)*dx+Math.cos(p.rotY)*dz;
+   const plaza=1-smooth(0,1.3,Math.max(Math.abs(lx)-p.halfX,Math.abs(lz)-p.halfZ));
+   color=color.map((v,k)=>v+(palette.piazza[k]-v)*plaza);
+  }
+  if(plan.campus){
+   const p=plan.campus,dx=x-p.base[0],dz=z-p.base[2],lx=Math.cos(p.yaw)*dx-Math.sin(p.yaw)*dz,lz=Math.sin(p.yaw)*dx+Math.cos(p.yaw)*dz;
+   const plaza=1-smooth(0,2,Math.max(Math.abs(lx)-21,Math.abs(lz)-12));
+   color=color.map((v,k)=>v+(palette.piazza[k]-v)*plaza);
+  }
   const n=4*(j*size+i);for(let k=0;k<3;k++)bytes[n+k]=Math.round(Math.max(0,Math.min(1,color[k]))*255);bytes[n+3]=255;
  }
  const texture=new DataTexture(bytes,size,size,RGBAFormat,UnsignedByteType);texture.magFilter=LinearFilter;texture.minFilter=LinearFilter;texture.wrapS=texture.wrapT=ClampToEdgeWrapping;texture.generateMipmaps=false;texture.needsUpdate=true;

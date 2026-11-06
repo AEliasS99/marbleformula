@@ -16,8 +16,19 @@
 // on the last lap, when everyone is heading for the finish).
 export const STAIR = { plate: 0.14, slow: 1.6, fast: 9, gap: 1.3, below: 1.6, above: 1.4, outGap: 0.7, tilt: (14 * Math.PI) / 180 };
 
+// The plinth is the widest longitudinal part of the rendered stair: wider
+// than its tilted cradles, rear rungs and upper header. Share its dimension
+// with the camera so an exited rider is not hidden by a fictitious extension.
+export const STAIR_PLINTH_EXTRA_LENGTH = 0.46;
+export const STAIR_RUNG_OFFSET = 0.12;
+export const STAIR_RUNG_THICKNESS = 0.08;
+
 /** The loop a platform travels, with its time-distance table. */
 export function stairLoop(EV) {
+  // Persist the service speed in new bakes: historical saved races must retain
+  // their original platform clock/count when rendered with newer source.
+  const slow = EV.slowSpeed ?? STAIR.slow;
+  if (!Number.isFinite(slow) || slow <= 0 || slow > STAIR.fast) throw new Error('Invalid stair slowSpeed');
   const yb = -STAIR.below;
   const yt = EV.lift + STAIR.above;
   const side = EV.lat < 0 ? -1 : 1;
@@ -34,7 +45,7 @@ export function stairLoop(EV) {
     const entry = 1 - ramp(y, 1.0, 2.5);
     const exit = ramp(y, EV.lift - 2.0, EV.lift - 0.6);
     const k = Math.max(entry, exit);
-    return STAIR.slow + (STAIR.fast - STAIR.slow) * (1 - k);
+    return slow + (STAIR.fast - slow) * (1 - k);
   };
   const step = 0.05;
   const n = Math.ceil(perimeter / step);
@@ -42,7 +53,7 @@ export function stairLoop(EV) {
   for (let i = 0; i < n; i++) T.push(T[i] + step / speed((i + 0.5) * step));
   const cycle = T[n];
   // Platforms one gap apart where they are slowest.
-  const dt = STAIR.gap / STAIR.slow + STAIR.plate / STAIR.slow;
+  const dt = STAIR.gap / slow + STAIR.plate / slow;
   const count = Math.floor(cycle / dt);
   return { yb, yt, zo, up, across, perimeter, T, step, n, cycle, count, dt: cycle / count };
 }

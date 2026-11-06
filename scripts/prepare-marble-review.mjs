@@ -3,20 +3,23 @@
 import fs from 'node:fs';
 import {resolve,relative} from 'node:path';
 import {createHash} from 'node:crypto';
+import {marbleObstacleFlow} from './marble-obstacle-flow.mjs';
+import {marbleChallengeAudit} from './marble-challenge-audit.mjs';
+import {marbleProductionProfiles,marbleProductionLaps,marbleProductionCountries} from './marble-production-profiles.mjs';
 const option=n=>process.argv.find(a=>a.startsWith(`--${n}=`))?.slice(n.length+3);
 const seed=Number(option('seed')),location=option('location')??'italy';
 const resume=process.argv.includes('--resume-camera');
 const take=option('take');
-const visualProfile=option('visual-profile');
-if(visualProfile&&!['legacy','tuscany-craft'].includes(visualProfile))throw Error('Unsupported visual profile');
-if(visualProfile==='tuscany-craft'&&location!=='italy')throw Error('Tuscan craft is currently reviewed on the existing Italy circuit');
 if(take!==undefined&&!/^[a-z][a-z0-9-]{0,32}$/.test(take))throw Error('Invalid isolated take');
-const audioProfile='asmr-v1';
 const name=`${location}-marbles-race-first-seed${seed}${take?'-'+take:''}`;
 if(!Number.isSafeInteger(seed)||seed<0)throw Error('An explicit fixed seed is required');
 const directory=resolve(option('directory')??`out/tcr/marble-review/${name}`);
 const rel=relative(resolve('out/tcr/marble-review'),directory);
 if(!rel||rel.startsWith('..')||rel.startsWith('/'))throw Error('Use an isolated marble review directory');
+const saved=resume&&fs.existsSync(directory+'/race.json')?JSON.parse(fs.readFileSync(directory+'/race.json')):undefined;
+const laps=marbleProductionLaps({requested:option('laps'),resume,saved});
+const countries=marbleProductionCountries({requested:option('countries'),resume,saved});
+const {physicsProfile,audioProfile,visualProfile}=marbleProductionProfiles({location,resume,saved,requested:{physicsProfile:option('physics-profile'),audioProfile:option('audio-profile'),visualProfile:option('visual-profile')}});
 const videoRoot=resolve(process.env.VIDEO_OUT??`${process.env.HOME}/GoogleCloud`);
 const free=()=>{const s=fs.statfsSync(videoRoot);return s.bavail*s.bsize/2**30;};
 if(free()<(resume?40:50))throw Error('Insufficient disk reserve');
@@ -24,7 +27,7 @@ if(resume){if(!fs.existsSync(directory+'/camera-candidate.json')||fs.existsSync(
 else if(fs.existsSync(directory+'/race.json')||fs.existsSync(directory+'/job.json'))throw Error('Existing fixed-seed work preserved; inspect and resume, never rebake');
 fs.mkdirSync(directory,{recursive:true});
 if(resume&&!fs.existsSync(directory+'/job-before-camera.json'))fs.copyFileSync(directory+'/job.json',directory+'/job-before-camera.json');
-const job={seed,location,take,status:'preparing',pid:process.pid,startedAt:new Date().toISOString(),publicationBlocked:true};
+const job={seed,location,take,laps,...(countries?{countries}:{}),physicsProfile,audioProfile,visualProfile,status:'preparing',pid:process.pid,startedAt:new Date().toISOString(),publicationBlocked:true};
 const write=(p,d)=>fs.writeFileSync(p,JSON.stringify(d,null,2)+'\n');
 const save=()=>write(directory+'/job.json',job);
 save();
@@ -32,26 +35,27 @@ const hash=p=>createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const walk=dir=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(dir+'/'+e.name):e.isFile()?[dir+'/'+e.name]:[]);
 try{
  // Freeze before physics. Current active car exports and official races stay intact.
- if(!resume){fs.cpSync('src',directory+'/input/src',{recursive:true});fs.cpSync('scripts',directory+'/input/scripts',{recursive:true});if(fs.existsSync('public/materials'))fs.cpSync('public/materials',directory+'/input/public/materials',{recursive:true});}
+ if(!resume){fs.cpSync('src',directory+'/input/src',{recursive:true});fs.cpSync('scripts',directory+'/input/scripts',{recursive:true});for(const kind of ['materials','props'])if(fs.existsSync('public/'+kind))fs.cpSync('public/'+kind,directory+'/input/public/'+kind,{recursive:true});}
  const sourceHashes=resume?JSON.parse(fs.readFileSync(directory+'/frozen-inputs.json')).files:Object.fromEntries(walk(directory+'/input').map(p=>[relative(directory,p),hash(p)]));
  if(!resume)write(directory+'/frozen-inputs.json',{createdAt:new Date().toISOString(),files:sourceHashes});
  for(const[p,h]of Object.entries(sourceHashes))if(hash(directory+'/'+p)!==h)throw Error('Frozen input changed');
- const renderAssets=Object.entries(sourceHashes).filter(([p])=>p.startsWith('input/public/materials/')).map(([path,sha256])=>({path,sha256,publicPath:path.slice('input/public/'.length)}));
+ const renderAssets=Object.entries(sourceHashes).filter(([p])=>['materials','props'].some(kind=>p.startsWith('input/public/'+kind+'/'))).map(([path,sha256])=>({path,sha256,publicPath:path.slice('input/public/'.length)}));
  const base=directory+'/input';
  const {productionLocation}=await import(base+'/src/gp/production-locations.js');
  const place=productionLocation(location);
  const output=resolve(videoRoot,name+'-4k.mp4');
  if(fs.existsSync(output)||fs.existsSync(output.replace('.mp4','.partial.mp4')))throw Error('Existing output preserved');
  for(const suffix of ['','-intro'])if(fs.existsSync(`public/gp/${name}${suffix}.wav`))throw Error('Existing soundtrack preserved; use a distinct isolated take');
- process.env.GP_CARS='0';process.env.GP_LAPS='2';process.env.GP_MARBLE_HOST=place.host;
- process.env.GP_MARBLE_PHYSICS='contact-flow-v2';
+ process.env.GP_CARS='0';process.env.GP_LAPS=String(laps);process.env.GP_MARBLE_HOST=place.host;
+ if(countries)process.env.GP_MARBLE_COUNTRIES=countries.join(',');else delete process.env.GP_MARBLE_COUNTRIES;
+ process.env.GP_MARBLE_PHYSICS=physicsProfile;
  delete process.env.GP_COUNTRIES;delete process.env.GP_HEAT;delete process.env.GP_SEEDS;
  const {default:RAPIER}=await import('@dimforge/rapier3d-compat');await RAPIER.init();
  const {runRound,introFor,introTrack,soundtrack}=await import(base+'/scripts/season.mjs');
  const {marbleRaceFirstIntro}=await import(base+'/src/gp/marble-presentation.js');
  const {teamOf,TEAMS}=await import(base+'/src/gp/teams.js');
  const res=resume?{data:JSON.parse(fs.readFileSync(directory+'/camera-candidate.json')),impacts:JSON.parse(fs.readFileSync(directory+'/audio-input.json')).impacts}:await runRound(visualProfile==='tuscany-craft'?{...place.round,carSceneryProfile:'tuscany-venue-v3'}:place.round,seed,{quiet:false}),d=res.data;
- if(visualProfile==='tuscany-craft'){d.info.sceneryProfile='tuscany-venue-v3';d.info.trackSurface='timber-craft';}
+ if(['tuscany-craft','wachau-craft','jaipur-craft'].includes(visualProfile)){d.info.sceneryProfile=({'tuscany-craft':'tuscany-venue-v3','wachau-craft':'wachau-venue-v1','jaipur-craft':'jaipur-venue-v1'})[visualProfile];d.info.trackSurface='timber-craft';}
  if(resume){
   const {nonCameraHash}=await import(base+'/scripts/refresh-production-cameras.mjs');
   const before=JSON.parse(fs.readFileSync(directory+'/race.json'));
@@ -74,11 +78,17 @@ try{
  const physicsAudit=marbleMotionReport(d);write(directory+'/physics-audit.json',physicsAudit);
  const checks={allAccountedFor:d.marbles.every(m=>m.finishFrame!==null||m.dqFrame!==null),recoveries:physicsAudit.recoveries,stalls:physicsAudit.faults.filter(x=>x.reason==='stalled'),physicsAudit,camera:d.cameraAudit,
   checkpoints:d.checkpoints.map(c=>({index:c.index,survive:c.survive,eliminated:c.eliminated})),countries:d.marbles.map(m=>m.abbr),seed,
-  summary:res.summary,vehicle:'marble',presentation:d.intro.profile,physics:'Rapier marble rigid bodies; original obstacles and two-lap circuit'};
+  summary:res.summary,vehicle:'marble',presentation:d.intro.profile,physics:`Rapier marble rigid bodies; original obstacles and ${laps===1?'one':'two'}-lap circuit`};
  write(directory+'/checks.json',checks);
+ const challengeAudit=marbleChallengeAudit(d);write(directory+'/challenge-audit.json',challengeAudit);
+ if(!challengeAudit.passed)throw Error('Independent saved challenge transit audit failed; preserve this bake before audio or picture work');
+ if(physicsProfile==='contact-flow-v3'){
+  const flow=marbleObstacleFlow(d);write(directory+'/obstacle-flow.json',flow);
+  if(!flow.passed)throw Error('Saved obstacle traversal fails: pinball, hammer or turntable is delaying the race');
+ }
  if(!physicsAudit.passed||physicsAudit.delayReviewRequired||!checks.allAccountedFor||d.marbles.length!==20||d.marbles[0].abbr!==place.host||d.marbles[0].grid!==1||checks.checkpoints.length!==3||checks.camera.unresolvedFramingFrames.length||checks.camera.unresolvedOcclusionFrames.length)throw Error('Marble physics/obstacle flow/live camera gates failed; preserve this bake and physics-audit.json for repair');
  let state=seed>>>0;const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
- fs.writeFileSync(`public/gp/${name}.wav`,soundtrack(res,random,{mixProfile:audioProfile}));
+ fs.writeFileSync(`public/gp/${name}.wav`,soundtrack(res,random,{mixProfile:audioProfile,onAudioDiagnostics:report=>write(directory+'/audio-contact-report.json',report)}));
  fs.writeFileSync(`public/gp/${name}-intro.wav`,introTrack(d.intro,d,random));
  const audioHashes=Object.fromEntries(['','-intro'].map(s=>[`public/gp/${name}${s}.wav`,hash(`public/gp/${name}${s}.wav`)]));
  const entry=directory+'/entry.tsx';

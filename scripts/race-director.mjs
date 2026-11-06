@@ -1,10 +1,12 @@
-import {createCameraOcclusion,carBodyVisible} from "../src/gp/camera-occlusion.js";
+import {marbleActorVisibility} from '../src/gp/marble-actor-visibility.js';
+import {createCameraOcclusion,carBodyVisible,marbleBodyVisible} from "../src/gp/camera-occlusion.js";
 import {cockpitCamera,cockpitRoadOptions} from '../src/gp/car-cockpit.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 import {PerspectiveCamera, Vector3} from 'three';
 import {venueBlocks, venueClearance, venueLayout} from '../src/gp/venue.js';
 import {pointInFrame, pointOnTrack, surfaceHeight as surfaceHeightAt, TRACK} from '../src/gp/trackMesh.js';
 import {VORTEX} from '../src/gp/obstacles/vortex.js';
+import {STAIR_PLINTH_EXTRA_LENGTH,STAIR_RUNG_OFFSET,STAIR_RUNG_THICKNESS} from '../src/gp/stair.js';
 const v3 = a => new Vector3(a[0],a[1],a[2]);
 const r3 = n => Math.round(n*1000)/1000;
 const arr = v => [r3(v.x),r3(v.y),r3(v.z)];
@@ -38,6 +40,10 @@ export function finishCoverageWindows(crossings,fps,startFrame,lastFrame){
     if(previous&&start<=previous.end)previous.end=Math.max(previous.end,end);else out.push({start,end});
     return out;
   },[]);
+}
+
+export function finishSubjectAt(crossings,f,fps){
+ return crossings.map((at,i)=>({at,i})).filter(x=>Number.isFinite(x.at)&&f>=x.at-Math.round(1.8*fps)&&f<x.at+Math.round(.9*fps)).sort((a,b)=>Math.abs(a.at-f)-Math.abs(b.at-f))[0]??null;
 }
 
 // Move only a visibility-generated cut, retaining the minimum length of both
@@ -87,15 +93,38 @@ export function cameraRigOrder(rigs,kind,vehicle){
 // racing subject until its saved position leaves that same envelope, even
 // when the lift animation has already ended.
 export function elevatorCameraEnvelope(e) {
+  // Legacy cabins retain their envelope. Stairs use the rendered plinth
+  // extent with 1 cm clearance; the old extra metre hid riders already out.
+  const endPadding = e.stair ? STAIR_PLINTH_EXTRA_LENGTH / 2 + 0.01 : 1;
   return {
     base: [e.center[0], e.center[1] - 2, e.center[2]],
     yaw: Math.atan2(-e.fwd[2], e.fwd[0]),
-    box: {x: [-e.length / 2 - 1, e.length / 2 + 1], y: [0, e.lift + 7], z: [-e.width / 2 - 1, e.width / 2 + 1]},
+    box: {x: [-e.length / 2 - endPadding, e.length / 2 + endPadding], y: [0, e.lift + 7], z: [-e.width / 2 - 1, e.width / 2 + 1]},
   };
 }
 export function elevatorRiderInTransport(e, envelope, position, rider, frame) {
   return e.cycles.some(c => c.riders.includes(rider) && frame >= c.closeAt &&
-    (frame < (c.closeTopAt ?? c.openAt) || venueClearance({buildings: [envelope]}, position) === 0));
+    (frame < (c.closeTopAt ?? c.openAt) || venueClearance({buildings: Array.isArray(envelope)?envelope:[envelope]}, position) === 0));
+}
+
+export function elevatorCameraVolumes(e) {
+  const envelope=elevatorCameraEnvelope(e);
+  if(!e.stair)return [envelope];
+  // The wider plinth exists only at the bottom. Extruding it through the
+  // entire tower hides a rider already clear of the upper rungs/header.
+  const half=e.length/2+STAIR_RUNG_OFFSET+STAIR_RUNG_THICKNESS/2+.01;
+  return [
+    {...envelope,box:{...envelope.box,x:[-half,half]}},
+    {...envelope,base:[e.center[0],e.center[1]-.58,e.center[2]],box:{...envelope.box,y:[-.13,.13]}},
+  ];
+}
+
+export function cameraRacingPool(racing, inTransport, onRaceRoad) {
+  const visible = racing.filter(i => !inTransport(i));
+  const running = visible.filter(onRaceRoad);
+  // A visible arrival at the dock is preferable to a leader inside the
+  // tower. If everyone really is inside, keep the visibility audit active.
+  return running.length ? running : visible.length ? visible : racing;
 }
 
 // --- Director -----------------------------------------------------------------------
@@ -106,7 +135,7 @@ export function elevatorRiderInTransport(e, envelope, position, rider, frame) {
 // Every shot is smoothed with a zero-lag Gaussian (we can look ahead: it's
 // offline), and every candidate shot is raycast against the track first so
 // another part of the circuit never blocks the view.
-export function directRace({ world, course, frames, finishFrame, crossingFrames = finishFrame, events = [], actionMoments = [], vehicle = course.vehicle, themeId = course.themeId, cockpitEnabled=false, cockpitPresentation=null, sceneryProfile, raceStart, winnerFrame, lastFrame, rand, highlights = [], elevators = [], checkpoints = [] }, { FPS, MARBLES, LAPS, R, GRID_LENGTH, QUERY_TRACK_ONLY, CAM_FEATURES }) {
+export function directRace({ world, course, frames, finishFrame, crossingFrames = finishFrame, events = [], actionMoments = [], vehicle = course.vehicle, themeId = course.themeId, cockpitEnabled=false, cockpitPresentation=null, sceneryProfile, sceneProps=[], raceStart, winnerFrame, lastFrame, rand, highlights = [], elevators = [], checkpoints = [], gate }, { FPS, MARBLES, LAPS, R, GRID_LENGTH, QUERY_TRACK_ONLY, CAM_FEATURES }) {
   const { L, samples, frameAt, features } = course;
   const N = MARBLES.length;
   const sec = (x) => Math.round(x * FPS);
@@ -117,7 +146,7 @@ export function directRace({ world, course, frames, finishFrame, crossingFrames 
   const END = course.END;
   const finished = (i, f) => finishFrame[i] !== null && finishFrame[i] <= f;
   const W2 = TRACK.width / 2;
-  const elevatorVolumes = elevators.map(elevatorCameraEnvelope);
+  const elevatorVolumes = elevators.map(elevatorCameraVolumes);
   const inTransport=(i,f)=>elevators.some((e,k)=>elevatorRiderInTransport(e,elevatorVolumes[k],frames[Math.min(f,lastFrame)][i],i,f));
 
 
@@ -144,13 +173,11 @@ export function directRace({ world, course, frames, finishFrame, crossingFrames 
     }
     // Exclude marbles queuing for or riding the stair ONLY on non-final laps.
     // On the final lap (`uOf >= (LAPS - 1) * L - GRID_LENGTH`), marbles race all the way to uFinish!
-    const running = racing.filter((i) => {
-      if(inTransport(i,f))return false;
+    const pool = cameraRacingPool(racing, i => inTransport(i,f), (i) => {
       const onFinalLap = uOf(f, i) >= (LAPS - 1) * L - GRID_LENGTH;
       if (onFinalLap) return true;
       return uLoc(f, i) < END - 6 && uLoc(f, i) > -GRID_LENGTH + 0.5;
     });
-    const pool = running.length ? running : racing;
     const p1 = pool[0];
     leader.push(p1);
     // Keep top-4 challengers within 8.5m of P1 (and on the same lap zone so we don't average across the wrap seam).
@@ -223,9 +250,9 @@ export function directRace({ world, course, frames, finishFrame, crossingFrames 
   // one or looks through one.
   const venue = venueLayout(samples, L);
   // The lift towers count as buildings too: no camera inside the lattice, none looking through it.
-  venue.buildings.push(...elevatorVolumes);
+  venue.buildings.push(...elevatorVolumes.flat());
   const finishGeometry=frameAt(course.uFinish);
-  const scenery=createCameraOcclusion({samples,themeId,finishFrame:finishGeometry,width:2*(finishGeometry.w??TRACK.width/2),checkpoints,sceneryProfile,courseLength:L});
+  const scenery=createCameraOcclusion({samples,themeId,finishFrame:finishGeometry,width:2*(finishGeometry.w??TRACK.width/2),checkpoints,sceneryProfile,courseLength:L,sceneProps,gate});
   const clear = (from, to) => {
     const dir = to.clone().sub(from);
     const d = dir.length();
@@ -236,7 +263,7 @@ export function directRace({ world, course, frames, finishFrame, crossingFrames 
     const hit = world.castRay(new RAPIER.Ray(from, dir), d, true, undefined, QUERY_TRACK_ONLY);
     return !hit || hit.timeOfImpact > d - 0.8;
   };
-  const clearSubject=(from,to)=>clear(from,to)&&(vehicle!=='car'||carBodyVisible(scenery,from,to,to.carQuaternion,to.carStyle));
+  const clearSubject=(from,to,f)=>clear(from,to)&&(vehicle==='car'?carBodyVisible(scenery,from,to,to.carQuaternion,to.carStyle):marbleBodyVisible(scenery,from,to,R))&&(vehicle!=='marble'||to.marbleActorIndex===undefined||marbleActorVisibility(from,to,R,frames[f].filter((_,i)=>i!==to.marbleActorIndex&&!finished(i,f))).visible);
   const trackPts = samples.map((s) => v3(s.p));
   // Room around a camera: distance to the nearest other part of the track and to the venue buildings.
   const roomAt = (pos, uc) => {
@@ -676,7 +703,7 @@ export function directRace({ world, course, frames, finishFrame, crossingFrames 
       if(!cockpitFrameClear(f,sh))framingAudit.unresolvedOcclusionFrames.push(f);
       continue;
     }
-    const finishSubject=sh.kind==='finish'?crossingFrames.map((at,i)=>({at,i})).filter(x=>x.at!==null&&Math.abs(x.at-f)<sec(1.8)).sort((a,b)=>Math.abs(a.at-f)-Math.abs(b.at-f))[0]:null;
+    const finishSubject=sh.kind==='finish'?finishSubjectAt(crossingFrames,f,FPS):null;
     const ids=finishSubject?[finishSubject.i]:sh.kind==='action'?[sh.action.marble,sh.action.other].filter(i=>i!==undefined&&!finished(i,f)):[leader[f]];
     if(!ids.length||(!finishSubject&&ids.every(i=>finished(i,f))))continue;
     // A close chaser is part of the story. Frame the duel, not only P1's centre.
@@ -684,20 +711,20 @@ export function directRace({ world, course, frames, finishFrame, crossingFrames 
       const head=ids[0],chaser=Array.from({length:N},(_,i)=>i).filter(i=>i!==head&&!finished(i,f)&&!inTransport(i,f)&&Math.abs(uOf(f,head)-uOf(f,i))<=7).sort((a,b)=>Math.abs(uOf(f,head)-uOf(f,a))-Math.abs(uOf(f,head)-uOf(f,b)))[0];
       if(chaser!==undefined)ids.push(chaser);
     }
-    const points=ids.map(i=>{const at=finishSubject?Math.min(f,finishSubject.at):f,p=posOf(at,i);if(vehicle==='car'){p.carQuaternion=frames[Math.min(at,lastFrame)][i].slice(3,7);p.carStyle=({F1:0,GT:1,BGY:2,JET:3})[MARBLES[i].stats?.cls]??i%4;}return p;});
+    const points=ids.map(i=>{const at=finishSubject?Math.min(f,finishSubject.at):f,p=posOf(at,i);if(vehicle==='marble')p.marbleActorIndex=i;if(vehicle==='car'){p.carQuaternion=frames[Math.min(at,lastFrame)][i].slice(3,7);p.carStyle=({F1:0,GT:1,BGY:2,JET:3})[MARBLES[i].stats?.cls]??i%4;}return p;});
     if(sh.kind==='finish'){points.push(v3(fs.p).add(new Vector3(0,.42,0)));if(!finished(leader[f],f)&&!ids.includes(leader[f])&&Math.abs(uOf(f,leader[f])-course.uFinish)<=22)points.push(posOf(f,leader[f]));}
     subjects.set(f,points);
     if(!fits(f,points))framingAudit.correctedFrames++;
     st[f]=points.reduce((sum,p)=>sum.add(p),new Vector3()).multiplyScalar(1/points.length);
     while(!fits(f,points)&&sf[f]<74)sf[f]+=2;
-    if(!fits(f,points)||scenery.clearance(sp[f])<.35||!points.every(p=>clearSubject(sp[f],p)))fallbackShots.add(sh);
+    if(!fits(f,points)||scenery.clearance(sp[f])<.35||!points.every(p=>clearSubject(sp[f],p,f)))fallbackShots.add(sh);
   }
   // Keep aim and fallback rigs continuous across the entire authored shot.
   // A blocked single frame must not make a camera jump up and down for one frame.
   for(const sh of shots)if(sh.kind!=='cockpit')st=gauss(st,sec(.15),sh.start,sh.end);
   // Aim smoothing can create a new framing/occlusion failure at a shot boundary.
   // Recheck the final aim before choosing one continuous rig for the whole shot.
-  for(const [f,points]of subjects){const savedFov=sf[f];sf[f]=78;const valid=fits(f,points)&&scenery.clearance(sp[f])>=.35&&points.every(p=>clearSubject(sp[f],p));sf[f]=savedFov;if(!valid)fallbackShots.add(shots.find(s=>f>=s.start&&f<s.end));}
+  for(const [f,points]of subjects){const savedFov=sf[f];sf[f]=78;const valid=fits(f,points)&&scenery.clearance(sp[f])>=.35&&points.every(p=>clearSubject(sp[f],p,f));sf[f]=savedFov;if(!valid)fallbackShots.add(shots.find(s=>f>=s.start&&f<s.end));}
   // Low bumper-height tracking can see beneath a checkpoint board on a slope.
   // These are last-resort continuous rigs, subject to the same track, scenery,
   // clearance and full-body framing checks as the higher cameras.
@@ -721,7 +748,7 @@ export function directRace({ world, course, frames, finishFrame, crossingFrames 
   const rigClear=(f,index)=>{
     if(!subjects.has(f))return true;
     const cached=rigValidity[index];
-    if(cached[f]===0){const p=rigPosition(f,rigs[index]),originalPos=sp[f],originalFov=sf[f];sp[f]=p;sf[f]=78;const framed=fits(f,subjects.get(f));sp[f]=originalPos;sf[f]=originalFov;cached[f]=framed&&scenery.clearance(p)>=.35&&subjects.get(f).every(q=>clearSubject(p,q))?1:-1;}
+    if(cached[f]===0){const p=rigPosition(f,rigs[index]),originalPos=sp[f],originalFov=sf[f];sp[f]=p;sf[f]=78;const framed=fits(f,subjects.get(f));sp[f]=originalPos;sf[f]=originalFov;cached[f]=framed&&scenery.clearance(p)>=.35&&subjects.get(f).every(q=>clearSubject(p,q,f))?1:-1;}
     return cached[f]>0;
   };
   const shotOrigins=new Map(shots.map(sh=>[sh,sh])),selectedRigs=new Map();
@@ -771,7 +798,7 @@ export function directRace({ world, course, frames, finishFrame, crossingFrames 
     for(const [sh,choice]of [[left,a],[right,b]])for(let f=sh.start;f<sh.end;f++)if(subjects.has(f)){sp[f]=rigPosition(f,choice.rig);sf[f]=55;}
   }
   framingAudit.fallbackShots=[...selectedRigs].map(([sh,choice])=>({start:sh.start,end:sh.end,...choice.rig,blocked:Array.from({length:sh.end-sh.start},(_,i)=>sh.start+i).filter(f=>!rigClear(f,choice.rigIndex)).length}));
-  for(const [f,points]of subjects){while(!fits(f,points)&&sf[f]<78)sf[f]+=1;if(!fits(f,points))framingAudit.unresolvedFramingFrames.push(f);if(scenery.clearance(sp[f])<.35||!points.every(p=>clearSubject(sp[f],p)))framingAudit.unresolvedOcclusionFrames.push(f);}
+  for(const [f,points]of subjects){while(!fits(f,points)&&sf[f]<78)sf[f]+=1;if(!fits(f,points))framingAudit.unresolvedFramingFrames.push(f);if(scenery.clearance(sp[f])<.35||!points.every(p=>clearSubject(sp[f],p,f)))framingAudit.unresolvedOcclusionFrames.push(f);}
   const cams = sp.map((p, k) => [...arr(p), ...arr(st[k]), r3(sf[k]), kind[k], marble[k]]);
   const origCams = cams.map((c) => c.slice());
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { useView } from "./view";
-import { STAIR, stairLocal, stairLoop, stairTime } from "./stair.js";
+import { STAIR, STAIR_PLINTH_EXTRA_LENGTH, STAIR_RUNG_OFFSET, STAIR_RUNG_THICKNESS, stairLocal, stairLoop, stairTime } from "./stair.js";
 import { isNight } from "./look";
 import { useSubframe } from "./subframe";
 import { TRACK } from "./trackMesh.js";
@@ -33,6 +33,7 @@ type Vortex = {
 type Roller = { pos: Vec3; quat: Quat; radius: number; length: number; omega: number; phase: number };
 type Fan = { u0: number; u1: number; side: number; dir: Vec3; pos: Vec3; quat: Quat; accel: number; period: number; phase: number };
 type Elevator = {
+  slowSpeed?: number;
   lat: number;
   bayWidth: number;
   center: Vec3;
@@ -561,8 +562,8 @@ function StairBay({ race, t, elevator, tex }: { race: Race; t: number; elevator:
       {Array.from({ length: rungCount }, (_, rk) => {
         const ry = 1.2 + rk * 1.6;
         return (
-          <mesh key={`rung${rk}`} position={frame.at(L / 2 + 0.12, ry, 0)} quaternion={frame.yaw}>
-            <boxGeometry args={[0.08, 0.08, W + 0.12]} />
+          <mesh key={`rung${rk}`} position={frame.at(L / 2 + STAIR_RUNG_OFFSET, ry, 0)} quaternion={frame.yaw}>
+            <boxGeometry args={[STAIR_RUNG_THICKNESS, 0.08, W + 0.12]} />
             <meshStandardMaterial {...trussMat} />
           </mesh>
         );
@@ -612,7 +613,7 @@ function StairBay({ race, t, elevator, tex }: { race: Race; t: number; elevator:
 
       {/* Bottom Queue Entry Plinth */}
       <mesh position={frame.at(0, -0.58, 0)} quaternion={frame.yaw} receiveShadow>
-        <boxGeometry args={[L + 0.46, 0.24, W + 0.42]} />
+        <boxGeometry args={[L + STAIR_PLINTH_EXTRA_LENGTH, 0.24, W + 0.42]} />
         <meshStandardMaterial {...trussMat} />
       </mesh>
     </group>

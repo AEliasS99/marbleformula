@@ -1,3 +1,4 @@
+import {hasContactFlow} from '../marble-physics.js';
 import { Matrix4, Quaternion, Vector3 } from "three";
 import { frameQuat, pointInFrame, quatArr, r3, rot, TRACK } from "./kit.js";
 import { agitatorArm, agitatorQuat, vortexSoup } from "../vortex.js";
@@ -51,7 +52,7 @@ export default {
     const W2 = TRACK.width / 2;
     // A long, gentle guide from the left wall to the centre line: the field drifts right without losing speed,
     // and the opening it leaves (2.1, three marbles) cannot clog.
-    if (physicsProfile === "contact-flow-v2") {
+    if (hasContactFlow(physicsProfile)) {
       statics.push(vortexEntryGuide(f, frameAt));
     } else {
       const side = -1;

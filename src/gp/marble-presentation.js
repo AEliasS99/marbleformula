@@ -9,7 +9,12 @@ export function marbleIntroSample(plan,frame){
   return 'feature-'+plan.cards.findIndex(c=>f-scene.at>=c.from&&f-scene.at<c.to);};
  return key(frame)===key(integer)?frame:integer;
 }
-export function marbleHostRoster(roster,host){
+export function marbleHostRoster(roster,host,order){
+ if(order!==undefined){
+  const codes=(Array.isArray(order)?order:String(order).split(',')).map(c=>c.trim().toUpperCase());
+  if(codes.length!==roster.length||new Set(codes).size!==roster.length||codes.some(c=>!roster.some(m=>m.abbr===c)))throw Error('Marble lineup must contain every actual entrant exactly once');
+  roster=codes.map(c=>roster.find(m=>m.abbr===c));
+ }
  if(!host)return roster;
  const entrant=roster.find(m=>m.abbr===host);
  if(!entrant)throw Error('Unknown marble host country');

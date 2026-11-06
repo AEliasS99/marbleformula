@@ -4,7 +4,7 @@ import { TRACK } from "./trackMesh.js";
 import { venueLayout, yawAlong } from "./venue.js";
 import { getCircuitTheme } from "./Themes";
 import type { Race, Vec3 } from "./race";
-import {tuscanVenue} from './tuscany-sites.js';
+import {craftedVenue} from './crafted-venue.js';
 
 // Everything around the circuit, so wide shots show a race venue instead of a
 // void: the service road under the track, grandstands with seated crowds, a
@@ -46,7 +46,7 @@ const BOARDS: [string, string, string][] = [
 
 export function Trackside({ race }: { race: Race }) {
   const theme = getCircuitTheme(race);
-  const tuscan = tuscanVenue(race.data);
+  const tuscan = craftedVenue(race.data);
   const built = useMemo(() => {
     const samples = race.data.samples as unknown as Sample[];
     const layout = venueLayout(samples, race.L) as unknown as {

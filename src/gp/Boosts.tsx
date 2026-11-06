@@ -5,20 +5,21 @@ import { useSubframe } from "./subframe";
 import { useView } from "./view";
 import {boostAppearance} from './race-action-profile.js';
 import {boostLaneGeometry} from './boost-lanes.js';
-import {tuscanVenue} from './tuscany-sites.js';
+import {craftedVenue} from './crafted-venue.js';
 
 // The booster pads (glowing chevrons that scroll forward) and the distributor
 // flap that sends the field to both stair bays.
 
 type Booster = { pos: Vec3; quat: Quat; length: number; width: number; u0:number;u1:number;latCenter:number;tier?:string };
 
-function chevronTexture(lane:Booster) {
-  const style=boostAppearance(lane);
+function chevronTexture(lane:Booster,venue=false) {
+  const base=boostAppearance(lane);
+  const style=venue?{...base,color:lane.tier==='surge'?'#8ea884':lane.tier==='nitro'?'#b97450':'#c8a45a',accent:'#ead9aa'}:base;
   const c = document.createElement("canvas");
   c.width = 256;
   c.height = 256;
   const g = c.getContext("2d")!;
-  g.fillStyle = "#06121c";
+  g.fillStyle = venue?"#293f35":"#06121c";
   g.fillRect(0, 0, 256, 256);
   // Arrows pointing +x (along the track): two chevrons per tile.
   for (let k = 0; k < 2; k++) {
@@ -37,7 +38,7 @@ function chevronTexture(lane:Booster) {
     g.closePath();
     g.fill();
   }
-  if(lane.tier){
+  if(lane.tier||venue){
     g.strokeStyle=style.color;g.lineWidth=5;g.strokeRect(2,3,252,250);
     g.fillStyle='#b6c3c9';for(const y of [12,244])for(const x of [10,74,138,202])g.fillRect(x,y,18,2);
   }
@@ -49,15 +50,15 @@ function chevronTexture(lane:Booster) {
 }
 
 export function Boosters({ race, t }: { race: Race; t: number }) {
-  const venue = tuscanVenue(race.data);
+  const venue = craftedVenue(race.data);
   const view = useView(race);
   const sub = useSubframe();
   const list = ((race.data as unknown as { boosters?: Booster[] }).boosters ?? []) as Booster[];
   const tex = useMemo(() => list.map((b) => {
-    const tx = chevronTexture(b);
+    const tx = chevronTexture(b,venue);
     tx.repeat.set(b.length / 1.2, 1);
     return tx;
-  }), [race]);
+  }), [race,venue]);
   const geometry=useMemo(()=>list.map(b=>b.tier?boostLaneGeometry(race.data.samples,b):null),[race]);
   useEffect(()=>()=>{tex.forEach(t=>t.dispose());geometry.forEach(g=>g?.dispose());},[tex,geometry]);
   // The arrows run forward at 6 units a second.

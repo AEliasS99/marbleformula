@@ -1,10 +1,14 @@
+import {ChallengeDeck} from './ChallengeDeck';
 import {useMachineScan,CraftedFin,CraftedBumper} from './ScannedMachine';
 import {applyMachineSurface} from './machine-surfaces.js';
 import {pusherHeadGeometry} from './pusher-head.js';
 import {checkpointLayout,CHECKPOINT_BOARD_Y} from "./checkpoint-layout.js";
 import {stableShadowRig, SHADOW_MAP_SIZE} from "./shadow-rig.js";
-import {tuscanVenue} from './tuscany-sites.js';
+import {craftedVenue} from './crafted-venue.js';
+import {useAiSurface} from './AiSurface';
+import {aiStoneGeometry} from './ai-materials.js';
 import {SoftIsland} from "./SoftIsland";
+import {GridDivider} from './GridDivider';
 import {FinishLine, finishFrameAt} from "./FinishLine";
 import {CarBody, createCarGeometries, carLiveryTexture, bakedTexture} from "./CarModel";
 import { useEffect, useMemo, useRef } from "react";
@@ -20,7 +24,8 @@ import { drawFlag, FLAGS } from "./flags";
 import { buildTrackMesh, densifyTrackSamples as densify, floorVRange, pointInFrame, pointOnTrack, TRACK, TRACK_DEPTH, troughProfile } from "./trackMesh.js";
 import { lensFov, type Layout, type Race, type Vec3 } from "./race";
 import { spinnerParts } from "./rotor.js";
-import { turntableParts } from "./obstacles/turntable.js";
+import { turntableParts,turntableQuat } from "./obstacles/turntable.js";
+import {swingQuat as sharedSwingQuat} from './obstacles/hammer.js';
 import { asphaltMaps, floorMaps, grassMaps, plasticMaps, motorsportCarMaps } from "./surfaces";
 import { isNight } from "./look";
 import { boltGeometry } from "./Details";
@@ -148,7 +153,7 @@ export function Environment({ race }: { race?: Race }) {
   const advance = useThree((s) => s.advance);
   const skyColor = race ? getCircuitTheme(race).skyColor : "#07080b";
   const natural=naturalLighting(race?.data);
-  const venue=tuscanVenue(race?.data);
+  const venue=craftedVenue(race?.data);
   const disposeEnvironment=useMemo(() => {
     // Tone mapping happens once, at the end of the effect chain (src/gp/Effects.tsx).
     gl.toneMapping = THREE.NoToneMapping;
@@ -194,7 +199,7 @@ export function Environment({ race }: { race?: Race }) {
         tex.needsUpdate = true;
         const pmrem = new THREE.PMREMGenerator(gl);
         scene.environment = pmrem.fromEquirectangular(tex).texture;
-        scene.environmentIntensity = venue ? 1.1 : .65; // the sky fills, the sun (capped out of the sky, a light of its own) models
+        scene.environmentIntensity = venue ? .75 : .65; // restrained fill preserves wood/stone relief and contact shadows
         tex.mapping = THREE.EquirectangularReflectionMapping;
         scene.background = tex;
         scene.backgroundBlurriness = venue ? .035 : .015;
@@ -220,10 +225,10 @@ export function Environment({ race }: { race?: Race }) {
 export function Sun({ target, pos, race }: { target: Vec3; pos?: Vec3; race?: Race }) {
   const theme = race ? getCircuitTheme(race) : null;
   const natural=naturalLighting(race?.data);
-  const venue=tuscanVenue(race?.data);
+  const venue=craftedVenue(race?.data);
   const { sun, rim } = useMemo(() => {
     // Late-afternoon sun or themed circuit key light:
-    const l = venue?new THREE.DirectionalLight('#fff2dd',3.0):natural ? new THREE.DirectionalLight('#fff0d9',2.7) : isNight()
+    const l = venue?new THREE.DirectionalLight('#ffe0b0',3.3):natural ? new THREE.DirectionalLight('#fff0d9',2.7) : isNight()
       ? new THREE.DirectionalLight(theme ? theme.sunColor : "#dfe8ff", theme ? theme.sunIntensity : 2.25)
       : new THREE.DirectionalLight("#ffd9a6", 3.2);
     l.castShadow = true;
@@ -235,8 +240,8 @@ export function Sun({ target, pos, race }: { target: Vec3; pos?: Vec3; race?: Ra
     Object.assign(l.shadow.camera, { left: -18, right: 18, top: 18, bottom: -18, near: 1, far: 160 });
     // Warm Pixar rim/kicker light opposite the key light to sculpt grazing edges on marbles and chrome.
     const r = new THREE.DirectionalLight(
-      isNight() ? (theme ? theme.rimLightColor : "#ffae66") : "#ffe4b8",
-      isNight() ? (theme ? theme.rimLightIntensity : 0.78) : 0.55,
+      venue?'#f0c27a':isNight() ? (theme ? theme.rimLightColor : "#ffae66") : "#ffe4b8",
+      venue?.50:isNight() ? (theme ? theme.rimLightIntensity : 0.78) : 0.55,
     );
     return { sun: l, rim: r };
   }, [theme,natural,venue]);
@@ -316,7 +321,7 @@ function bandGeometry(samples: Sample[], u0: number, u1: number, l0: number | nu
  */
 export function Circuit({ race }: { race: Race }) {
   const theme = getCircuitTheme(race);
-  const venue=tuscanVenue(race.data),premium=motorsportMaterials(race.data)||venue;
+  const venue=craftedVenue(race.data),premium=motorsportMaterials(race.data)||venue;
   const timber=venue&&(race.data.info as {trackSurface?:string}).trackSurface==='timber-craft';
   const timberSource=useMachineScan(timber);
   const timberMaps=useMemo(()=>{
@@ -643,7 +648,7 @@ export function Circuit({ race }: { race: Race }) {
         )}
       </mesh>
       <mesh geometry={geos.caps} castShadow>
-        <meshStandardMaterial color={isNight() ? theme.capsColor : "#eceae6"} metalness={isNight() ? 0.8 : 0} roughness={0.42} />
+        <meshStandardMaterial color={venue?'#b08b45':isNight() ? theme.capsColor : "#eceae6"} metalness={venue?.72:isNight() ? 0.8 : 0} roughness={venue?.30:.42} />
       </mesh>
       {built.gridMarks.map((g, i) => (
         <mesh key={i} geometry={g}>
@@ -815,7 +820,7 @@ function chevronTexture() {
  * splitter fins, single and four-arm spinners, and hammer pendulums on bridges.
  */
 export function Obstacles({ race, t }: { race: Race; t: number }) {
-  const crafted=tuscanVenue(race.data);
+  const crafted=craftedVenue(race.data);
   const machineMaps=useMachineScan(crafted);
   const view = useView(race);
   const sub = useSubframe();
@@ -828,6 +833,9 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
     radius?: number;
     height?: number;
   }[];
+  const aiStone=useAiSurface((race.data.info as {aiMaterialProfile?:string}).aiMaterialProfile,'travertine',statics.some(o=>o.kind==='roman-stone'));
+  const aiStoneGeometries=useMemo(()=>aiStone?statics.map(o=>o.kind==='roman-stone'?aiStoneGeometry(o.size!):null):[],[race,Boolean(aiStone)]);
+  useEffect(()=>()=>{aiStoneGeometries.forEach(g=>g?.dispose());},[aiStoneGeometries]);
   const spinners = race.data.spinners as unknown as { pos: Vec3; quat: Quat; size: Vec3; speed: number; phase: number; arms?: number }[];
   const swings = (race.data.swings ?? []) as unknown as {
     pos: Vec3;
@@ -870,7 +878,7 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
   const rodRefs = useRef<(THREE.Mesh | null)[]>([]);
   const ridges = useMemo(() => ridgeTexture(), []);
   const ttQuat = (tt: (typeof turntables)[number], s: number) =>
-    new THREE.Quaternion(...tt.quat).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), tt.phase + tt.speed * s));
+    new THREE.Quaternion().fromArray(turntableQuat(tt,s));
   const pushOut = (p: (typeof pushers)[number], s: number) => (p.travel * (1 - Math.cos((2 * Math.PI * s) / p.period + p.phase))) / 2;
   /** Which local side (±z) the pusher travels toward. */
   const pushSide = (p: (typeof pushers)[number]) => {
@@ -891,13 +899,7 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
   };
   const spinQuat = (sp: (typeof spinners)[number], s: number) =>
     new THREE.Quaternion(...sp.quat).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), sp.phase + sp.speed * s));
-  const swingQuat = (sw: (typeof swings)[number], s: number) =>
-    new THREE.Quaternion(...sw.quat).multiply(
-      new THREE.Quaternion().setFromAxisAngle(
-        (sw as { axis?: string }).axis === "z" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0),
-        (sw as { spin?: number }).spin !== undefined ? sw.phase + (sw as { spin?: number }).spin! * s : sw.amp * Math.sin((2 * Math.PI * s) / sw.period + sw.phase),
-      ),
-    );
+  const swingQuat = (sw: (typeof swings)[number], s: number) =>new THREE.Quaternion().fromArray(sharedSwingQuat(sw,s));
   useEffect(
     () =>
       sub.subscribe((vf) => {
@@ -966,6 +968,15 @@ export function Obstacles({ race, t }: { race: Race; t: number }) {
         // Guard panels are physics only (invisible barriers over the walls where marbles fly):
         // the clear acrylic got in the cameras' way.
         if (o.kind === "guard") return null;
+        if(o.kind==='challenge-deck')return <ChallengeDeck key={i} record={o}/>;
+        if(o.kind==='challenge-rib')return <mesh key={i} position={o.pos} quaternion={o.quat} castShadow receiveShadow><boxGeometry args={o.size}/><meshStandardMaterial onBeforeCompile={shader=>applyMachineSurface(shader,'fin',o.size!)} customProgramCacheKey={()=>'challenge-rib-timber-v1'}/></mesh>;
+        if(o.kind==='roman-stone')return <mesh key={i} position={o.pos} quaternion={o.quat} castShadow receiveShadow>
+          {aiStoneGeometries[i]?<primitive attach="geometry" object={aiStoneGeometries[i]}/>:<boxGeometry args={o.size}/>}
+          <meshStandardMaterial {...(aiStone??{})} color={aiStone?'#ffffff':i%5===0?'#c4b69b':'#b1a58e'} roughness={aiStone?1:.91}
+            onBeforeCompile={shader=>applyRealismSurface(shader,'stone')}
+            customProgramCacheKey={()=>'roman-travertine-v1'}/>
+        </mesh>;
+        if(o.kind==='divider'&&o.shape==='convex')return <group key={i} position={o.pos} quaternion={o.quat}><GridDivider size={o.size!}/></group>;
         if (o.kind === "car-chicane" && o.shape === "convex") return <group key={i} position={o.pos} quaternion={o.quat}><SoftIsland size={o.size!}/></group>;
         if (o.kind === "car-chicane") return <group key={i} position={o.pos} quaternion={o.quat}>
           <mesh castShadow receiveShadow><boxGeometry args={o.size}/><meshStandardMaterial color="#f2f3ee" roughness={.72}/></mesh>
@@ -1401,9 +1412,9 @@ export function Gantries({ race, frame }: { race: Race; frame: number }) {
               <meshStandardMaterial
                 color={accent}
                 emissive={accent}
-                emissiveIntensity={tuscanVenue(race.data) ? .15 : locked ? 2.4 : 1.6}
-                roughness={tuscanVenue(race.data) ? .7 : .25}
-                toneMapped={tuscanVenue(race.data)}
+                emissiveIntensity={craftedVenue(race.data) ? .15 : locked ? 2.4 : 1.6}
+                roughness={craftedVenue(race.data) ? .7 : .25}
+                toneMapped={craftedVenue(race.data)}
                 polygonOffset
                 polygonOffsetFactor={-3}
               />

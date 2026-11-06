@@ -1,3 +1,4 @@
+import {liftFrameAt} from './route-path.js';
 import { useEffect, useMemo, useRef } from "react";
 import { useSubframe } from "./subframe";
 import * as THREE from "three";
@@ -447,7 +448,7 @@ export function Decals({ race }: { race: Race }) {
   );
 }
 
-type Lift = { u0: number; len: number; lead: number; speed: number; spacing: number; count: number; half: number };
+type Lift = { u0: number; len: number; lead: number; speed: number; spacing: number; count: number; half: number; path?: {u0:number;points:number[][]} };
 
 /** A spur gear: a disc with square-ish teeth, as an extruded shape lying in XY. */
 function gearGeometry(r: number, teeth: number, depth: number) {
@@ -504,16 +505,19 @@ export function Lifts({ race, t }: { race: Race; t: number }) {
       belt,
       gear: gearGeometry(0.42, 18, 0.08),
       parts: lifts.map((lift) => {
-        const beltGeo = sweep(samples, [[-(lift.half - 0.02), 0.03], [lift.half - 0.02, 0.03]], lift.u0 - lift.lead - 0.3, lift.u0 + lift.len + 0.3, 0.1);
-        return { beltGeo };
+        const beltSamples=lift.path?samples.map(s=>liftFrameAt(lift,s.u,(u:number)=>frameAt(samples,u))):samples;
+        const beltGeo = sweep(beltSamples, [[-(lift.half - 0.02), 0.03], [lift.half - 0.02, 0.03]], lift.u0 - lift.lead - 0.3, lift.u0 + lift.len + 0.3, 0.1);
+        return { beltGeo, belt: belt.clone() };
       }),
     };
   }, [race]);
 
   const sec = t / race.fps;
   // uv.x runs in track units along the belt: 1 unit = one texture repeat.
-  built.belt.repeat.set(1, 1);
-  built.belt.offset.set(-((lifts[0]?.speed ?? 0) * sec), 0);
+  built.parts.forEach((part, li) => {
+    part.belt.repeat.set(1, 1);
+    part.belt.offset.set(-(lifts[li].speed * sec), 0);
+  });
   const fAt = (u: number) => frameAt(samples, u);
   const cleatRefs = useRef<(THREE.Group | null)[]>([]);
   const gearRefs = useRef<(THREE.Mesh | null)[]>([]);
@@ -521,7 +525,7 @@ export function Lifts({ race, t }: { race: Race; t: number }) {
     () =>
       sub.subscribe((vf) => {
         const s = view.tAt(vf) / race.fps;
-        built.belt.offset.set(-((lifts[0]?.speed ?? 0) * s), 0);
+        built.parts.forEach((part, li) => part.belt.offset.set(-(lifts[li].speed * s), 0));
         lifts.forEach((lift, li) => {
           for (let k = 0; k < lift.count; k++) {
             const g = cleatRefs.current[li * 100 + k];
@@ -542,10 +546,12 @@ export function Lifts({ race, t }: { race: Race; t: number }) {
     <>
       {lifts.map((lift, li) => {
         const ends = [lift.u0 - lift.lead, lift.u0 + lift.len];
+        const surfaceAt=(u:number)=>liftFrameAt(lift,u,fAt);
+        const driveSides=lift.path?[Math.sign(lift.path.points[0][1])]:[-1,1];
         return (
           <group key={li}>
             <mesh geometry={built.parts[li].beltGeo} receiveShadow>
-              <meshStandardMaterial map={built.belt} roughness={0.85} side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-4} />
+              <meshStandardMaterial map={built.parts[li].belt} roughness={0.85} side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-4} />
             </mesh>
             {Array.from({ length: lift.count }, (_, k) => {
               const pose = liftCleatPose(lift, k, sec, fAt);
@@ -567,9 +573,9 @@ export function Lifts({ race, t }: { race: Race; t: number }) {
               );
             })}
             {/* Chrome side rails along the belt. */}
-            {[-1, 1].map((side) => {
-              const a = fAt(lift.u0 - lift.lead - 0.3);
-              const b = fAt(lift.u0 + lift.len + 0.3);
+            {(lift.path?[]:[-1, 1]).map((side) => {
+              const a = surfaceAt(lift.u0 - lift.lead - 0.3);
+              const b = surfaceAt(lift.u0 + lift.len + 0.3);
               const pa = new THREE.Vector3(...pointInFrame(a, side * (lift.half - 0.05), 0.4));
               const pb = new THREE.Vector3(...pointInFrame(b, side * (lift.half - 0.05), 0.4));
               const mid = pa.clone().add(pb).multiplyScalar(0.5);
@@ -583,8 +589,8 @@ export function Lifts({ race, t }: { race: Race; t: number }) {
               );
             })}
             {ends.map((u, e) =>
-              [-1, 1].map((side) => {
-                const s = fAt(u);
+              driveSides.map((side) => {
+                const s = surfaceAt(u);
                 const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(v(s.t), v(s.n), v(s.r)));
                 const spin = (lift.speed * sec) / 0.42;
                 return (
@@ -602,10 +608,10 @@ export function Lifts({ race, t }: { race: Race; t: number }) {
             )}
             {/* Motor housing beside the top of the lift. */}
             {(() => {
-              const s = fAt(lift.u0 + lift.len - 0.6);
+              const s = surfaceAt(lift.u0 + lift.len - 0.6);
               const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(v(s.t), v(s.n), v(s.r)));
               return (
-                <group position={pointInFrame(s, (s.w ?? HALF) + TRACK.wall + 0.45, 0.1) as Vec3} quaternion={q}>
+                <group position={pointInFrame(s, (lift.path?driveSides[0]:1)*((s.w ?? HALF) + TRACK.wall + 0.45), 0.1) as Vec3} quaternion={q}>
                   <mesh castShadow receiveShadow>
                     <boxGeometry args={[0.9, 0.55, 0.55]} />
                     <meshPhysicalMaterial color="#f2f3f6" roughness={0.3} clearcoat={0.8} />

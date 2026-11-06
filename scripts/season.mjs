@@ -1,3 +1,5 @@
+import {renderContactRoll,rollingContact} from './marble-contact-audio.mjs';
+import {gridDividerHull} from '../src/gp/grid-divider.js';
 // Marble Grand Prix season: real circuit outlines turned into downhill marble
 // tracks, raced with Rapier, filmed by a deterministic "TV director", scored
 // with championship points. For every round it writes src/gp/races/<id>.json and
@@ -14,7 +16,8 @@ import {planCarDriving,drivingLineAt,followingSpeedLimit} from '../src/gp/car-dr
 import {selectCarCountries,carCheckpointSurvivors,carStartingGrid} from '../src/gp/car-roster.js';
 import {improvedPace,brakingLookahead,cornerSpeedLimit,poweredAcceleration,waterResponse,variedBoost,boostProfile} from '../src/gp/car-pace.js';
 import {limitBroadcastPeaks,copyRetimedAudio} from './marble-audio.mjs';
-import {CONTACT_FLOW_PROFILE,marblePadAcceleration,marbleStationaryWindow} from '../src/gp/marble-physics.js';
+import {CONTACT_FLOW_PROFILE,hasContactFlow,marblePadAcceleration,marbleStationaryWindow} from '../src/gp/marble-physics.js';
+import {assertAiPropRoadClearance} from '../src/gp/ai-scene-props.js';
 import {directRace, liveRaceEndFrame, cameraRandom} from "./race-director.mjs";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { Matrix4, Quaternion, Vector3 } from "three";
@@ -23,6 +26,8 @@ import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadOutline, marbleize, SCALE, SLOPE } from "./circuit.mjs";
 import { ALWAYS, BY_TYPE, OBSTACLES, PHYSICS_ORDER } from "../src/gp/obstacles/index.js";
+import {AUTHORED_CHALLENGES} from '../src/gp/obstacles/challenge-lanes.js';
+import {FORK_INTAKE_BEFORE} from '../src/gp/obstacles/raised-choice.js';
 import { VORTEX } from "../src/gp/obstacles/vortex.js";
 import { REGROUP } from "../src/gp/obstacles/regroup.js";
 import { fanGust } from "../src/gp/obstacles/fan.js";
@@ -70,7 +75,7 @@ const ALL_MARBLES = [
 //   GP_HEAT=1..4 selects a 6-car Qualifying Heat (Top 2 Advance to Grand Final!)
 //   GP_HEAT=final selects the 10-car Grand Final (populated from the actual qualifiers of Heats 1-4!)
 const MARBLES = (() => {
-  if (process.env.GP_CARS !== "1") return marbleHostRoster(ALL_MARBLES,process.env.GP_MARBLE_HOST);
+  if (process.env.GP_CARS !== "1") return marbleHostRoster(ALL_MARBLES,process.env.GP_MARBLE_HOST,process.env.GP_MARBLE_COUNTRIES);
   const heat = process.env.GP_HEAT ?? "1";
   if (process.env.GP_COUNTRIES) {
     if (heat === 'final') throw Error('A championship final must use its actual qualifiers');
@@ -173,7 +178,7 @@ const GUARD = { height: 1.4, segment: 1 }; // default; zones that throw marbles 
 // flight and landing, and every machine that can throw one.
 // Drops too: at speed, a marble leaving a drop in a bend can land on the wall top.
 // [from, to, height]: clear guard panels over each obstacle that throws marbles (from its module's `guard`).
-const GUARD_ZONES = Object.fromEntries(OBSTACLES.filter((o) => o.guard).map((o) => [o.type, o.guard]));
+const GUARD_ZONES = Object.fromEntries(Object.values(BY_TYPE).filter((o) => o.guard).map((o) => [o.type, o.guard]));
 // A steeper launch out of the lanes, so the race starts with a punch.
 const START_STEEP = { until: 25, slope: Math.tan((8 * Math.PI) / 180) };
 const BRAKE_DAMPING = 1.8; // after the chequered flag
@@ -212,7 +217,7 @@ const arr = (v) => [r3(v.x), r3(v.y), r3(v.z)];
 // shifts the trough's lowest line sideways, steering marbles into them);
 // shape features (drops, bumps, twists) can't trap anything and go on gentle bends.
 // The obstacle library (src/gp/obstacles/) says what each one needs; the planner reads it in its order.
-const FEATURES = Object.fromEntries(OBSTACLES.map((o) => [o.type, { before: o.place.before, after: o.place.after, label: o.label, maxCurv: o.place.maxCurv, ...(o.place.once ? { once: true } : {}) }]));
+const FEATURES = Object.fromEntries([...OBSTACLES,...AUTHORED_CHALLENGES].map((o) => [o.type, { before: o.place.before, after: o.place.after, label: o.label, maxCurv: o.place.maxCurv, ...(o.place.once ? { once: true } : {}) }]));
 // Kicker: a 10° run-up (so even a slow marble arrives with enough speed to clear
 // the lip: v²/2g must exceed `lip`), the ramp up to the lip, then the fall.
 const JUMP = { runup: 4, runupSlope: Math.tan((10 * Math.PI) / 180), lip: 0.30, ramp: 2.0, drop: 2.0 };
@@ -233,13 +238,13 @@ const EVERYWHERE_GUARD = 1.0; // height of the invisible guard along the whole l
 /** The last u any obstacle may reach: after it come the finish line (END - 20), guide fins, distributor flap and stair bays. */
 const bayReserve = (L) => L - GRID_LENGTH - ELEVATOR.cabin - 24;
 /** Feature types the planner never picks (placed by the bake itself, or retired). */
-const PLANNER_SKIP = ["crest", "booster", "tube", "switch", "regroup"];
+const PLANNER_SKIP = ["crest", "booster", "tube", "switch", "regroup", ...AUTHORED_CHALLENGES.map(o=>o.type)];
 const FLIPPER = { length: 4.0, amp: (25 * Math.PI) / 180, period: 2.4 };
 const STAIR_SHOT_MAX = 7 * 60; // frames
 const FOCUS_HOLD = 5 * 60; // frames: the director follows a group at least this long
 const STAIR_CAM = { above: 16, fov: 46 };
 // Action obstacles get dedicated close-up cameras when the pack hits them, mixed with lead/chase/side tracking cams.
-const CAM_FEATURES = ["vortex", "hammer", "spinner", "bumpers", "turntable", "pusher", "rollers", "jump", "car-chicane"];
+const CAM_FEATURES = ["vortex", "hammer", "spinner", "bumpers", "turntable", "pusher", "rollers", "jump", "car-chicane", "single-lane", "route-choice", "roller-bank"];
 const TUBES = { minCurv: 0.17, height: 1.7 };
 const LAUNCHES = { max: 3, gap: 12 };
 const FANS = { extra: 3, spacing: 55 };
@@ -287,18 +292,29 @@ export function placementRules(curv) {
 function placeLayout(layout, curv, L, id, scale = 1) {
   const { clear } = placementRules(curv);
   const features = [];
-  const overlaps = (u, f) => features.some((g) => !(u + f.after + 4 < g.u - g.span[0] || u - f.before - 4 > g.u + g.span[1]));
-  const legal = (u, f) => u >= 12 + START.funnel && u + f.after <= bayReserve(L) && clear(u, f) && !overlaps(u, f);
+  // The fork guide follows the bank upstream of the straight lift deck.
+  // Reserve its approach without changing the deck's leveling span.
+  const approach = (before, intakeSide) => intakeSide === undefined ? before : FORK_INTAKE_BEFORE;
+  const overlaps = (u, f, intakeSide) => features.some((g) =>
+    !(u + f.after + 4 < g.u - approach(g.span[0], g.intakeSide) ||
+      u - approach(f.before, intakeSide) - 4 > g.u + g.span[1]));
+  const legal = (u, f, intakeSide) =>
+    u >= 12 + START.funnel + approach(f.before, intakeSide) - f.before &&
+    u + f.after <= bayReserve(L) && clear(u, f) && !overlaps(u, f, intakeSide);
   const errors = [];
   let cursor = 12 + START.funnel;
   for (const [k, entry] of layout.entries()) {
     const [type, at] = Array.isArray(entry) ? entry : [entry.type, entry.u];
+    const {intakeSide} = entry;
+    if (intakeSide !== undefined && (type !== 'route-choice' || ![-1, 1].includes(intakeSide))) {
+      throw new Error(`${id}: intakeSide must be -1 or 1 on an authored route-choice`);
+    }
     const f = featureRule(type);
     let u = at !== undefined && at !== null ? Math.round(at * scale) : at;
     if (u === undefined || u === null) {
       u = null;
       for (let x = Math.ceil(cursor); x + f.after <= bayReserve(L); x += 1)
-        if (legal(x, f)) {
+        if (legal(x, f, intakeSide)) {
           u = x;
           break;
         }
@@ -306,10 +322,10 @@ function placeLayout(layout, curv, L, id, scale = 1) {
         errors.push(`#${k + 1} ${type}: no room left after u=${cursor.toFixed(0)}`);
         continue;
       }
-    } else if (!legal(u, f)) {
+    } else if (!legal(u, f, intakeSide)) {
       const near = [];
       for (let d = 1; d < 80 && near.length < 2; d += 1)
-        for (const x of [Math.round(u) - d, Math.round(u) + d]) if (near.length < 2 && legal(x, f)) near.push(x);
+        for (const x of [Math.round(u) - d, Math.round(u) + d]) if (near.length < 2 && legal(x, f, intakeSide)) near.push(x);
       if (scale !== 1 && near.length) {
         u = near[0];
       } else {
@@ -319,6 +335,7 @@ function placeLayout(layout, curv, L, id, scale = 1) {
       }
     }
     features.push({ type, u: r3(u), label: f.label, span: [f.before, f.after] });
+    if (intakeSide !== undefined) features.at(-1).intakeSide = intakeSide;
     cursor = u + f.after + 4;
   }
   if (errors.length) throw new Error(`${id}: layout has ${errors.length} problem(s):\n  ${errors.join("\n  ")}\n(run: npm run design -- ${id})`);
@@ -850,6 +867,10 @@ export function buildCourse(round) {
           const lat = (k - (ELEVATOR.bays - 1) / 2) * 2 * bayLat;
           return {
             bay: k,
+            // A rising rear edge at 1.6 repeatedly knocked recorded Tuscany
+            // arrivals back onto the dock. Keep the slower physical service
+            // clock in the saved elevator so picture and bake stay identical.
+            ...(!isCarsMode && process.env.GP_MARBLE_PHYSICS === 'contact-flow-v3' ? { slowSpeed: 0.8 } : {}),
             lat: r3(lat),
             center: [r3(cabinC[0] + right.x * lat), r3(bottomCentreY), r3(cabinC[1] + right.z * lat)],
             fwd: [r3(fwd.x), 0, r3(fwd.z)],
@@ -876,7 +897,7 @@ const mod = (x, m) => ((x % m) + m) % m;
 const frameQuat = (s) => new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(v3(s.t), v3(s.n), v3(s.r)));
 
 /** A hammer's orientation at time t: its frame swung about the track direction. */
-function buildObstacles(course, sync = {}) {
+export function buildObstacles(course, sync = {}) {
   const { frameAt, features } = course;
   const statics = [];
   const out = Object.fromEntries(OBSTACLES.filter((o) => o.collection).map((o) => [o.collection, []]));
@@ -905,7 +926,7 @@ function buildObstacles(course, sync = {}) {
   // marble that drifts sideways in the air stays on the track.
   // Plus a low guard along every wall of the lap (physics only, never drawn): a marble knocked up in
   // a pile-up between obstacles must not leave the track (a lost marble is a broken video).
-  const zones = features.map((f) => ({ f, zone: f.type === "tube" ? [-1, f.span[1] + 1, TUBES.height] : GUARD_ZONES[f.type] }));
+  const zones = features.map((f) => ({ f, zone: f.type === "tube" ? [-1, f.span[1] + 1, TUBES.height] : BY_TYPE[f.type]?.guardProfiles?.[ctx.physicsProfile] ?? GUARD_ZONES[f.type] }));
   zones.push({ f: { u: 1 }, zone: [0, course.END - 1, EVERYWHERE_GUARD] });
   for (const { f, zone } of zones) {
     if (!zone) continue;
@@ -989,19 +1010,21 @@ function buildObstacles(course, sync = {}) {
     const lat = -START.half + k * laneW;
     const um = (START.lanesFrom + START.lanesTo) / 2;
     const s = frameAt(um);
-    statics.push({
+    const divider={
       kind: "divider",
       shape: "box",
       pos: pointInFrame(s, lat, 0.24).map(r3),
       quat: quatArr(frameQuat(s)),
       size: [START.lanesTo - START.lanesFrom, 0.48, 0.05],
       restitution: 0.3,
-    });
+    };
+    if(process.env.GP_CARS!=='1'&&process.env.GP_MARBLE_PHYSICS==='contact-flow-v3')Object.assign(divider,{shape:'convex',profile:'flow-nose-v1',vertices:gridDividerHull(divider.size).vertices});
+    statics.push(divider);
   }
   const lifts = features
     .filter((f) => f.type === "lift")
     .map((f) => ({ u0: r3(f.u), len: LIFT.len, lead: LIFT.lead, rise: LIFT.rise, speed: LIFT.speed, spacing: LIFT.spacing, count: LIFT.count, half: TRACK.width / 2 - 0.16 }));
-  return { statics, ...out, lifts };
+  return { statics, ...out, lifts:[...lifts,...(out.lifts??[])] };
 }
 
 // --- Race ----------------------------------------------------------------------------
@@ -1035,6 +1058,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
   const rand = mulberry32((seed * 1000 + hashString(round.id)) >>> 0);
   const course = buildCourse(round);
   const { L, samples, sampleAt } = course;
+  assertAiPropRoadClearance(round.sceneProps??[],samples);
   if (process.env.GP_FEATURES) console.log(course.features.map((f) => `${f.type}@${f.u.toFixed(0)}`).join("  "));
   if (process.env.GP_GEOM) {
     const [a, b] = process.env.GP_GEOM.split(",").map(Number);
@@ -1165,7 +1189,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
     if(!desc)throw Error('Invalid static collision hull: '+o.kind);
     desc
       .setFriction(o.friction??0.2)
-      .setRestitution(o.kind==='car-chicane'&&o.profile==='soft-island'?.02:OBSTACLE_RESTITUTION[o.kind] ?? 0.3)
+      .setRestitution(o.challengeZone?o.restitution:process.env.GP_MARBLE_PHYSICS==='contact-flow-v3'&&o.kind==='bumper'?o.restitution:o.kind==='car-chicane'&&o.profile==='soft-island'?.02:OBSTACLE_RESTITUTION[o.kind] ?? 0.3)
       .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
       .setCollisionGroups(o.kind === "guard" ? GROUP_CLEAR : GROUP_TRACK); // cameras see through the clear guard panels
     world.createCollider(desc, body);
@@ -1240,7 +1264,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
 
   // Qualifying: in Car Mode, assign each car directly to Lane 1..N (left-to-right) so the Grid Presentation matches Lane 1..6.
   const isCars = process.env.GP_CARS === "1";
-  const contactFlow=!isCars&&process.env.GP_MARBLE_PHYSICS===CONTACT_FLOW_PROFILE;
+  const contactFlow=!isCars&&hasContactFlow(process.env.GP_MARBLE_PHYSICS);
   const marbleFaults=[],marbleFaultEpisode=MARBLES.map(()=>null);
   const grid = MARBLES.map((_, i) => i);
   if (!isCars) {
@@ -1508,7 +1532,8 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
         if (finishFrame[i] === null) {
           const inside = inVortex(p);
           if (inside !== vortexDamping[i]) {
-            b.setLinearDamping(inside ? 0.008 : isCars ? 0.14 : DAMPING);
+            b.setLinearDamping(inside ? process.env.GP_MARBLE_PHYSICS==='contact-flow-v3'?.055:.008 : isCars ? 0.14 : DAMPING);
+            if(process.env.GP_MARBLE_PHYSICS==='contact-flow-v3')b.setAngularDamping(inside?.04:0);
             vortexDamping[i] = inside;
           }
         }
@@ -1790,6 +1815,9 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
             const r = Math.hypot(rx, rz);
             if (r > vx.radius || r < vx.hole * 1.05 || p.y > vx.center[1] + 0.6 || p.y < vx.center[1] - vx.depth - 0.2) continue;
             inAnyVortex = true;
+            // No hidden motor drives an unpowered bowl. Gravity, actual
+            // contacts and rolling resistance determine the orbit and exit.
+            if(process.env.GP_MARBLE_PHYSICS==='contact-flow-v3')continue;
             const urx = rx / r;
             const urz = rz / r;
             const tx = rz / r;
@@ -2437,7 +2465,7 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
     return out;
   };
   const elevatorsData = lifts.map((l) => ({ ...l.EV, stair: true, stopAt: stairStop === null ? null : r3(stairStop), cycles: ridesToCycles(l.ev.rides), cabinY: l.ev.cabinY }));
-  const director = directRace({ sceneryProfile:round.carSceneryProfile,cockpitEnabled:carConditions?.racecraft?.cockpitCamera===true,cockpitPresentation:carConditions?.racecraft?.cockpitPresentation, world, course, vehicle: isCars ? "car" : "marble", frames, finishFrame: doneFrame, crossingFrames: finishFrame, events, actionMoments:carIncidents, themeId: ({"r1-monaco":"alps","r2-silverstone":"cairo","r3-spa":"sydney","r4-suzuka":"newyork","r5-monza":"tokyo","r6-barcelona":"spain","r7-coffeeandes":"colombia","r8-tuscany":"italy","r9-blackforest":"germany","r10-britain":"britain","r11-provence":"france"})[round.id], raceStart, winnerFrame, lastFrame, rand: cameraRandom(seed, round.id), highlights, elevators: elevatorsData, checkpoints }, { FPS, MARBLES, LAPS, R, GRID_LENGTH, QUERY_TRACK_ONLY, CAM_FEATURES });
+  const director = directRace({ sceneProps:round.sceneProps??[],sceneryProfile:round.carSceneryProfile??round.marbleSceneryProfile,cockpitEnabled:carConditions?.racecraft?.cockpitCamera===true,cockpitPresentation:carConditions?.racecraft?.cockpitPresentation, world, course, vehicle: isCars ? "car" : "marble", frames, finishFrame: doneFrame, crossingFrames: finishFrame, events, actionMoments:carIncidents, themeId: ({"r1-monaco":"alps","r2-silverstone":"cairo","r3-spa":"sydney","r4-suzuka":"newyork","r5-monza":"tokyo","r6-barcelona":"spain","r7-coffeeandes":"colombia","r8-tuscany":"italy","r9-blackforest":"germany","r10-britain":"britain","r11-provence":"france","r12-wachau":"austria","r13-jaipur":"india"})[round.id], raceStart, winnerFrame, lastFrame, rand: cameraRandom(seed, round.id), highlights, elevators: elevatorsData, checkpoints, gate:{hinge:arr(hinge),quat:[gateQuat.x,gateQuat.y,gateQuat.z,gateQuat.w],height:GATE_HEIGHT} }, { FPS, MARBLES, LAPS, R, GRID_LENGTH, QUERY_TRACK_ONLY, CAM_FEATURES });
   // Fail the bake, not a render an hour later: a NaN camera becomes null in JSON.
   // Fail the bake on any non-finite camera, not just the main ones (a NaN becomes null in JSON and the
   // renderer puts that camera at the world origin).
@@ -2504,8 +2532,9 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
     drop: r3(course.H),
     scale: round.outline ? 1 : (round.scale ?? SCALE),
     vehicle: isCars ? "car" : "marble",
-    ...(contactFlow?{physicsProfile:CONTACT_FLOW_PROFILE}:{}),
-    ...(isCars&&round.carSceneryProfile?{sceneryProfile:round.carSceneryProfile}:{}),
+    ...(contactFlow?{physicsProfile:process.env.GP_MARBLE_PHYSICS}:{}),
+    ...(round.aiMaterialProfile?{aiMaterialProfile:round.aiMaterialProfile}:{}),
+    ...((isCars?round.carSceneryProfile:round.marbleSceneryProfile)?{sceneryProfile:isCars?round.carSceneryProfile:round.marbleSceneryProfile}:{}),
     heat: isCars ? (process.env.GP_COUNTRIES&&MARBLES.length>6?`TCR EXHIBITION · ${MARBLES.length} COUNTRIES`:process.env.GP_HEAT === "final" ? "TCR GRAND FINAL · TOP 10" : `TCR HEAT ${process.env.GP_HEAT ?? 1}/4 · TOP 2 QUALIFY`) : undefined,
   };
 
@@ -2534,10 +2563,12 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
     features: course.features,
     carConditions,
     carDiagnostics,
-    ...(contactFlow?{marblePhysicsDiagnostics:{profile:CONTACT_FLOW_PROFILE,recoveries:0,faults:marbleFaults,rankBasedForces:false}}:{}),
+    ...(contactFlow?{marblePhysicsDiagnostics:{profile:process.env.GP_MARBLE_PHYSICS,recoveries:carDiagnostics.reduce((n,d)=>n+(d.recoveries??0),0),faults:marbleFaults,rankBasedForces:false}}:{}),
     ...(smartDriving?{carDrivingModel:'lookahead-driver-v1',carDrivingDiagnostics,carDrivingDecisions}:{}),
     carIncidents,
+    ...(round.sceneProps?.length?{sceneProps:round.sceneProps}:{}),
     obstacles: obstacles.statics,
+    ...(obstacles.challengeZones?.length?{challengeZones:obstacles.challengeZones}:{}),
     spinners: obstacles.spinners,
     turntables: obstacles.turntables,
     pushers: obstacles.pushers,
@@ -2568,8 +2599,8 @@ async function runRoundOnce(round, seed, { quiet, sync = {}, dqReach = DQ.reach,
 }
 
 // --- Audio ---------------------------------------------------------------------------
-export function soundtrack(result, rand, {broadcast=false,mixProfile='legacy'}={}) {
-  const asmr=mixProfile==='asmr-v1';
+export function soundtrack(result, rand, {broadcast=false,mixProfile='legacy',onAudioDiagnostics}={}) {
+  const contactAudio=mixProfile==='asmr-v2',asmr=mixProfile==='asmr-v1'||contactAudio;
   const { data, impacts } = result;
   const { timeline, cams, frames, fps } = data;
   const RATE = 44100;
@@ -2599,7 +2630,7 @@ export function soundtrack(result, rand, {broadcast=false,mixProfile='legacy'}={
     const d = rel.length();
     // The ASMR profile uses a track microphone perspective. An aerial camera
     // must not make rolling/contact sounds almost disappear.
-    const gain=asmr?(source==='machine'?(d>=22?0:.8*(1-d/22)**2):Math.max(.25,1/(1+d*d/128))):Math.max(.06,1/(1+d*d/30));
+    const gain=asmr?(source==='machine'?(d>=22?0:.8*(1-d/22)**2)*(contactAudio?.12:1):contactAudio?1/(1+d*d/196):Math.max(.25,1/(1+d*d/128))):Math.max(.06,1/(1+d*d/30));
     return {gain,pan:Math.max(-.85,Math.min(.85,rel.dot(right)/(d*.7+.01)))};
   };
 
@@ -2644,12 +2675,13 @@ export function soundtrack(result, rand, {broadcast=false,mixProfile='legacy'}={
   crowd(timeline.raceStart / fps, 4, 1.4);
 
   // Tactile ASMR rolling purr & glass-on-track shimmer of every marble, stereo-panned from the active camera.
+  const raceSamples = simTotal;
+  if(contactAudio){const report=renderContactRoll(data,Ls,Rs,RATE);onAudioDiagnostics?.(report);}else{
   let lpL1 = 0;
   let lpL2 = 0;
   let lpR1 = 0;
   let lpR2 = 0;
   let hp1 = 0;
-  const raceSamples = simTotal;
   const rumbleL = new Float32Array(frames.length);
   const rumbleR = new Float32Array(frames.length);
   const fastRoll = new Float32Array(frames.length);
@@ -2699,10 +2731,12 @@ export function soundtrack(result, rand, {broadcast=false,mixProfile='legacy'}={
     }
   }
   // Tactile ASMR TCR Track-Joint & Guide-Rail Clicks every 2.4m of progress for each car/marble:
+  }
   for (let f = Math.max(1, timeline.raceStart); f < frames.length; f++) {
     const fr = frames[f];
     const prev = frames[f - 1];
     fr.forEach((m, i) => {
+      if(contactAudio&&!rollingContact(data,i,f).supported)return;
       const u0 = prev[i][7];
       const u1 = m[7];
       if (u1 > u0 && Math.floor(u1 / 2.4) > Math.floor(u0 / 2.4)) {

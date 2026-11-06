@@ -1,0 +1,35 @@
+{
+  "kind": "bronze",
+  "size": [
+    2048,
+    2048
+  ],
+  "physicalTileMetres": 1.2,
+  "source": "artwork/ai-enrichment/italian-craft-v1/source/aged-bronze-albedo.png",
+  "sourceSha256": "4139b0d4b2f3faefddee505307e1597c5b18da84e738f85126c3be8782f47bd6",
+  "baseColourOrigin": "FLUX.2-klein-base-4B, processed with periodic-plus-smooth in linear light",
+  "normalOrigin": "Independent authored procedural microrelief, OpenGL tangent space",
+  "roughnessOrigin": "Independent authored procedural physical material estimate",
+  "notCalibratedMeasuredPBR": true,
+  "metalness": 0.94,
+  "heightRmsMetres": 5.151421781979455e-05,
+  "clippedFraction": 0.0023260911305745444,
+  "edgesBefore": {
+    "interiorAdjacentMean": 3.8280794000493605,
+    "wrapMean": 73.02921549479166,
+    "wrapRatio": 19.0772468026264
+  },
+  "edgesAfter": {
+    "interiorAdjacentMean": 4.2430749299025,
+    "wrapMean": 2.05029296875,
+    "wrapRatio": 0.4832092297736333
+  },
+  "wrapDiagnosticPassed": true,
+  "hashes": {
+    "basecolor.png": "9ff82f4b67b5e7457886f114b62d692e5bf35df5822dd75bd2dae651ca953539",
+    "normal.png": "4d6358f9389db1c18b2d18d7158084a71e42003c554c07545f1f71105fcdb0ae",
+    "roughness.png": "d777fd43685b5d8b3d18b858d0799095b089e7ce7e08c251a9eb65e53f7ddeb0"
+  },
+  "nativeSceneApproved": false,
+  "movingVideoApproved": false
+}

@@ -28,12 +28,16 @@ export default {
   restitution: 0.5,
   collection: "swings",
   card: { difficulty: 4, chaos: 5, seconds: 1.5, summary: "A hammer spinning full circles over one half of the track: one launches you forward, the next knocks you back. Take the other half or time it." },
-  build(f, { frameAt, out, sync }) {
+  build(f, { frameAt, out, sync, physicsProfile }) {
     const s = frameAt(f.u + 1);
     const side = out.swings.length % 2 ? -1 : 1;
-    const spin = (side * 2 * Math.PI) / HAMMER.period; // alternate: launch, then brake
+    // The next flow profile keeps the alternating SIDE, but every bottom
+    // contact sweeps along +track. Alternating the sign was an intentional
+    // brake that repeatedly knocked the pack upstream for several seconds.
+    const spin = ((physicsProfile==='contact-flow-v3'?1:side) * 2 * Math.PI) / HAMMER.period;
     out.swings.push({
       kind: "hammer",
+      ...(physicsProfile==='contact-flow-v3'?{restitution:.12}:{}),
       lat: r3(side * HAMMER.lat),
       pos: pointInFrame(s, side * HAMMER.lat, HAMMER.pivot).map(r3),
       quat: quatArr(frameQuat(s)),
@@ -53,7 +57,7 @@ export default {
       world.createCollider(
         RAPIER.ColliderDesc.cuboid(sw.head[0] / 2, sw.head[1] / 2, sw.head[2] / 2)
           .setTranslation(0, -sw.length, 0)
-          .setRestitution(this.restitution)
+          .setRestitution(sw.restitution??this.restitution)
           .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
           .setFriction(0.2)
           .setCollisionGroups(groups.track),

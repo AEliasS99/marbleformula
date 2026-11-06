@@ -1,4 +1,4 @@
-import test from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import os from'node:os';import{join}from'node:path';import{snapshotMaterials,stageRenderAssets,renderAssetKey}from'./render-assets.mjs';import{videoSourceKey}from'./segment-cache.mjs';
+import test from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import os from'node:os';import{join}from'node:path';import{snapshotMaterials,stageRenderAssets,renderAssetKey,assertSceneAssetCoverage}from'./render-assets.mjs';import{videoSourceKey}from'./segment-cache.mjs';
 test('material snapshots survive original edits; changed frozen maps fail before staging and cache reuse',()=>{
  const root=fs.mkdtempSync(join(os.tmpdir(),'racecraft-materials-'));try{
   const source=join(root,'source'),job=join(root,'job'),snapshot=join(job,'input/public/materials'),staged=join(job,'render-public');fs.mkdirSync(source,{recursive:true});fs.writeFileSync(join(source,'oak.jpg'),'original scan');
@@ -11,4 +11,22 @@ test('material snapshots survive original edits; changed frozen maps fail before
 test('material records cannot escape the isolated public directory',()=>{
  assert.throws(()=>stageRenderAssets('/tmp',[{publicPath:'../.youtube-token.json',path:'x',sha256:'x'}],'/tmp/public'),/Unsafe/);
  assert.throws(()=>stageRenderAssets('/tmp',[{publicPath:'materials/oak.jpg',path:'../outside',sha256:'x'}],'/tmp/public'),/Unsafe/);
+});
+test('generated prop images are frozen and staged under their original public paths',()=>{
+ const root=fs.mkdtempSync(join(os.tmpdir(),'racecraft-props-'));try{
+  const source=join(root,'source'),job=join(root,'job');fs.mkdirSync(join(source,'ai/italian-column-v1'),{recursive:true});fs.writeFileSync(join(source,'ai/italian-column-v1/basecolor.png'),'original GLB atlas');
+  const assets=snapshotMaterials(source,join(job,'input/public/props'),job,'props');
+  assert.equal(assets[0].publicPath,'props/ai/italian-column-v1/basecolor.png');
+  fs.writeFileSync(join(source,'ai/italian-column-v1/basecolor.png'),'later different model');stageRenderAssets(job,assets,join(job,'render-public'));
+  assert.equal(fs.readFileSync(join(job,'render-public/props/ai/italian-column-v1/basecolor.png'),'utf8'),'original GLB atlas');
+  assert.throws(()=>snapshotMaterials(source,join(job,'other'),job,'../secrets'),/Unsafe/);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('AI scene delivery requires frozen colour, normal, roughness and prop atlas while historical scenes stay valid',()=>{
+ assert.doesNotThrow(()=>assertSceneAssetCoverage({info:{}}));
+ const data={info:{aiMaterialProfile:'italian-craft-v1'},sceneProps:[{geometryId:'italian-column-v1'}]};
+ const paths=['basecolor','normal','roughness'].map(map=>'materials/ai/italian-craft-v1/travertine/'+map+'.png').concat('props/ai/italian-column-v1/basecolor.png');
+ const assets=paths.map(publicPath=>({publicPath}));assert.doesNotThrow(()=>assertSceneAssetCoverage(data,assets));
+ for(let i=0;i<assets.length;i++)assert.throws(()=>assertSceneAssetCoverage(data,assets.filter((_,j)=>i!==j)),/not frozen/);
 });

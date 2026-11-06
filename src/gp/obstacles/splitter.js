@@ -1,3 +1,4 @@
+import {hasContactFlow} from '../marble-physics.js';
 import { Matrix4, Quaternion, Vector3 } from "three";
 import { frameQuat, pointInFrame, quatArr, r3, surfaceHeight, TRACK } from "./kit.js";
 
@@ -6,6 +7,8 @@ import { frameQuat, pointInFrame, quatArr, r3, surfaceHeight, TRACK } from "./ki
 // into an Express Shortcut Booster Chute, while the wider main lane contains bumper/peg obstacles!
 export default {
   type: "splitter",
+  // Recorded airborne arrivals require containment through the landing zone.
+  guardProfiles: {'contact-flow-v3':[-3,22,3]},
   label: "SHORTCUT SPLIT",
   place: { before: 3, after: 9, maxCurv: 0.035 },
   dq: false,
@@ -122,15 +125,19 @@ export default {
         latHalf: 0.85,
       });
     } else {
-      if(physicsProfile==='contact-flow-v2'){
+      if(hasContactFlow(physicsProfile)){
         // The old wall/post and post/outer-wall openings were .48–.65,
         // narrower than the .70 marble. Keep the existing split and hazard
         // lane, but give each staggered post two physically passable sides.
         const mainHalf=((frameAt(f.u+3.8).w??TRACK.width/2)-(.11+wallLat*side))/2;
         const centre=side*(wallLat*side+.11+mainHalf);
-        cylinder('bumper',f.u+2.3,centre-side*.06,.18,.85,.45,{friction:.03});
-        cylinder('bumper',f.u+5.2,centre+side*.06,.16,.85,.45,{friction:.03});
-        cylinder('peg',f.u+3.8,centre,.10,.85,.38,{friction:.03});
+        // Recorded Wachau arrivals recoiled for 4–5s against these full-height
+        // posts. Keep the split, guide and hazard positions, but reuse the
+        // damped, low shoulder already validated for forward-flow pinball.
+        const forward=physicsProfile==='contact-flow-v3',height=forward?.28:.85;
+        cylinder('bumper',f.u+2.3,centre-side*.06,.18,height,forward?.20:.45,{friction:.03});
+        cylinder('bumper',f.u+5.2,centre+side*.06,.16,height,forward?.20:.45,{friction:.03});
+        cylinder('peg',f.u+3.8,centre,.10,height,forward?.20:.38,{friction:.03});
         return;
       }
       // Main Hazard Lane Obstacles for Marbles

@@ -10,10 +10,11 @@ import { ViewContext } from "./view";
 import { createSubframe, SubframeContext } from "./subframe";
 import { quality } from "./quality";
 import { isNight } from "./look";
-import {tuscanVenue} from './tuscany-sites.js';
+import {craftedVenue} from './crafted-venue.js';
 import { Hoops, Neon } from "./Neon";
 import { Boosters, DistributorFlap } from "./Boosts";
 import { getCircuitTheme, WorldScenery } from "./Themes";
+import {AiSceneProps} from './AiSceneProps';
 
 // The circuit and everything on it, seen through one View (a clock and a camera).
 
@@ -32,18 +33,19 @@ export function Stage({ race, view, layout, frame, width, height }: { race: Race
       <ThreeCanvas width={width} height={height} dpr={quality().dpr} shadows="variance" gl={{ antialias: false, alpha: false, depth: false, stencil: false, preserveDrawingBuffer: true }}>
         <ViewContext.Provider value={view}>
           <SubframeContext.Provider value={sub}>
-            <fog attach="fog" args={tuscanVenue(race.data)?["#b7c5bd",180,1100]:isNight() ? [theme.fogColor, theme.fogNear, theme.fogFar] : [STUDIO.fog, 220, 1400]} />
+            <fog attach="fog" args={craftedVenue(race.data)?["#b7c5bd",180,1100]:isNight() ? [theme.fogColor, theme.fogNear, theme.fogFar] : [STUDIO.fog, 220, 1400]} />
             <Environment race={race} />
-            <hemisphereLight args={tuscanVenue(race.data)?['#c6dcf1','#52663e',.8]:isNight() ? [theme.hemiSkyColor, theme.hemiGroundColor, theme.hemiIntensity] : ["#bfd8f5", "#5a7a3c", 0.22]} />
+            <hemisphereLight args={craftedVenue(race.data)?['#b9cde4','#4b5135',.45]:isNight() ? [theme.hemiSkyColor, theme.hemiGroundColor, theme.hemiIntensity] : ["#bfd8f5", "#5a7a3c", 0.22]} />
             <Sun target={shot.target} pos={shot.pos} race={race} />
             <CameraRig race={race} layout={layout} frame={frame} />
             <Circuit race={race} />
             <TrackDetails race={race} />
             <Decals race={race} />
             <TimingGate race={race} />
-            {isNight() && !tuscanVenue(race.data) && <Neon race={race} />}
+            {isNight() && !craftedVenue(race.data) && <Neon race={race} />}
             <Trackside race={race} />
             <WorldScenery race={race} />
+            <AiSceneProps race={race} />
             <Obstacles race={race} t={t} />
             <Machines race={race} t={t} />
             <Boosters race={race} t={t} />

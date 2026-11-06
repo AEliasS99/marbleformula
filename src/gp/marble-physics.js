@@ -1,5 +1,7 @@
 import {surfaceHeight} from './trackMesh.js';
 export const CONTACT_FLOW_PROFILE='contact-flow-v2';
+export const FORWARD_FLOW_PROFILE='contact-flow-v3';
+export const hasContactFlow=profile=>[CONTACT_FLOW_PROFILE,FORWARD_FLOW_PROFILE].includes(profile);
 
 // Equal endpoints do not mean a ball was stationary: an orbit or a machine
 // can bring it back around. Inspect the entire interval before flagging a jam.

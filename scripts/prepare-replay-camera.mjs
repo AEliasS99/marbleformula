@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {createHash,randomUUID} from 'node:crypto';
 import {build} from 'esbuild';
 import {PerspectiveCamera,Vector3,Quaternion} from 'three';
-import {createCameraOcclusion,carBodyVisible,CAR_CAMERA_BOUNDS} from '../src/gp/camera-occlusion.js';
+import {createCameraOcclusion,carBodyVisible,marbleBodyVisible,CAR_CAMERA_BOUNDS} from '../src/gp/camera-occlusion.js';
 
 export function replayOcclusion(data){
  const samples=data.samples;
@@ -16,8 +16,8 @@ export function replayOcclusion(data){
   const a=samples[lo],b=samples[hi],k=Math.max(0,Math.min(1,(u-a.u)/(b.u-a.u)));
   return {u,...Object.fromEntries(['p','t','r','n'].map(key=>[key,a[key].map((v,i)=>v+(b[key][i]-v)*k)])),w:a.w+(b.w-a.w)*k};
  };
- const finish=at(data.info.finish),themeId=({'r7-coffeeandes':'colombia','r8-tuscany':'italy','r9-blackforest':'germany','r10-britain':'britain','r11-provence':'france','r6-barcelona':'spain','r1-monaco':'alps','r5-monza':'tokyo','r2-silverstone':'cairo','r3-spa':'sydney','r4-suzuka':'newyork'})[data.id];
- return {finish,model:createCameraOcclusion({samples,themeId,finishFrame:finish,width:2*finish.w,checkpoints:data.checkpoints,sceneryProfile:data.info.sceneryProfile,courseLength:data.info.length,obstacles:data.obstacles})};
+ const finish=at(data.info.finish),themeId=({'r7-coffeeandes':'colombia','r8-tuscany':'italy','r9-blackforest':'germany','r10-britain':'britain','r11-provence':'france','r12-wachau':'austria','r13-jaipur':'india','r6-barcelona':'spain','r1-monaco':'alps','r5-monza':'tokyo','r2-silverstone':'cairo','r3-spa':'sydney','r4-suzuka':'newyork'})[data.id];
+ return {finish,model:createCameraOcclusion({samples,themeId,finishFrame:finish,width:2*finish.w,checkpoints:data.checkpoints,sceneryProfile:data.info.sceneryProfile,courseLength:data.info.length,obstacles:data.obstacles,sceneProps:data.sceneProps,gate:data.gate})};
 }
 
 export function replaySubjectBounds(data,winner){
@@ -41,7 +41,7 @@ export function auditReplay(data,race,model,{stride=1,offsets=[-.175,-.0875,0,.0
   const frame=f+offset,pose=race.marblePose(winner,race.mainView.tAt(frame)),shot=race.shotAt(frame);
   lens.position.set(...shot.pos);lens.up.set(...(shot.up??[0,1,0]));lens.lookAt(...shot.target);lens.fov=shot.fov;lens.updateProjectionMatrix();lens.updateMatrixWorld();
   const q=new Quaternion(...pose.quat),points=corners.map(p=>p.clone().applyQuaternion(q).add(new Vector3(...pose.pos)).project(lens));
-  const visible=marble?!model.blocks(shot.pos,pose.pos):carBodyVisible(model,shot.pos,pose.pos,pose.quat,style),framed=points.every(p=>p.z>-1&&p.z<1&&Math.abs(p.x)<.88&&Math.abs(p.y)<.86);
+  const visible=marble?marbleBodyVisible(model,shot.pos,pose.pos,data.marbleRadius):carBodyVisible(model,shot.pos,pose.pos,pose.quat,style),framed=points.every(p=>p.z>-1&&p.z<1&&Math.abs(p.x)<.88&&Math.abs(p.y)<.86);
   const width=(Math.max(...points.map(p=>p.x))-Math.min(...points.map(p=>p.x)))*1920,height=(Math.max(...points.map(p=>p.y))-Math.min(...points.map(p=>p.y)))*1080;
   const readable=width>=(marble?40:48)&&height>=(marble?40:18);minimumBodyPixels=Math.min(minimumBodyPixels,width,height);samples++;
   if(!visible||!framed||!readable){failed++;if(examples.length<6)examples.push({frame:f,offset,visible,framed,readable,width,height});}

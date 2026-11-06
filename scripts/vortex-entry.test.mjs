@@ -6,7 +6,7 @@ const frameAt=u=>{let i=0;while(i<samples.length-2&&samples[i+1].u<u)i++;const a
 const corrected=vortexEntryGuide(f.vortex,frameAt),track=(1<<16)|2,ball=(2<<16)|7;
 const cases=f.cases.map(c=>{const qa=new Quaternion(...c.previousQuat),qb=new Quaternion(...c.nextQuat);const dq=qb.multiply(qa.invert()).normalize();if(dq.w<0)dq.set(-dq.x,-dq.y,-dq.z,-dq.w);const angle=2*Math.acos(Math.min(1,dq.w)),s=Math.sqrt(1-dq.w*dq.w);return{...c,angular:s<1e-5?[0,0,0]:[dq.x,dq.y,dq.z].map(x=>x/s*angle*30)};});
 for(const lateral of [-1.7,-1,0,1,1.7])for(const speed of [3,7,11,15]){const s=frameAt(33);cases.push({id:`grid-${lateral}-${speed}`,pose:[...pointOnTrack(s,lateral,.355),0,0,0,1],velocity:s.t.map(x=>x*speed),angular:[0,0,-speed/.35]});}
-test('fitted vortex guide clears 58 fixed and recorded Tuscany ingress cases without a rim trap or fall',async()=>{
+test('fitted vortex guide clears fixed and recorded Tuscany ingress cases without a rim trap or fall',async()=>{
  await RAPIER.init();const result={variants:{}};
 for(const variant of ['baseline','fitted']){
  const out=[];
@@ -27,7 +27,7 @@ for(const variant of ['baseline','fitted']){
 }
  const baseline=result.variants.baseline[0];assert.equal(baseline.entered,false);assert.ok(baseline.speed<.01,'Recorded regression must reproduce original stationary trap');
  for(const c of result.variants.fitted){assert.equal(c.entered,true,c.id+' missed the bowl');assert.equal(c.fallen,false,c.id+' fell');assert.ok(c.exited||c.speed>1,c.id+' remains stationary');}
- for(const id of ['USA-lap2','NLD-lap2','grid--1.7-15'])assert.equal(result.variants.fitted.find(c=>c.id===id).exited,true,id+' failed to exit');
+ for(const id of ['USA-lap2','NLD-lap2','grid--1.7-15','MEX-forward-v3-lap2'])assert.equal(result.variants.fitted.find(c=>c.id===id).exited,true,id+' failed to exit');
 });
 
 test('guide fits actual ramp while preserving the legacy bowl and default guide',()=>{

@@ -39,31 +39,33 @@ export default {
   card: { difficulty: 3, chaos: 4, seconds: 1.5, summary: "A spinning disc with raised rubber ribs and a domed hub: throws marbles across the track and into each other." },
   build(f, { frameAt, out, physicsProfile }) {
     const s = frameAt(f.u + 1);
+    const forward=physicsProfile==='contact-flow-v3';
     out.turntables.push({
       kind: "turntable",
-      pos: pointInFrame(s, 0, TURNTABLE.thickness / 2 - 0.03).map(r3),
+      pos: pointInFrame(s, forward?-.45:0, TURNTABLE.thickness / 2 - 0.03).map(r3),
       quat: quatArr(frameQuat(s)),
-      radius: TURNTABLE.radius,
+      radius: forward?1.45:TURNTABLE.radius,
       thickness: TURNTABLE.thickness,
       ribs: TURNTABLE.ribs,
-      ribHeight: TURNTABLE.ribHeight,
+      ribHeight: forward?.12:TURNTABLE.ribHeight,
       ribWidth: TURNTABLE.ribWidth,
       ribFrom: TURNTABLE.ribFrom,
       // .55 wall clearance was smaller than the .70 ball; rotating ribs
       // could squeeze it against the rail. Preserve the plate and motion.
-      ribTo: physicsProfile==='contact-flow-v2'?Math.min(TURNTABLE.ribTo,(s.w??2.1)-.88):TURNTABLE.ribTo,
-      hub: TURNTABLE.hub,
-      hubHeight: TURNTABLE.hubHeight,
-      speed: (out.turntables.length % 2 ? -1 : 1) * TURNTABLE.speed,
+      ribTo: forward?.80:physicsProfile==='contact-flow-v2'?Math.min(TURNTABLE.ribTo,(s.w??2.1)-.88):TURNTABLE.ribTo,
+      hub: forward?.24:TURNTABLE.hub,
+      hubHeight: forward?.08:TURNTABLE.hubHeight,
+      speed: forward?2.8:(out.turntables.length % 2 ? -1 : 1) * TURNTABLE.speed,
       phase: r3((f.u * 0.53) % (Math.PI * 2)),
+      ...(forward?{flowDirection:'forward-centreline',plateFriction:.35,ribFriction:.25,ribRestitution:.22}:{}),
     });
   },
   physics(world, list, { RAPIER, groups }) {
     const bodies = list.map((tt) => {
       const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...tt.pos).setRotation(rot(turntableQuat(tt, 0))));
-      world.createCollider(solid(RAPIER.ColliderDesc.cylinder(tt.thickness / 2, tt.radius), RAPIER, { friction: 0.9, restitution: this.restitution, group: groups.track }), body);
+      world.createCollider(solid(RAPIER.ColliderDesc.cylinder(tt.thickness / 2, tt.radius), RAPIER, { friction: tt.plateFriction??0.9, restitution: this.restitution, group: groups.track }), body);
       for (const r of turntableParts(tt))
-        world.createCollider(solid(RAPIER.ColliderDesc.cuboid(r.size[0] / 2, r.size[1] / 2, r.size[2] / 2).setTranslation(...r.pos).setRotation(rot(r.quat)), RAPIER, { friction: 0.6, restitution: 0.45, group: groups.track }), body);
+        world.createCollider(solid(RAPIER.ColliderDesc.cuboid(r.size[0] / 2, r.size[1] / 2, r.size[2] / 2).setTranslation(...r.pos).setRotation(rot(r.quat)), RAPIER, { friction: tt.ribFriction??0.6, restitution: tt.ribRestitution??0.45, group: groups.track }), body);
       // The hub: a low dome (a ball, sunk so only its cap shows) that splits the pack toward the rim.
       if (tt.hub) world.createCollider(solid(RAPIER.ColliderDesc.ball(tt.hub).setTranslation(0, tt.thickness / 2 + tt.hubHeight - tt.hub, 0), RAPIER, { friction: 0.3, restitution: 0.5, group: groups.track }), body);
       return body;

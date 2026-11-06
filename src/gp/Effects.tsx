@@ -4,7 +4,6 @@ import * as THREE from "three";
 import {
   BloomEffect,
   BlendFunction,
-  BrightnessContrastEffect,
   DepthOfFieldEffect,
   EffectComposer,
   EffectMaterial,
@@ -28,9 +27,10 @@ import { isNight } from "./look";
 import { quality } from "./quality";
 import { cancelRender, useRemotionEnvironment } from "remotion";
 import {cockpitBlurSamples} from './car-cockpit.js';
-import {zoomBlurSamples} from './camera-exposure.js';
+import {zoomBlurSamples,sceneBlurSamples} from './camera-exposure.js';
 import {naturalLighting} from './visual-realism.js';
-import {tuscanVenue} from './tuscany-sites.js';
+import {craftedVenue} from './crafted-venue.js';
+import {BoundedContrastEffect} from './bounded-contrast.js';
 
 // Camera-like finishing, the cues that make a render read as a photograph of a
 // small real object: ambient occlusion in every crease and contact, highlights
@@ -182,7 +182,7 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
-  const natural=naturalLighting(race.data)||tuscanVenue(race.data);
+  const natural=naturalLighting(race.data)||craftedVenue(race.data);
 
   const chain = useMemo(() => {
     const buf = gl.getDrawingBufferSize(new THREE.Vector2());
@@ -207,7 +207,7 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
       : new BloomEffect({ mipmapBlur: true, intensity: 0.25, luminanceThreshold: 2.6, luminanceSmoothing: 0.3 });
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
     // A light grade after tone mapping: a touch more contrast and colour, so the low sun bites.
-    const grade = new BrightnessContrastEffect({ brightness: 0.0, contrast: natural?.08:.14 });
+    const grade = new BoundedContrastEffect(natural?.08:.14);
     const vignette = new VignetteEffect({ offset: 0.32, darkness: natural?.20:.42 });
     const noise = new NoiseEffect({ premultiply: true, blendFunction: BlendFunction.SOFT_LIGHT });
     noise.blendMode.opacity.value = natural?.012:.025;
@@ -253,9 +253,11 @@ function EffectChain({ race, frame }: { race: Race; frame: number }) {
     // two exposures leave doubled distant scenery instead of a smooth streak.
     const shotKind = view.shotAt(Math.round(frame)).kind;
     const baseSamples = cockpitBlurSamples(quality().blur,shotKind,presentation);
-    const samples = (shotKind === 'finish' || shotKind === 'replay') ? zoomBlurSamples(baseSamples,
+    const lensSamples = (shotKind === 'finish' || shotKind === 'replay') ? zoomBlurSamples(baseSamples,
       view.shotAt(frame - shutter / 2).fov, view.shotAt(frame + shutter / 2).fov,
       size.x, size.y) : baseSamples;
+    const samples = craftedVenue(race.data)?sceneBlurSamples(lensSamples,
+      view.shotAt(frame - shutter / 2),view.shotAt(frame + shutter / 2),size.x,size.y):lensSamples;
     chain.accumulate.weight = 1 / samples;
     for (let k = 0; k < samples; k++) {
       const vf = frame + shutter * ((k + 0.5) / samples - 0.5);

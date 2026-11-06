@@ -1,4 +1,8 @@
+import {challengeDeckGeometry} from './obstacles/raised-choice.js';
+import {aiPropGeometry,aiPropMatrix,assertAiPropRoadClearance} from './ai-scene-props.js';
 import {Box3,Euler,Matrix4,Quaternion,Vector3} from 'three';
+import {TRACK,TRACK_DEPTH} from './trackMesh.js';
+import {gridDividerGeometry} from './grid-divider.js';
 import {sceneryLayout} from './scenery-layout.js';
 import {buildAlpineMountainGeo} from './alpine-mountain.js';
 import {checkpointLayout} from './checkpoint-layout.js';
@@ -8,6 +12,9 @@ import {frenchScenery} from './france-scenery.js';
 import {italianScenery} from './italy-scenery.js';
 import {germanScenery} from './germany-scenery.js';
 import {britishScenery} from './britain-scenery.js';
+import {wachauScenery} from './wachau-scenery.js';
+import {WACHAU_PROFILE} from './wachau-layout.js';
+import {jaipurScenery,JAIPUR_TERRAIN} from './jaipur-scenery.js';
 import {sceneryPartGeometry} from './scenery-mesh.js';
 import {colombianScenery} from './colombia-scenery.js';
 import {sydneyScenery,sydneyGeometry} from './sydney-scenery.js';
@@ -72,7 +79,27 @@ export function carBodyVisible(occlusion,from,centre,quaternion,carStyle=0) {
  return [-.85,0,.85].every(x=>[0,.45].every(y=>[-.85,0,.85].every(z=>!occlusion.blocks(from,[p[0]+x,p[1]+y,p[2]+z]))));
 }
 
-export function createCameraOcclusion({samples,themeId,finishFrame,width,checkpoints=[],sceneryProfile,courseLength,obstacles=[]}){
+// Sample the visible circular outline of the actual sphere, not a square that
+// contains empty space. This catches a hinge crossing below a clear centre ray.
+export function marbleBodyVisible(occlusion,from,centre,radius) {
+ const origin=Array.isArray(from)?new Vector3(...from):from;
+ const target=Array.isArray(centre)?new Vector3(...centre):centre;
+ const toward=origin.clone().sub(target),distance=toward.length();
+ if(distance<=radius)return false;
+ toward.normalize();
+ const right=new Vector3().crossVectors(toward,Math.abs(toward.y)>.99?new Vector3(1,0,0):new Vector3(0,1,0)).normalize();
+ const up=new Vector3().crossVectors(right,toward).normalize();
+ const offset=radius*radius/distance,outline=radius*Math.sqrt(1-radius*radius/(distance*distance));
+ const centreVisible=target.clone().addScaledVector(toward,offset);
+ for(let i=0;i<16;i++){
+  const angle=i*Math.PI/8;
+  const point=centreVisible.clone().addScaledVector(right,outline*Math.cos(angle)).addScaledVector(up,outline*Math.sin(angle));
+  if(occlusion.blocks(origin,point))return false;
+ }
+ return !occlusion.blocks(origin,target);
+}
+
+export function createCameraOcclusion({samples,themeId,finishFrame,width,checkpoints=[],sceneryProfile,courseLength,obstacles=[],sceneProps=[],gate}){
  const boxes=[];
  const add=(parent,pos,size,category,rotation=[0,0,0])=>{
   const transform=parent.clone().multiply(matrix(pos,rotation)),half=size.map(v=>v/2),lo=half.map(v=>-v),hi=half;
@@ -80,11 +107,23 @@ export function createCameraOcclusion({samples,themeId,finishFrame,width,checkpo
   boxes.push({category,lo,hi,inverse:transform.clone().invert().elements,min:bounds.min.toArray(),max:bounds.max.toArray(),center:bounds.getCenter(new Vector3()).toArray()});
  };
  const frustum=(parent,pos,top,bottom,height,category,sides)=>{add(parent,pos,[Math.max(top,bottom)*2,height,Math.max(top,bottom)*2],category);boxes.at(-1).shape={top,bottom,height,sides};};
+ assertAiPropRoadClearance(sceneProps,samples);
+ for(const prop of sceneProps){
+  const indexed=aiPropGeometry(prop.geometryId),g=indexed.toNonIndexed(),m=aiPropMatrix(prop),box=indexed.boundingBox,bounds=box.clone().applyMatrix4(m);
+  boxes.push({category:'ai-'+prop.geometryId,lo:box.min.toArray(),hi:box.max.toArray(),inverse:m.clone().invert().elements,min:bounds.min.toArray(),max:bounds.max.toArray(),center:bounds.getCenter(new Vector3()).toArray(),triangles:g.attributes.position.array});
+  indexed.dispose();g.dispose();
+ }
  for(const o of obstacles){
   if(o.kind==='guard')continue;
   if(!o.pos?.every(Number.isFinite)||!o.quat?.every(Number.isFinite))throw Error('Invalid visible mechanism pose');
   const parent=new Matrix4().compose(new Vector3(...o.pos),new Quaternion(...o.quat),new Vector3(1,1,1));
-  if(o.size?.length===3)add(parent,[0,0,0],o.size,'mechanism-'+o.kind);
+  if(o.size?.length===3){
+   add(parent,[0,0,0],o.size,'mechanism-'+o.kind);
+   if(o.kind==='challenge-deck'){const g=challengeDeckGeometry(o);boxes.at(-1).triangles=g.attributes.position.array;g.dispose();}
+   if(o.profile==='flow-nose-v1'){
+    const g=gridDividerGeometry(o.size);boxes.at(-1).triangles=g.attributes.position.array;g.dispose();
+   }
+  }
   else if(o.radius>0&&o.height>0)frustum(parent,[0,0,0],o.radius,o.radius,o.height,'mechanism-'+o.kind);
   else throw Error('Missing visible mechanism bounds: '+o.kind);
  }
@@ -174,19 +213,37 @@ export function createCameraOcclusion({samples,themeId,finishFrame,width,checkpo
   boxes.push({category:p.category,lo:box.min.toArray(),hi:box.max.toArray(),inverse:m.clone().invert().elements,min:bounds.min.toArray(),max:bounds.max.toArray(),center:bounds.getCenter(new Vector3()).toArray(),triangles:geometry.attributes.position.array});
   geometry.dispose();
  }
- if(['italy','germany','britain','france'].includes(themeId))for(const tile of italianTerrain(samples,themeId==='italy'?{profile:sceneryProfile,length:courseLength}:undefined).tiles){
+ if(['italy','germany','britain','france','austria','india'].includes(themeId))for(const tile of italianTerrain(samples,themeId==='india'?{profile:JAIPUR_TERRAIN,length:courseLength}:themeId==='austria'?{profile:WACHAU_PROFILE,length:courseLength}:themeId==='italy'?{profile:sceneryProfile,length:courseLength}:undefined).tiles){
   const geometry=italyTerrainGeometry(tile),box=geometry.boundingBox,m=new Matrix4();
   boxes.push({category:themeId+'-terrain',lo:box.min.toArray(),hi:box.max.toArray(),inverse:m.elements,min:box.min.toArray(),max:box.max.toArray(),center:box.getCenter(new Vector3()).toArray(),triangles:geometry.attributes.position.array});
   geometry.dispose();
  }
- if(['spain','colombia','italy','germany','britain','france'].includes(themeId))for(const p of (themeId==='britain'?britishScenery(samples,{profile:sceneryProfile}):themeId==='italy'?italianScenery(samples,{profile:sceneryProfile,length:courseLength}):(themeId==='france'?frenchScenery:themeId==='germany'?germanScenery:themeId==='colombia'?colombianScenery:spanishScenery)(samples)).parts){
+ if(['spain','colombia','italy','germany','britain','france','austria','india'].includes(themeId))for(const p of (themeId==='india'?jaipurScenery(samples,{length:courseLength}):themeId==='austria'?wachauScenery(samples,{length:courseLength}):themeId==='britain'?britishScenery(samples,{profile:sceneryProfile}):themeId==='italy'?italianScenery(samples,{profile:sceneryProfile,length:courseLength}):(themeId==='france'?frenchScenery:themeId==='germany'?germanScenery:themeId==='colombia'?colombianScenery:spanishScenery)(samples)).parts){
   const m=new Matrix4().fromArray(p.matrix);
-  if(['sphere','hill','canopy'].includes(p.kind)){
-   const indexed=sceneryPartGeometry(p),geometry=indexed.toNonIndexed();indexed.dispose();geometry.computeBoundingBox();const box=geometry.boundingBox,bounds=box.clone().applyMatrix4(m);
+  if(['sphere','hill','canopy','arch','dome','basin','rock-ridge'].includes(p.kind)){
+   const indexed=sceneryPartGeometry(p),geometry=indexed.index?indexed.toNonIndexed():indexed;if(geometry!==indexed)indexed.dispose();geometry.computeBoundingBox();const box=geometry.boundingBox,bounds=box.clone().applyMatrix4(m);
    boxes.push({category:p.category,lo:box.min.toArray(),hi:box.max.toArray(),inverse:m.clone().invert().elements,min:bounds.min.toArray(),max:bounds.max.toArray(),center:bounds.getCenter(new Vector3()).toArray(),triangles:geometry.attributes.position.array});
   }else if(p.kind==='mountain')mountain(m,p.size[0],p.size[1],p.size[2],p.size[3]);
   else if(p.kind==='box')add(m,[0,0,0],p.size,p.category);
   else frustum(m,[0,0,0],p.size[0],p.size[1],p.size[2],p.category,p.size[3]);
+ }
+ // Match Gantries.arch's sampled frame and static Gate hardware. The moving
+ // flap is not represented by these static parts.
+ const start=samples[Math.max(0,Math.min(samples.length-1,Math.round((-.15-samples[0].u)/.5)))];
+ if(start){
+  const right=new Vector3(...start.r).normalize(),up=new Vector3(...start.n).normalize();
+  const m=new Matrix4().makeBasis(right,up,new Vector3().crossVectors(right,up).normalize()).setPosition(...start.p);
+  const w=(start.w??TRACK.width/2)+TRACK.wall,h=TRACK_DEPTH+1.3;
+  for(const side of [-1,1])add(m,[side*(w+.15),h/2,0],[.18,h,.18],'start-post');
+  add(m,[0,h,0],[2*w+.5,.34,.28],'start-beam');
+  add(m,[0,h,-.15],[2*(start.w??TRACK.width/2)+.4,.3,.002],'start-banner');
+ }
+ if(gate){
+  const m=new Matrix4().compose(new Vector3(...gate.hinge),new Quaternion(...gate.quat),new Vector3(1,1,1));
+  const w=(samples[0].w??TRACK.width/2)+TRACK.wall;
+  // Cylinder axis is local z, matching Gate's rotation-x=PI/2.
+  frustum(m.clone().multiply(matrix([0,0,0],[Math.PI/2,0,0])),[0,0,0],.07,.07,2*w+.5,'start-hinge',32);
+  for(const side of [-1,1])add(m,[0,-gate.height/2-.2,side*(w+.25)],[.18,gate.height+.6,.18],'gate-post');
  }
  if(finishFrame){const f=finishFrame,m=new Matrix4().makeBasis(new Vector3(...f.t).normalize(),new Vector3(...f.n).normalize(),new Vector3(...f.r).normalize());m.setPosition(...f.p);const span=width+.9,h=3.82;for(const side of [-1,1]){add(m,[0,h/2,side*span/2],[.16,h,.16],'finish-post');add(m,[0,.12,side*span/2],[.48,.24,.36],'finish-base');}add(m,[0,3.51,0],[.26,.68,span+.16],'finish-beam');}
  for(const arch of checkpointLayout(samples,checkpoints)){

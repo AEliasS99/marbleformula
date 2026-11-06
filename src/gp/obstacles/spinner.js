@@ -1,3 +1,4 @@
+import {hasContactFlow} from '../marble-physics.js';
 import { Quaternion, Vector3 } from "three";
 import { frameQuat, mod, pointInFrame, quatArr, r3, rot, solid } from "./kit.js";
 import { spinnerParts } from "../rotor.js";
@@ -26,14 +27,14 @@ export default {
     const s = frameAt(f.u);
     const dir = out.spinners.length % 2 ? -1 : 1;
     const speed = dir * 3.4; // fast: it flings, not just stirs
-    const contact=physicsProfile==='contact-flow-v2';
+    const contact=hasContactFlow(physicsProfile);
     out.spinners.push({
       kind: "spinner",
       pos: pointInFrame(s, 0, 0.3).map(r3),
       quat: quatArr(frameQuat(s)),
       size: [0.12, 0.5, contact?Math.min(1.82,(s.w??2.1)-.88):1.82], // blade: thickness, height, reach from the axis
       arms: 2,
-      hook: contact?.22:.5, // leave a full marble-width escape around the moving tip
+      hook: physicsProfile==='contact-flow-v3'?.06:contact?.22:.5, // shallow tips release the pack instead of cupping a stationary marble
       dir,
       speed,
       // A blade lies across the track's centre line, sweeping toward the field, as the leader arrives.

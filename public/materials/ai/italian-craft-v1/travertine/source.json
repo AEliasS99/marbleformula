@@ -1,0 +1,35 @@
+{
+  "kind": "travertine",
+  "size": [
+    2048,
+    2048
+  ],
+  "physicalTileMetres": 1.2,
+  "source": "artwork/ai-enrichment/italian-craft-v1/source/roman-travertine-albedo.png",
+  "sourceSha256": "81043aac6c3735e2ec3fb0b94bd7d806bad60d38c713b062dbb46bd8b0629cb9",
+  "baseColourOrigin": "FLUX.2-klein-base-4B, processed with periodic-plus-smooth in linear light",
+  "normalOrigin": "Independent authored procedural microrelief, OpenGL tangent space",
+  "roughnessOrigin": "Independent authored procedural physical material estimate",
+  "notCalibratedMeasuredPBR": true,
+  "metalness": 0,
+  "heightRmsMetres": 0.00013078606228250105,
+  "clippedFraction": 1.621246337890625e-05,
+  "edgesBefore": {
+    "interiorAdjacentMean": 5.573502230461752,
+    "wrapMean": 7.510172526041666,
+    "wrapRatio": 1.3474781592434144
+  },
+  "edgesAfter": {
+    "interiorAdjacentMean": 5.572185000152663,
+    "wrapMean": 3.042643229166667,
+    "wrapRatio": 0.5460413157645173
+  },
+  "wrapDiagnosticPassed": true,
+  "hashes": {
+    "basecolor.png": "62f8a8978c94666dfd73e5e845999ace449039a69bebf0b5f4b318835666996a",
+    "normal.png": "86934324a85cb3923d40a5064194e2e1a5f0aa783751316c153e392088e977d7",
+    "roughness.png": "a88fc9579b9b903bfe1c3a665c03704e0496561c00259204a1a0e18628bebcf0"
+  },
+  "nativeSceneApproved": false,
+  "movingVideoApproved": false
+}

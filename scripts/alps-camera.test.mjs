@@ -11,8 +11,31 @@ import {PerspectiveCamera,Vector3} from 'three';
 const data=JSON.parse(readFileSync(new URL('../out/tcr/alps/heat-1.json',import.meta.url)));
 const at=u=>{const s=data.samples,x=Math.max(0,Math.min(s.length-1.001,(u+9.5)/.5)),k=Math.floor(x),a=x-k,A=s[k],B=s[k+1];return {u,...Object.fromEntries(['p','t','r','n'].map(key=>[key,A[key].map((v,j)=>v+(B[key][j]-v)*a)])),w:A.w+(B.w-A.w)*a};};
 const scene=createCameraOcclusion({samples:data.samples,themeId:'alps',finishFrame:at(data.info.finish),width:2*at(data.info.finish).w});
-test('Alpes heat1 authored scenery placement stays byte-identical after shared extraction',()=>{
- assert.equal(createHash('sha256').update(JSON.stringify(sceneryLayout(data.samples))).digest('hex'),'4cf9998ebe2ace65478364108cf9dcd492bed36222bd9c6dbb5de5f24936b0e5');
+test('Alpes heat1 preserves authored scenery while clearing full terraces from the road',()=>{
+ // Recovered original layout, verified against the pre-clearance snapshot hash.
+ // The deliberate clearance repair may move terraces, never remove scenery.
+ const original=JSON.parse(readFileSync(new URL('./fixtures/alps-heat1-original-scenery.json',import.meta.url)));
+ assert.equal(createHash('sha256').update(JSON.stringify(original)).digest('hex'),'4cf9998ebe2ace65478364108cf9dcd492bed36222bd9c6dbb5de5f24936b0e5');
+ const current=sceneryLayout(data.samples),movable=['alpsTrackFlags','alpsPastures'];
+ for(const key of Object.keys(original).filter(k=>!movable.includes(k)))assert.deepEqual(current[key],original[key],key);
+ for(const key of movable){
+  assert.equal(current[key].length,original[key].length,'no authored group lost');
+  current[key].forEach((p,i)=>{
+   const before=original[key][i],flags=key==='alpsTrackFlags';
+   const omitted=new Set(['x','z','clearanceShift','trackClearanceVerified',...(flags?['rotY']:[])]);
+   const identity=o=>Object.fromEntries(Object.entries(o).filter(([k])=>!omitted.has(k)));
+   assert.deepEqual(identity(p),identity(before),'authored size, elevation and variation preserved');
+   assert.ok(p.clearanceShift>=0&&p.clearanceShift<=12,'bounded outward shift');
+   assert.ok(Math.abs(p.x-(before.x-Math.sin(before.rotY)*p.clearanceShift))<1e-8);
+   assert.ok(Math.abs(p.z-(before.z-Math.cos(before.rotY)*p.clearanceShift))<1e-8);
+   if(flags)assert.ok(Math.abs(p.rotY-before.rotY)<1e-8,'group still faces its road');
+   const radius=flags?[1.68,2.18,1.18][p.variant]:5.4*.98*p.scale;
+   for(const s of data.samples){
+    if(Math.abs(s.p[1]-(p.y+(flags ? 0.05 : -0.35)))>(flags?9.5:11.5))continue;
+    assert.ok(Math.hypot(p.x-s.p[0],p.z-s.p[2])>=radius+.35+(s.w??2.2)-1e-8,'actual terrace clears road and barrier');
+   }
+  });
+ }
  assert.deepEqual(Object.fromEntries(['props','ring','alpsTrackFlags','alpsPastures','alpsGondolas'].map(k=>[k,scene.layout[k].length])),{props:41,ring:49,alpsTrackFlags:119,alpsPastures:93,alpsGondolas:21});
  for(const kind of ['chalet','chalet-roof','pine-canopy','gondola','cable','finish-beam','mountain','meadow'])assert.ok(scene.counts[kind]>0,kind);
 });

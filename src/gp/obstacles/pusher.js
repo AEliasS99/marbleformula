@@ -1,3 +1,4 @@
+import {hasContactFlow} from '../marble-physics.js';
 import {pusherHeadVertices} from '../pusher-head.js';
 import { frameQuat, mod, pointInFrame, quatArr, r3, rot, solid, TRACK } from "./kit.js";
 
@@ -15,6 +16,8 @@ export function pusherPos(p, t) {
 
 export default {
   type: "pusher",
+  // Recorded airborne arrivals require containment through the landing zone.
+  guardProfiles: {'contact-flow-v3':[-3,22,3]},
   label: "THE PUSHER",
   place: { before: 1, after: 3, maxCurv: 0.035, always: true },
   guard: [-1, 4],
@@ -28,7 +31,7 @@ export default {
     const side = out.pushers.length % 2 ? 1 : -1;
     out.pushers.push({
       kind: "pusher",
-      ...(physicsProfile==='contact-flow-v2'?{headShape:'guarded-ramp-v1'}:{}),
+      ...(hasContactFlow(physicsProfile)?{headShape:'guarded-ramp-v1'}:{}),
       // Rest position: flush with the wall it comes out of.
       pos: pointInFrame(s, side * (W2 - PUSHER.size[2] / 2 - 0.02), PUSHER.size[1] / 2 + 0.02).map(r3),
       dir: [-side * s.r[0], -side * s.r[1], -side * s.r[2]].map(r3),

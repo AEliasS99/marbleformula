@@ -85,3 +85,61 @@ test('new hillside leaves the original pit floor and facade above ground',()=>{
   assert.ok(terrain.heightAt(wx,wz)<pit.base[1]+.2,'pit buried by new terrain');
  }
 });
+
+test('masonry gateway has a real clear opening and opaque load-bearing sides',()=>{
+ const geometry=sceneryPartGeometry({kind:'arch',size:[2.5,2.75,.32,.30]}),material=new MeshBasicMaterial({side:DoubleSide}),mesh=new Mesh(geometry,material);
+ mesh.updateMatrixWorld();const ray=new Raycaster(new Vector3(0,1.0,2),new Vector3(0,0,-1));
+ assert.equal(ray.intersectObject(mesh).length,0,'gateway opening is secretly a solid box');
+ ray.ray.origin.set(1.15,.8,2);assert.ok(ray.intersectObject(mesh).length>0,'stone pier is missing');
+ ray.ray.origin.set(0,2.62,2);assert.ok(ray.intersectObject(mesh).length>0,'arch crown is missing');
+ geometry.dispose();material.dispose();
+});
+
+test('event dressing spans the real course and grounded market supports meet the rendered terrain',()=>{
+ const terrain=italianTerrain(data.samples,{profile,length:data.L}),recipe=italianScenery(data.samples,{profile,length:data.L}),surface=landscapeSurface(recipe.parts.filter(p=>p.kind==='hill'),terrain);
+ const verge=recipe.groups.filter(g=>g.kind==='event-verge');
+ for(let q=0;q<4;q++)assert.ok(verge.some(g=>g.u>=data.L*q/4&&g.u<data.L*(q+1)/4),'an entire quarter has no trackside dressing');
+ for(const g of recipe.groups.filter(g=>['event-court','event-olive','event-verge'].includes(g.kind)))assert.ok(data.samples.every(s=>Math.hypot(g.x-s.p[0],g.z-s.p[2])>(s.w??2.1)+g.radius),'event scenery overlaps the real road');
+ for(const p of recipe.parts.filter(p=>['italy-event-pergola-post','italy-event-market-leg','italy-event-seat'].includes(p.category))){
+  assert.ok(p.size[1]>0);assert.ok(Math.abs(p.matrix[13]-p.size[1]/2-surface(p.matrix[12],p.matrix[14]))<.001,'floating event structure');
+ }
+});
+
+test('Tuscan landmark precincts are connected, grounded and entirely clear of the authored race',()=>{
+ const before=JSON.stringify(data.samples),plan=tuscanLandscape(data.samples),terrain=italianTerrain(data.samples,{profile,length:data.L});
+ const recipe=italianScenery(data.samples,{profile,length:data.L}),landmarks=recipe.groups.filter(g=>g.kind==='tuscan-landmark');
+ assert.deepEqual(landmarks.map(p=>p.landmark),['cathedral','civic-loggia']);
+ for(const p of landmarks){
+  assert.ok(plan.roadClear(p.x,p.z,p.radius+2));
+  assert.ok(plan.paths.some(path=>path.b.x===p.x&&path.b.z===p.z),'landmark is disconnected from the village lanes');
+  const road=data.samples.reduce((a,b)=>Math.abs(b.u-p.u)<Math.abs(a.u-p.u)?b:a);
+  assert.ok(Math.abs(road.p[1]-p.y)<15,'landmark hidden far below its race section');
+  assert.ok(Math.abs(p.y-terrain.heightAt(p.x,p.z))<1e-8);
+ }
+ const focal=recipe.parts.filter(p=>p.category.startsWith('italy-landmark-'));
+ for(const p of focal){
+  const geo=sceneryPartGeometry(p).applyMatrix4(new Matrix4().fromArray(p.matrix)),pos=geo.attributes.position;
+  for(let i=0;i<pos.count;i++)assert.ok(plan.roadClear(pos.getX(i),pos.getZ(i),.65),'landmark geometry enters the road: '+p.category);
+  geo.dispose();
+ }
+ for(const p of focal.filter(p=>p.category==='italy-landmark-piazza-paver')){
+  assert.ok(p.size[1]<.65,'landmark has a raised catalogue plinth');
+  assert.ok(Math.abs(p.matrix[13]-p.size[1]/2-terrain.heightAt(p.matrix[12],p.matrix[14]))<1e-6,'paver floats above its real terrain');
+ }
+ const model=createCameraOcclusion({samples:data.samples,themeId:'italy',sceneryProfile:profile,courseLength:data.L});
+ for(const category of ['italy-landmark-cupola','italy-landmark-belfry-arch','italy-landmark-loggia-arch','italy-landmark-fountain-basin'])assert.equal(model.counts[category],focal.filter(p=>p.category===category).length,category+' absent from actual camera rays');
+ assert.equal(JSON.stringify(data.samples),before,'art changed the racing surface');
+});
+
+test('revolved landmark surfaces have finite geometry and the carved basin is genuinely hollow',()=>{
+ const material=new MeshBasicMaterial({side:DoubleSide});
+ for(const kind of ['dome','basin']){
+  const geometry=sceneryPartGeometry({kind,size:[1.5,1,32]});
+  for(const key of ['position','normal','uv'])assert.ok(Array.from(geometry.attributes[key].array).every(Number.isFinite));
+  const mesh=new Mesh(geometry,material);mesh.updateMatrixWorld();
+  const ray=new Raycaster(new Vector3(0,3,0),new Vector3(0,-1,0)),hit=ray.intersectObject(mesh)[0];
+  assert.ok(hit);assert.ok(Math.abs(hit.point.y-(kind==='basin'?.22:1))<1e-5,'hollow/revolved surface replaced by a solid proxy');
+  geometry.dispose();
+ }
+ material.dispose();
+});

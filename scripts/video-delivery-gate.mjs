@@ -1,5 +1,7 @@
 import fs from 'node:fs';import {resolve,dirname,basename} from 'node:path';import {createHash} from 'node:crypto';
 import {marbleMotionReport} from './marble-motion-report.mjs';import {carMotionReport} from './car-motion-report.mjs';
+import {marbleObstacleFlow} from './marble-obstacle-flow.mjs';
+import {marbleChallengeAudit} from './marble-challenge-audit.mjs';
 export const VIDEO_REVIEW_CHECKS=['physics','camera','decode','scene','minimap','audio','visual','cta'];
 const read=p=>JSON.parse(fs.readFileSync(p,'utf8'));
 const canonical=p=>fs.realpathSync(resolve(p));
@@ -50,6 +52,11 @@ export async function assertVideoDelivery({filePath,reviewPath=filePath+'.qualit
   const data=read(source.path);required(['marble','car'].includes(data.info?.vehicle),'missing saved race vehicle identity');
   const motion=data.info.vehicle==='marble'?marbleMotionReport(data):carMotionReport(data);motions.push(motion);
   required(motion.passed,'independent saved-motion audit failed');
+  if(data.info.vehicle==='marble')required(marbleChallengeAudit(data).passed,'independent saved challenge transit audit failed');
+  if(data.info.physicsProfile==='contact-flow-v3'){
+   required(data.audioProfile==='asmr-v2','new marble production must use the contact-driven audio profile');
+   required(marbleObstacleFlow(data).passed,'independent saved obstacle transit audit failed');
+  }
   required(!(data.carDiagnostics??[]).some(r=>r.recoveries>0),'saved physics contains recovery teleports');
  }
  for(const key of VIDEO_REVIEW_CHECKS){

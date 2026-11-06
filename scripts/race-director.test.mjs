@@ -16,7 +16,32 @@ export function fixture(data){
  const ctx={FPS:data.fps,MARBLES:data.marbles,LAPS:data.info.laps,R:data.marbleRadius,GRID_LENGTH:9.5,QUERY_TRACK_ONLY:undefined,CAM_FEATURES:['vortex','hammer','spinner','bumpers','turntable','pusher','rollers','jump']};
  const args={course:{L:data.info.length,END:data.info.trackEnd,uFinish:data.info.finish,samples,frameAt,features:data.features},frames:data.frames,finishFrame:data.marbles.map(m=>m.finishFrame??m.dqFrame??null),crossingFrames:data.marbles.map(m=>m.finishFrame),events:data.events,raceStart:data.timeline.raceStart,winnerFrame:Math.min(...data.marbles.map(m=>m.finishFrame).filter(Number.isFinite)),lastFrame:data.frames.length-1,rand:()=>.5,highlights:data.timeline.highlights,elevators:data.elevators};return {args,ctx};
 }
-export function framing(data,cams){const lens=new PerspectiveCamera(40,16/9,.05,1500);let empty=0,activeFrames=0,leaderMissing=0;const emptyAt=[];const end=Math.max(...data.marbles.map(m=>m.finishFrame).filter(Number.isFinite));for(let f=data.timeline.raceStart+data.fps*2;f<=end;f++){const active=data.marbles.map((m,i)=>({m,i})).filter(({m})=>(m.finishFrame===null||m.finishFrame>f)&&(m.dqFrame===null||m.dqFrame===undefined||m.dqFrame>f)).sort((a,b)=>data.frames[f][b.i][7]-data.frames[f][a.i][7]);if(!active.length)continue;activeFrames++;const c=cams[f];lens.position.set(...c.slice(0,3));lens.lookAt(...c.slice(3,6));lens.fov=c[6];lens.updateProjectionMatrix();lens.updateMatrixWorld();const visible=i=>{const p=new Vector3(...data.frames[f][i].slice(0,3)).project(lens);return p.z>-1&&p.z<1&&Math.abs(p.x)<.9&&Math.abs(p.y)<.9;};if(!active.some(({i})=>visible(i))){empty++;emptyAt.length<12&&emptyAt.push([f,c[7]]); }if(!visible(active[0].i))leaderMissing++;}return {empty,activeFrames,leaderMissing,emptyAt};}
+export function framing(data,cams){
+ const lens=new PerspectiveCamera(40,16/9,.05,1500);
+ let empty=0,activeFrames=0,leaderMissing=0;const emptyAt=[];
+ const end=Math.max(...data.marbles.map(m=>m.finishFrame).filter(Number.isFinite));
+ for(let f=data.timeline.raceStart+data.fps*2;f<=end;f++){
+  const active=data.marbles.map((m,i)=>({m,i})).filter(({m})=>(m.finishFrame===null||m.finishFrame>f)&&(m.dqFrame==null||m.dqFrame>f)).sort((a,b)=>data.frames[f][b.i][7]-data.frames[f][a.i][7]);
+  if(!active.length)continue;activeFrames++;
+  const c=cams[f];lens.position.set(...c.slice(0,3));lens.lookAt(...c.slice(3,6));lens.fov=c[6];lens.updateProjectionMatrix();lens.updateMatrixWorld();
+  const visible=i=>{const p=new Vector3(...data.frames[f][i].slice(0,3)).project(lens);return p.z>-1&&p.z<1&&Math.abs(p.x)<.9&&Math.abs(p.y)<.9;};
+  // The authored finish shot holds a real crossing for 0.9s. That racer is
+  // finished, but still visible; excluding it falsely labels the picture empty.
+  // Use its ACTUAL current pose, never a clamped crossing or an assumed pass.
+  const crossingVisible=c[7]==='finish'&&data.marbles.some((m,i)=>Number.isFinite(m.finishFrame)&&f>=m.finishFrame&&f<m.finishFrame+Math.round(.9*data.fps)&&(m.dqFrame==null||m.dqFrame>f)&&visible(i));
+  if(!active.some(({i})=>visible(i))&&!crossingVisible){empty++;emptyAt.length<12&&emptyAt.push([f,c[7]]);}
+  if(!visible(active[0].i))leaderMissing++;
+ }
+ return {empty,activeFrames,leaderMissing,emptyAt};
+}
+test('coverage recognizes a visible finish hold, but rejects empty or expired finish shots',()=>{
+ const data={fps:10,timeline:{raceStart:0},marbles:[{finishFrame:20},{finishFrame:31}],frames:Array.from({length:32},()=>[[0,0,0,0,0,0,1,10],[100,0,0,0,0,0,1,9]])};
+ const cams=Array.from({length:32},()=>[0,0,10,0,0,0,40,'finish']);
+ assert.equal(framing(data,cams).empty,2,'only the two frames after the bounded finish hold are empty');
+ assert.equal(framing(data,cams.map(c=>[...c.slice(0,7),'lead'])).empty,11,'ordinary shots must show active racers');
+ data.frames.forEach(f=>f[0][0]=100);
+ assert.equal(framing(data,cams).empty,11,'a finish label cannot excuse an offscreen finisher');
+});
 test('saved car telemetry camera audit: deterministic, no transport shots, all live frames covered and real crossings shown',async()=>{
  await RAPIER.init();const data=JSON.parse(readFileSync(new URL('../src/gp/races/r1-monaco.json',import.meta.url)));const {args,ctx}=fixture(data);const mesh=buildTrackMesh(data.samples).physics;const world=new RAPIER.World({x:0,y:0,z:0});world.createCollider(RAPIER.ColliderDesc.trimesh(mesh.vertices,mesh.indices));world.step();
  try{const a=directRace({...args,world},ctx),b=directRace({...args,world},ctx);assert.deepEqual(a,b);assert.equal(a.cams.length,data.frames.length);assert.ok(a.cams.every(c=>c.slice(0,7).every(Number.isFinite)));assert.ok(a.shots.every(s=>!['lift','elevator','approach'].includes(s.kind)));assert.ok(a.splits.every(s=>s.kind!=='lift'));assert.equal(a.framingAudit.unresolvedOcclusionFrames.length,0);

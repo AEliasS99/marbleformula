@@ -1,3 +1,4 @@
+import {liftFrameAt} from './route-path.js';
 // Shared by the physics (scripts/season.mjs) and the renderer (src/gp/Scene.tsx),
 // so the collider and what you see are built from exactly the same vertices.
 //
@@ -210,6 +211,7 @@ export const pointInFrame = at;
  * gives the track frame at any u. Returns { pos, quat, visible }.
  */
 export function liftCleatPose(lift, k, t, frameAt) {
+  if(lift.path){const base=frameAt;frameAt=u=>liftFrameAt(lift,u,base);}
   // Cleats come up out of the floor `lead` units before the ramp starts — on
   // the downhill where no marble rests, well behind the pile waiting in the dip
   // at its foot — rising gently over `rise` units, and push them all the way up.

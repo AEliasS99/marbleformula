@@ -1,0 +1,35 @@
+{
+  "kind": "oak",
+  "size": [
+    2048,
+    2048
+  ],
+  "physicalTileMetres": 1.2,
+  "source": "artwork/ai-enrichment/italian-craft-v1/source/crafted-oak-albedo.png",
+  "sourceSha256": "b8026abb697e4f45b1ee91af2f37ac30a783606ddf28ca1a28a52712312d4a22",
+  "baseColourOrigin": "FLUX.2-klein-base-4B, processed with periodic-plus-smooth in linear light",
+  "normalOrigin": "Independent authored procedural microrelief, OpenGL tangent space",
+  "roughnessOrigin": "Independent authored procedural physical material estimate",
+  "notCalibratedMeasuredPBR": true,
+  "metalness": 0,
+  "heightRmsMetres": 0.00011540263165091039,
+  "clippedFraction": 0.0026801427205403647,
+  "edgesBefore": {
+    "interiorAdjacentMean": 3.8657196745618587,
+    "wrapMean": 25.037353515625,
+    "wrapRatio": 6.4767638689328235
+  },
+  "edgesAfter": {
+    "interiorAdjacentMean": 4.08243019987329,
+    "wrapMean": 2.546142578125,
+    "wrapRatio": 0.6236830646128443
+  },
+  "wrapDiagnosticPassed": true,
+  "hashes": {
+    "basecolor.png": "08a16356266b58d15c760cefc85e40abd91e0f4c1cf3d7498c5f528b0ce88701",
+    "normal.png": "690ddc1e8d2a55f18439ea186f71614ec91e70021599f80d5054d9003f886878",
+    "roughness.png": "6ba64edac441ffe7ed2599ab4fcd8237f0ccde6f3acb2d53384e21528b6b6de1"
+  },
+  "nativeSceneApproved": false,
+  "movingVideoApproved": false
+}

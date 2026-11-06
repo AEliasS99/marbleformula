@@ -1,8 +1,10 @@
-import {stageRenderAssets,renderAssetKey} from './render-assets.mjs';
+import {stageRenderAssets,renderAssetKey,assertSceneAssetCoverage} from './render-assets.mjs';
+import {assertAsmrRenderReview} from './render-review-authorization.mjs';
+import {captureFrameRanges,captureRuntimeReuseKey} from './capture-runtime.mjs';
 // Render the existing GrandPrix scene from an isolated themed review snapshot.
 // Usage: node scripts/factory.mjs --shared-lock -- node scripts/render-alps-review.mjs 17 --stills|--render
 import {spawnSync} from 'node:child_process';
-import {readFileSync,writeFileSync,existsSync,renameSync,statSync,createReadStream,realpathSync,mkdirSync,copyFileSync,statfsSync} from 'node:fs';
+import {readFileSync,writeFileSync,existsSync,renameSync,statSync,createReadStream,realpathSync,mkdirSync,copyFileSync,statfsSync,unlinkSync} from 'node:fs';
 import {resolve,relative,dirname} from 'node:path';
 import {createHash} from 'node:crypto';
 import {productionReviewIdentity} from '../src/gp/production-locations.js';
@@ -30,12 +32,14 @@ const audit=JSON.parse(readFileSync(`${directory}/checks.json`));
 if(data.info.vehicle==='marble'){
  const {marbleMotionReport}=await import('./marble-motion-report.mjs');
  const actualPhysics=marbleMotionReport(data);
+ const {marbleChallengeAudit}=await import('./marble-challenge-audit.mjs');
+ if(!marbleChallengeAudit(data).passed)throw Error('Independent saved challenge transit audit failed before picture work');
  if(!actualPhysics.passed||(actualPhysics.delayReviewRequired&&audit.obstacleFlowReview?.result!=='passed'))throw Error('Saved marble physics has recoveries/discontinuities/faults or unreviewed obstacle delays; inspect actual telemetry before picture work');
 }
 if(ready.requireMarbleReplayGate&&(!audit.replay?.passed||audit.replay.vehicle!=='marble'))throw Error('Resolve full marble replay coverage before rendering');
 if(ready.requireMarbleReplayGate&&mode==='--render'&&ready.nativeVisualReview?.result!=='passed')throw Error('Actual marble native visual review is required before full rendering');
 if(ready.requireReplayGate&&!audit.replay?.passed)throw Error('Resolve the full-body replay camera gate before rendering');
-if(mode==='--render'&&ready.requireAsmrReview&&(ready.audioMixReview?.result!=='passed'||Object.entries(ready.audioHashes??{}).some(([p,h])=>ready.audioMixReview?.audioHashes?.[p]!==h)))throw Error('Actual ASMR listening approval of these exact audio hashes is required before full rendering');
+if(mode==='--render')assertAsmrRenderReview(ready,`${directory}/race.json`);
 if(data.carConditions?.gates?.length&&!audit.islands?.passed)throw Error('Resolve full-body island clearance before rendering');
 if(!audit.allAccountedFor||audit.recoveries||audit.stalls?.length||audit.camera?.unresolvedOcclusionFrames?.length||audit.camera?.unresolvedFramingFrames?.length)throw Error('Resolve the physics/camera audit before rendering this snapshot');
 if(data.carConditions?.racecraft?.paceModel==='race-pace-v2'&&!audit.pace?.passed)throw Error('Resolve the measured race-pace audit before rendering');
@@ -67,11 +71,14 @@ if(ready.sourceHashes&&ready.audioHashes&&ready.audioId){
     if(!existsSync(target)||digest(target)!==ready.audioHashes[key])copyFileSync(source,target);
   }
 }
-if(ready.sourceHashes&&data.info.sceneryProfile==='tuscany-venue-v3'&&existsSync(resolve(directory,ready.sourceSnapshot??'input/src','gp/ScannedMachine.tsx'))&&!ready.renderAssets?.length)throw Error('Scanned material sources must be frozen in ready.renderAssets before rendering');
+if(ready.sourceHashes&&['tuscany-venue-v3','wachau-venue-v1'].includes(data.info.sceneryProfile)&&existsSync(resolve(directory,ready.sourceSnapshot??'input/src','gp/ScannedMachine.tsx'))&&!ready.renderAssets?.length)throw Error('Scanned material sources must be frozen in ready.renderAssets before rendering');
+assertSceneAssetCoverage(data,ready.renderAssets??[]);
 stageRenderAssets(directory,ready.renderAssets??[],publicDir);
 run('npx',['--no-install','remotion','bundle',ready.entry,'--out-dir',bundle,'--public-dir',publicDir]);
 const flags=['--gl=angle','--crf=16','--jpeg-quality=95','--props={"dpr":1}','--concurrency=1','--timeout=180000','--browser-executable=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'];
-const sourceKey=Object.keys(ready.sourceHashes??{}).length?videoSourceKey({sources:ready.sourceHashes,renderAssets:renderAssetKey(ready.renderAssets??[]),entry:digest(ready.entry),race:digest(`${directory}/race.json`),replayCamera:existsSync(`${directory}/replay-camera.json`)?digest(`${directory}/replay-camera.json`):null,presentation:ready.presentationConfig??null,composition:ready.composition,flags,renderer:digest(fileURLToPath(import.meta.url)),cache:digest(fileURLToPath(new URL('./segment-cache.mjs',import.meta.url))),dependencies:digest('package-lock.json'),browser:capture('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',['--version']).trim(),platform:process.platform,architecture:process.arch}):null;
+const renderInputs={sources:ready.sourceHashes,renderAssets:renderAssetKey(ready.renderAssets??[]),entry:digest(ready.entry),race:digest(`${directory}/race.json`),replayCamera:existsSync(`${directory}/replay-camera.json`)?digest(`${directory}/replay-camera.json`):null,presentation:ready.presentationConfig??null,composition:ready.composition,flags,renderer:digest(fileURLToPath(import.meta.url)),cache:digest(fileURLToPath(new URL('./segment-cache.mjs',import.meta.url))),dependencies:digest('package-lock.json'),browser:capture('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',['--version']).trim(),platform:process.platform,architecture:process.arch};
+const sourceKey=Object.keys(ready.sourceHashes??{}).length?videoSourceKey(renderInputs):null;
+const priorRuntimeKey=ready.captureRuntimeRepair?captureRuntimeReuseKey(renderInputs,JSON.parse(readFileSync(ready.captureRuntimeRepair))):null;
 const cacheRoot=resolve(process.env.VIDEO_OUT??dirname(ready.output),'.render-cache');
 if(mode==='--stills') {
   const patchFrame=data.frames.findIndex(row=>row.some(p=>p[7]>=116&&p[7]<120));
@@ -155,6 +162,7 @@ if(mode==='--stills') {
       const end=Math.min(start+179,ready.frames-1);
       const part=`${partDir}/frames-${String(start).padStart(5,'0')}-${end}.mp4`;
       let retained=sourceKey?findCachedSegment(cacheRoot,sourceKey,start,end):null,scope='same-render-inputs';
+      if(!retained&&priorRuntimeKey){retained=findCachedSegment(cacheRoot,priorRuntimeKey,start,end);scope='same-picture-shorter-capture-runtime';}
       if(!retained&&reuse?.ranges?.[`${start}-${end}`]){
         if(!unchangedShowcaseRange(data,start,end))throw Error('Showcase-only reuse cannot cover affected racing frames');
         retained=reuse.ranges[`${start}-${end}`];if(digest(retained.path)!==retained.sha256)throw Error('Original showcase segment changed');scope='pixel-verified-unchanged-showcase';
@@ -167,19 +175,37 @@ if(mode==='--stills') {
       for(let attempt=1;attempt<=2;attempt++) {
         // Native UHD capture can add several GiB of transient GPU swap. Keep
         // that headroom above the permanent40GiB floor before starting Chrome.
-        const disk=statfsSync(dirname(ready.output));
-        if(disk.bavail*disk.bsize<48*2**30)throw Error('Native4K capture needs48GiB free to retain40GiB during rendering; verified cached segments are preserved');
+        let disk=statfsSync(dirname(ready.output));const waitingSince=Date.now();
+        while(disk.bavail*disk.bsize<48*2**30){
+          ready.queueState={stage:'waiting-native-headroom',requiredFreeGiB:48,start,end,since:new Date(waitingSince).toISOString()};save();
+          if(Date.now()-waitingSince>20*60000)throw Error('Native4K capture needs48GiB free to retain40GiB during rendering; verified cached segments are preserved');
+          await new Promise(resolve=>setTimeout(resolve,15000));disk=statfsSync(dirname(ready.output));
+        }
+        if(ready.queueState){delete ready.queueState;save();}
         // Keep failed attempts too; never overwrite review evidence.
         const attemptFile=part.replace('.mp4',`-attempt${attempt}.mp4`);
         try {
-          run('npx',['--no-install','remotion','render',bundle,ready.composition,attemptFile,
-            `--frames=${start}-${end}`,'--muted','--log=verbose',...flags,'--image-format=jpeg']);
+          const chunks=captureFrameRanges(start,end,ready.captureChunkFrames??180),chunkFiles=[];
+          for(const[a,b]of chunks){
+            const chunkFile=chunks.length===1?attemptFile:attemptFile.replace('.mp4',`-capture-${a}-${b}.mp4`);
+            run('npx',['--no-install','remotion','render',bundle,ready.composition,chunkFile,
+              `--frames=${a}-${b}`,'--muted','--log=verbose',...flags,'--image-format=jpeg']);
+            chunkFiles.push(chunkFile);
+          }
+          if(chunks.length>1){
+            const chunkList=attemptFile+'.concat.txt';writeFileSync(chunkList,chunkFiles.map(p=>`file '${p.replaceAll("'", "'\\''")}'`).join('\n')+'\n');
+            run('ffmpeg',['-v','error','-n','-f','concat','-safe','0','-i',chunkList,'-c','copy',attemptFile]);
+          }
           const checkEnd=Math.min(end,introFrames+data.timeline.results.at-1);
           if(checkEnd>=start)run('python3',[sceneChecker,attemptFile,
             '--end-frame',String(checkEnd-start),'--report',attemptFile+'.scene.json']);
           const segment=JSON.parse(capture('ffprobe',['-v','error','-show_streams','-of','json',attemptFile])).streams.find(s=>s.codec_type==='video');
           if(segment?.width!==3840||segment?.height!==2160||segment?.r_frame_rate!=='60/1'||Number(segment?.nb_frames)!==end-start+1)throw Error('Segment format/frame count mismatch');
-          parts.push(attemptFile);if(sourceKey)rememberSegment(cacheRoot,sourceKey,start,end,attemptFile);break;
+          parts.push(attemptFile);if(sourceKey)rememberSegment(cacheRoot,sourceKey,start,end,attemptFile);
+          // Successful temporary captures are now retained losslessly inside
+          // the verified coarse cache piece. Failed attempts remain evidence.
+          if(chunkFiles.length>1)for(const p of chunkFiles)unlinkSync(p);
+          break;
         } catch(error) {
           console.error(`Range ${start}-${end}, attempt ${attempt}: ${error.message}`);
           if(attempt===2)throw error;

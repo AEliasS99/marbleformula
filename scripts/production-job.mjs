@@ -40,7 +40,7 @@ function freeze(){
  fs.writeFileSync(r.entry,fs.readFileSync(r.entry,'utf8').replaceAll('../../../../src/gp/GrandPrix','./source/gp/GrandPrix').replaceAll('../../../../src/gp/race','./source/gp/race'));
  r.sourceHashes=Object.fromEntries(Object.entries(manifest.files).filter(([p])=>p.startsWith('src/')).map(([p,h])=>['source/'+p.slice(4),h]));
  r.physicsSourceHashes=Object.fromEntries(Object.entries(manifest.files).filter(([p])=>p.startsWith('scripts/')).map(([p,h])=>['physics-source/'+p.slice(8),h]));
- r.renderAssets=snapshotMaterials(resolve('public/materials'),base+'/render-assets/materials',base);
+ r.renderAssets=['materials','props'].flatMap(kind=>snapshotMaterials(resolve('public/'+kind),base+'/render-assets/'+kind,base,kind));
  Object.assign(r,{raceSha256:hash(base+'/race.json'),frozenInputs:relative(process.cwd(),input),sourceSnapshot:'source',requireReplayGate:true,publicationBlocked:true,hostCountry:state.host,logPath:state.renderLog});
  const name=state.output.split('/').at(-1).replace('-4k.mp4','');r.audioHashes=Object.fromEntries([`public/gp/${name}.wav`,`public/gp/${name}-intro.wav`].map(p=>[p,hash(p)]));atomic(state.ready,r);
 }

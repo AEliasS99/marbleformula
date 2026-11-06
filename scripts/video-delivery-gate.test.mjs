@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import {join} from 'node:path';import {createHash}from'node:crypto';
 import {assertVideoDelivery,VIDEO_REVIEW_CHECKS} from './video-delivery-gate.mjs';
+import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
 const hash=p=>createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const write=(p,x)=>fs.writeFileSync(p,JSON.stringify(x));
 function fixture(t){
@@ -29,6 +30,25 @@ test('the real recorded Italy67 teleport stays rejected with no dependency on ig
  const f=fixture(t),actual=JSON.parse(fs.readFileSync(new URL('./fixtures/italy67-recorded-teleport.json',import.meta.url)));
  write(f.raceFile,actual);f.review.race.sha256=hash(f.raceFile);f.save();
  await assert.rejects(assertVideoDelivery(f.args),/independent saved-motion audit failed/);
+});
+test('a passed receipt cannot hide missing authored challenge geometry or an unfinished challenge passage',async t=>{
+ for(const withZone of [false,true]){
+  const f=fixture(t);
+  Object.assign(f.data,{marbleRadius:.35,features:[{type:'single-lane',u:0}],samples:[{u:0,p:[0,0,0],t:[1,0,0],n:[0,1,0],r:[0,0,1]},{u:1,p:[1,0,0],t:[1,0,0],n:[0,1,0],r:[0,0,1]}],obstacles:[]});
+  f.data.info.laps=1;
+  if(withZone)f.data.challengeZones=[{id:'single-lane-0',type:'single-lane',u0:0,u1:1,clearWidth:.93,routes:[{points:[[0,0],[1,0]]}]}];
+  write(f.raceFile,f.data);f.review.race.sha256=hash(f.raceFile);f.save();
+  await assert.rejects(assertVideoDelivery(f.args),/independent saved challenge transit audit failed/);
+ }
+});
+test('native still admission rejects missing challenge physics before launching a renderer',t=>{
+ const f=fixture(t),dir=join(fs.realpathSync(f.root),'out/tcr/marble-review/challenge-admission');fs.mkdirSync(dir,{recursive:true});
+ f.data.features=[{type:'route-choice',u:0}];f.data.marbleRadius=.35;
+ write(join(dir,'race.json'),f.data);write(join(dir,'checks.json'),{});
+ write(join(dir,'ready.json'),{seed:70,variant:'marble-production',sourceHashes:{}});
+ const result=spawnSync(process.execPath,[fileURLToPath(new URL('./render-alps-review.mjs',import.meta.url)),'70','--stills','--directory='+dir],{cwd:f.root,encoding:'utf8',timeout:10000});
+ assert.notEqual(result.status,0);assert.match(result.stderr,/Independent saved challenge transit audit failed before picture work/);
+ assert.ok(!fs.existsSync(join(dir,'bundle')),'No renderer bundle may be created for failed challenge evidence');
 });
 test('signal-only audio, still-only visual review and absent CTAs cannot become editorial passes',async t=>{
  for(const [key,patch,error] of [['audio',{method:'signal-only'},/listening review/],['visual',{method:'native-stills'},/moving export/],['cta',{visibleText:['LIKE']},/not verified/]]){

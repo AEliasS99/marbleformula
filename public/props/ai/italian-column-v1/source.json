@@ -1,0 +1,21 @@
+{
+  "source": "microsoft/TRELLIS-image-large",
+  "revision": "25e0d31ffbebe4b5a97464dd851910efc3002d96",
+  "seed": 70511,
+  "input": "FLUX.2-klein-base-4B generated column reference",
+  "sourceGLBSha256": "cf7d2e249e7d78ddf44dc7c6c43df7ad2729e0d33f6438a93007806b497dd3bc",
+  "normalization": "Uniformly scaled to1metre height, floor at y0, centered xz; actual mesh and indices retained",
+  "sourceVertexCount": 26382,
+  "faceCount": 38938,
+  "sourceWatertight": false,
+  "role": "Decorative architectural prop; not load-bearing mechanism or physical racing surface",
+  "colour": "TRELLIS appearance bake; directional shading may be present, not calibrated albedo",
+  "roughnessOrigin": "Authored0.84; not AI-predicted PBR",
+  "geometrySha256": "cc08ccb96b8554efe5529490c90ed2eebade71b13b3539c9dadf382652b70b9f",
+  "productionApproved": false,
+  "modelLicense": "MIT",
+  "assetLicenseNote": "Model provenance only; no independent relicensing of generated artwork is asserted",
+  "canonicalGeometry": "src/gp/assets/italian-column-v1.json",
+  "nativeStaticInspected": true,
+  "movingVideoApproved": false
+}

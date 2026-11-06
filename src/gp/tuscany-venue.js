@@ -1,11 +1,17 @@
 import {Matrix4,Euler,Quaternion,Vector3} from 'three';
 import {venueLayout} from './venue.js';
+import {appendTuscanEventDetail} from './tuscany-event-detail.js';
+import {appendTuscanLandmarks} from './tuscany-landmarks.js';
+import {tuscanLandscape} from './tuscany-landscape.js';
 const pose=(p,yaw=0)=>new Matrix4().compose(new Vector3(...p),new Quaternion().setFromEuler(new Euler(0,yaw,0)),new Vector3(1,1,1));
 export const TUSCAN_VENUE_MATERIALS={
  hill:{color:'#4b6435',roughness:1},ridge:{color:'#4b6435',roughness:1},limestone:{color:'#b9ab8d',roughness:.9},cream:{color:'#e0cfaa',roughness:.88},ochre:{color:'#c5a27b',roughness:.9},
  wood:{color:'#967044',roughness:.67},iron:{color:'#364b43',roughness:.38,metalness:.55},brass:{color:'#b49349',roughness:.34,metalness:.68},
  pineCrown:{color:'#43684c',roughness:.98},pineShade:{color:'#385a40',roughness:.98},vineShade:{color:'#5b7043',roughness:.96},paving:{color:'#c8bc9c',roughness:.9},stoneJoint:{color:'#93896e',roughness:1},banner:{color:'#2f5545',roughness:.83},
  spectatorRed:{color:'#b93d37',roughness:.27,metalness:.04},spectatorBlue:{color:'#2d577f',roughness:.27,metalness:.04},spectatorGold:{color:'#e1b43d',roughness:.27,metalness:.04},spectatorWhite:{color:'#dedacb',roughness:.27},
+ canvas:{color:'#d3bb89',roughness:.98},terracotta:{color:'#ac5f42',roughness:.92},flower:{color:'#b981a4',roughness:.93},dryGrass:{color:'#929358',roughness:1},oliveLeaf:{color:'#78815a',roughness:.98},gravel:{color:'#a1957b',roughness:1},
+ marbleStone:{color:'#d9d2be',roughness:.32,metalness:0},
+ verdeStone:{color:'#38594c',roughness:.38,metalness:0},
 };
 
 // Extend the real regional recipe, using its exact terrain and route. All
@@ -15,7 +21,7 @@ export function appendTuscanVenue({samples,terrain,parts,groups,length}){
  const box=(m,p,size,material,category)=>add(m,'box',p,size,material,category);
  const cylinder=(m,p,r,h,material,category)=>add(m,'cylinder',p,[r,r,h,10],material,category);
  const sphere=(m,p,r,material)=>add(m,'sphere',p,[r,r,r],material,'italy-venue-spectator');
- const roadClear=(x,z,r)=>samples.every(s=>Math.hypot(x-s.p[0],z-s.p[2])>r+(s.w??2.1)+1);
+ const roadClear=(x,z,r)=>samples.every(s=>Math.hypot(x-s.p[0],z-s.p[2])>r+(s.w??2.1)+1)&&tuscanLandscape(samples).landmarkClear(x,z,r);
  const foundations=parts.filter(p=>p.category==='italy-town-foundation'||p.category==='italy-farm-foundation'||p.category==='italy-building');
  const buildingClear=(x,z,r)=>foundations.every(p=>Math.hypot(x-p.matrix[12],z-p.matrix[14])>r+Math.hypot(p.size[0],p.size[2])/2*Math.hypot(...p.matrix.slice(0,3)));
 
@@ -27,7 +33,14 @@ export function appendTuscanVenue({samples,terrain,parts,groups,length}){
   if(samples.some(q=>q.gap&&Math.abs(q.u-s.u)<1.5))continue;
   const m=new Matrix4().makeBasis(new Vector3(...s.t),new Vector3(...s.n),new Vector3(...s.r));m.setPosition(new Vector3(...s.p));
   for(const side of [-1,1]){
-   box(m,[0,.615,side*((s.w??2.1)+.18)],[.91,.10,.27],'paving','italy-venue-coping');
+   const lateral=side*((s.w??2.1)+.20);
+   // A narrow continuous sill and turned brass rail replace the oversized
+   // concrete teeth. Shapes and junctions are real, shared opaque geometry.
+   box(m,[0,.605,lateral],[.94,.045,.16],'limestone','italy-venue-coping');
+   add(m,'cylinder',[0,.98,lateral],[.055,.055,.98,16],'brass','italy-venue-hand-rail',[0,0,Math.PI/2]);
+   const spindle=[[.64,.045,.045,.07],[.71,.027,.04,.07],[.78,.041,.027,.07],[.85,.025,.041,.07],[.92,.038,.025,.07]];
+   for(const [y,top,bottom,h]of spindle)add(m,'cylinder',[0,y,lateral],[top,bottom,h,16],'brass','italy-venue-baluster');
+   for(const x of [-.47,.47])add(m,'cylinder',[x,.98,lateral],[.068,.068,.035,16],'iron','italy-venue-rail-joint',[0,0,Math.PI/2]);
    if(Math.floor(s.u)%5===0){
     box(m,[0,.31,side*((s.w??2.1)+.19)],[.18,.64,.08],'iron','italy-venue-rail-collar');
     for(const y of [.12,.5])cylinder(m,[0,y,side*((s.w??2.1)+.25)],.045,.04,'brass','italy-venue-fastener');
@@ -99,7 +112,13 @@ export function appendTuscanVenue({samples,terrain,parts,groups,length}){
    box(m,[0,.2,z],[26.45,.4,.28],'limestone','italy-venue-pit-plinth');
    box(m,[0,2.65,z],[26.45,.22,.35],'cream','italy-venue-pit-cornice');
    box(m,[0,3.15,z],[26.9,.2,.4],'limestone','italy-venue-pit-cornice');
-   for(let k=0;k<8;k++)box(m,[-11.9+k*3.4,1.45,z],[.38,2.6,.36],'ochre','italy-venue-pit-pier');
+   for(let k=0;k<8;k++){
+    const x=-11.9+k*3.4;
+    // Entasis, stepped bases and capitals articulate the existing facade.
+    add(m,'cylinder',[x,1.45,z],[.17,.205,2.30,20],'marbleStone','italy-venue-pit-pier');
+    for(const [y,r,h]of [[.20,.29,.16],[.33,.25,.10],[2.58,.23,.10],[2.68,.29,.12]])cylinder(m,[x,y,z],r,h,'marbleStone','italy-venue-column-moulding');
+    box(m,[x,2.78,z],[.61,.10,.61],'limestone','italy-venue-column-abacus');
+   }
   }
   for(let k=0;k<7;k++){
    const x=(k-3)*3.4;
@@ -107,6 +126,7 @@ export function appendTuscanVenue({samples,terrain,parts,groups,length}){
    for(const y of [.48,2])box(m,[x,y,3.58],[2.55,.075,.05],'iron','italy-venue-pit-door-brace');
    for(const dx of [-.12,.12])box(m,[x+dx,1.22,3.62],[.045,.23,.06],'brass','italy-venue-pit-door-handle');
    box(m,[x,2.43,3.56],[2.95,.18,.3],'limestone','italy-venue-pit-lintel');
+   add(m,'arch',[x,.18,3.64],[3.0,2.45,.20,.22],'marbleStone','italy-venue-pit-arch');
   }
   // Shallow roof tiles sit on the old roof; no new floor or racing collider.
   for(let row=0;row<8;row++)for(let col=0;col<56;col++){
@@ -143,4 +163,6 @@ export function appendTuscanVenue({samples,terrain,parts,groups,length}){
    }
   }
  }
+ appendTuscanEventDetail({samples,terrain,parts,groups});
+ appendTuscanLandmarks({samples,terrain,parts,groups});
 }
