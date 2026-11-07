@@ -75,8 +75,10 @@ if(ready.sourceHashes&&['tuscany-venue-v3','wachau-venue-v1'].includes(data.info
 assertSceneAssetCoverage(data,ready.renderAssets??[]);
 stageRenderAssets(directory,ready.renderAssets??[],publicDir);
 run('npx',['--no-install','remotion','bundle',ready.entry,'--out-dir',bundle,'--public-dir',publicDir]);
-const flags=['--gl=angle','--crf=16','--jpeg-quality=95','--props={"dpr":1}','--concurrency=1','--timeout=180000','--browser-executable=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'];
-const renderInputs={sources:ready.sourceHashes,renderAssets:renderAssetKey(ready.renderAssets??[]),entry:digest(ready.entry),race:digest(`${directory}/race.json`),replayCamera:existsSync(`${directory}/replay-camera.json`)?digest(`${directory}/replay-camera.json`):null,presentation:ready.presentationConfig??null,composition:ready.composition,flags,renderer:digest(fileURLToPath(import.meta.url)),cache:digest(fileURLToPath(new URL('./segment-cache.mjs',import.meta.url))),dependencies:digest('package-lock.json'),browser:capture('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',['--version']).trim(),platform:process.platform,architecture:process.arch};
+// Keep the production Mac default. Portable review can point at local Chrome.
+const browser=process.env.MARBLE_CHROME??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const flags=['--gl=angle','--crf=16','--jpeg-quality=95','--props={"dpr":1}','--concurrency=1','--timeout=180000',`--browser-executable=${browser}`];
+const renderInputs={sources:ready.sourceHashes,renderAssets:renderAssetKey(ready.renderAssets??[]),entry:digest(ready.entry),race:digest(`${directory}/race.json`),replayCamera:existsSync(`${directory}/replay-camera.json`)?digest(`${directory}/replay-camera.json`):null,presentation:ready.presentationConfig??null,composition:ready.composition,flags,renderer:digest(fileURLToPath(import.meta.url)),cache:digest(fileURLToPath(new URL('./segment-cache.mjs',import.meta.url))),dependencies:digest('package-lock.json'),browser:capture(browser,['--version']).trim(),platform:process.platform,architecture:process.arch};
 const sourceKey=Object.keys(ready.sourceHashes??{}).length?videoSourceKey(renderInputs):null;
 const priorRuntimeKey=ready.captureRuntimeRepair?captureRuntimeReuseKey(renderInputs,JSON.parse(readFileSync(ready.captureRuntimeRepair))):null;
 const cacheRoot=resolve(process.env.VIDEO_OUT??dirname(ready.output),'.render-cache');
@@ -132,7 +134,7 @@ if(mode==='--stills') {
   for(const [name,frame]of checks.filter(c=>!selected||selected.includes(c[0])))run('npx',['--no-install','remotion','still',bundle,ready.composition,`${directory}/${name}.png`,`--frame=${frame}`,...flags,'--image-format=png']);
   console.log(`Full production 4K stills: ${directory}`);
 } else {
-  for(const repo of [resolve('.'),resolve('../marble')]){const rel=relative(realpathSync(repo),realpathSync(dirname(ready.output)));if(!rel||(!rel.startsWith('..')&&!rel.startsWith('/')))throw Error('Videos must remain outside repositories');}
+  for(const repo of [resolve('.'),resolve('../marble')].filter(existsSync)){const rel=relative(realpathSync(repo),realpathSync(dirname(ready.output)));if(!rel||(!rel.startsWith('..')&&!rel.startsWith('/')))throw Error('Videos must remain outside repositories');}
   if(process.argv.includes('--repair')) {
     if(ready.visualReview!=='failed'||!existsSync(ready.output))throw Error('Repair requires a preserved failed export');
     const failed=`${directory}-failed-${Date.now()}`;mkdirSync(failed);
