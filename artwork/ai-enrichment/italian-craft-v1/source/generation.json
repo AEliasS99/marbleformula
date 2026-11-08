@@ -1,0 +1,91 @@
+{
+  "status": "images-generated-awaiting-inspection",
+  "model": "black-forest-labs/FLUX.2-klein-base-4B",
+  "revision": "a3b4f4849157f664bdbc776fd7453c2783562f4d",
+  "dtype": "bfloat16",
+  "quantized": false,
+  "samples": [
+    {
+      "id": "renaissance-capital-reference",
+      "seed": 70501,
+      "prompt": "A single finely carved Italian Renaissance-inspired limestone column capital, with a square abacus, restrained acanthus leaf relief, volutes and a cylindrical lower collar. Full object visible at a three-quarter angle, isolated on a plain neutral studio background, soft even illumination, no floor cast shadow across the object, no pedestal, no text, no watermark. Rich carved construction detail, pale warm travertine stone, realistic material and clear silhouette, suitable as a miniature decorative architectural prop in the existing Marble Formula Italian venue. No attached column shaft or surrounding scene. Crisp individually carved overlapping acanthus leaves, deeply recessed carving, complete back-to-front mass, square top slightly wider than the leaf basket, no spindly detached fragments. Museum-quality stonework, front-left three-quarter view. Entire object centred with generous clean light-grey background.",
+      "width": 2048,
+      "height": 2048,
+      "steps": 50,
+      "guidance": 4,
+      "file": "renaissance-capital-reference.png",
+      "actualDimensions": [
+        2048,
+        2048
+      ],
+      "seconds": 235.39579397300258,
+      "peakGpuGiB": 17.365744590759277,
+      "sha256": "fd7371c2e57b693e2d0c919f7cf97dceb4b305b3213d93b4b9faa882a945e98a",
+      "seamlessApproved": false,
+      "pbrMapSetGenerated": false,
+      "integrated": false
+    },
+    {
+      "id": "roman-travertine-albedo",
+      "seed": 70502,
+      "prompt": "Photorealistic close-up of pale warm Roman travertine, finely cut weathered limestone with small natural elongated pores and subtle cream mineral variation. A single continuous flat stone surface viewed exactly perpendicular, filling the entire square at constant physical scale. Neutral even diffuse illumination, low contrast, no directional highlights or shadows, no border, no vignette, no text, no structures, no stone blocks or painted mortar. Preserve a natural clean cream-beige palette suitable for the established Italian marble-run arcade. Tiny open pores and a few fine horizontal mineral veins, natural cut stone, no large holes, no chessboard or visible blocks.",
+      "width": 2048,
+      "height": 2048,
+      "steps": 50,
+      "guidance": 4,
+      "file": "roman-travertine-albedo.png",
+      "actualDimensions": [
+        2048,
+        2048
+      ],
+      "seconds": 236.4158715410158,
+      "peakGpuGiB": 17.365744590759277,
+      "sha256": "81043aac6c3735e2ec3fb0b94bd7d806bad60d38c713b062dbb46bd8b0629cb9",
+      "seamlessApproved": false,
+      "pbrMapSetGenerated": false,
+      "integrated": false
+    },
+    {
+      "id": "crafted-oak-albedo",
+      "seed": 70503,
+      "prompt": "Warm honey-brown aged Italian oak timber, very finely resolved straight vertical longitudinal fibres, restrained medullary rays, subtle tiny pores, satin-finished old workshop wood, no giant knots or plank seams. Use case: photorealistic-natural. Asset type: neutral base-colour surface reference for an existing miniature3D race venue, not a finished PBR pack. One continuous flat surface, perpendicular camera, even neutral diffuse illumination, no directional light or cast shadows, no specular highlight, no vignette, no border, no text, no watermark. No scene, no objects, no perspective. Natural restrained contrast and physically plausible colour. Fine detail, small realistic imperfections. No painted tile joints or brick outlines.",
+      "width": 2048,
+      "height": 2048,
+      "steps": 50,
+      "guidance": 4,
+      "file": "crafted-oak-albedo.png",
+      "actualDimensions": [
+        2048,
+        2048
+      ],
+      "seconds": 237.09172341087833,
+      "peakGpuGiB": 17.365744590759277,
+      "sha256": "b8026abb697e4f45b1ee91af2f37ac30a783606ddf28ca1a28a52712312d4a22",
+      "seamlessApproved": false,
+      "pbrMapSetGenerated": false,
+      "integrated": false
+    },
+    {
+      "id": "aged-bronze-albedo",
+      "seed": 70504,
+      "prompt": "Flat neutral base colour reference of aged warm brown cast bronze with small irregular patches of restrained blue-green patina, tiny casting pores and subtle fine abrasion, no engraving or geometric motif, no reflections or shiny light spots, mostly warm bronze brown with only15percent muted turquoise oxidation. Use case: photorealistic-natural. Asset type: neutral base-colour surface reference for an existing miniature3D race venue, not a finished PBR pack. One continuous flat surface, perpendicular camera, even neutral diffuse illumination, no directional light or cast shadows, no specular highlight, no vignette, no border, no text, no watermark. No scene, no objects, no perspective. Natural restrained contrast and physically plausible colour. Fine detail, small realistic imperfections. No painted tile joints or brick outlines.",
+      "width": 2048,
+      "height": 2048,
+      "steps": 50,
+      "guidance": 4,
+      "file": "aged-bronze-albedo.png",
+      "actualDimensions": [
+        2048,
+        2048
+      ],
+      "seconds": 236.85842720302753,
+      "peakGpuGiB": 17.365744590759277,
+      "sha256": "4139b0d4b2f3faefddee505307e1597c5b18da84e738f85126c3be8782f47bd6",
+      "seamlessApproved": false,
+      "pbrMapSetGenerated": false,
+      "integrated": false
+    }
+  ],
+  "checkedAt": "2026-11-05T13:48:35.518368+00:00",
+  "current": "aged-bronze-albedo"
+}

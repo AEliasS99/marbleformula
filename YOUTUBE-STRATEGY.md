@@ -4,6 +4,16 @@ Prepared 25 October 2026. Planning horizon: the next 90 days. User-confirmed pri
 
 **Recommendation:** keep one channel, make marble elimination racing the main show, introduce cars as a clearly labeled pilot, and target one complete race event plus two Shorts per week once production is ready. Spend the first phase improving the existing catalogue and resolving production blockers. Increase frequency only after the quality and backlog support it.
 
+## Main episode length — user correction, 4 November 2026
+
+Restore **10–14 minute main episodes** built from substantive racing. The original successful format contained three complete country races: Classic GP Part 1 is11:55, Season3 Part1 is13:24, and World Tour Part1 is13:53. Recent isolated car/marble masters are production components; they must not silently replace that main-event format. This user correction supersedes the earlier3–8minute recommendation below. It is an editorial preference, not proof that length caused the recent reach decline or that longer videos will automatically perform better.
+
+Keep the existing production and render each race once. Reuse complete reviewed, compatible masters for lossless assembly; preserve source ASMR, frames, actual results and per-race evidence. Do not slow races, repeat footage/laps or expand introductions to meet a clock. Target three genuinely different races with brief introductions, consequential obstacles and legible results. Measure the completed assembly; do not advertise10–14minutes before it exists.
+
+The next candidate is **Austria69 → India70 → Brazil71**, respecting the active frozen Austria render and the user's India-then-Brazil choice. It is a planned three-country episode, not an assembled or approved master. India obstacle flow remains under development; Brazil has not been prepared. If entrants differ, present the races as independent World Tour challenges. Only claim a shared points championship, qualifying heats or a grand final when actual eligible lineups, carried points and qualification records support it. Never alter previous results to manufacture continuity.
+
+Retain UHD60, physical ASMR, camera/physics/export gates and LIKE/SUBSCRIBE/marbleformula.com. Audit every included race and the exact assembled master, including joins/audio/chapter timings; component approval alone is not assembly approval. Publication and archive permissions remain separate. Supporting Shorts and occasional clearly labelled individual races do not substitute for the main episode.
+
 ## Current editorial direction — 31 October 2026
 
 User steering: marble production is visibly stronger and must regain priority. Test an alternating sequence of **marbles → cars → marbles → cars** across the next four approved main releases, starting with marbles. This supersedes the initial 3:1 allocation and first-four-release briefs below for this test. It does not increase release frequency or authorize publication. Retain the existing readiness buffer; a car slot requires an editorially approved finished event. If it is not ready, use an approved marble event or move the slot. Never publish a development take to maintain the ratio.
@@ -98,7 +108,7 @@ These are production briefs, not finished assets or announced dates. Week 1 begi
 
 Do not fabricate photo finishes, recovery stories or numerical margins before the race is verified. If a moment is not compelling, choose another editorial angle rather than manipulating results to fit the title.
 
-Plan a complete event of roughly 3–8 minutes when the competition naturally supports it; this is a planning range, not an editing mandate. A brief race need not be padded. A longer tournament should retain all racing and its result. The existing 8–14 minute compilations remain intact; this plan does not authorize trimming them.
+The previous3–8minute main-event range is superseded by the user’s4November correction above: target10–14minute main episodes containing multiple complete, distinct races. Preserve existing masters and keep short individual races as clearly labelled components or supporting releases. Add substantive racing rather than padding.
 
 ## What each video must deliver
 

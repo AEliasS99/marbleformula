@@ -1,0 +1,40 @@
+{
+  "video": "https://youtu.be/vy7ebYDWQ_I",
+  "tool": "built-in image_gen",
+  "appliedToYouTube": false,
+  "variants": [
+    {
+      "variant": "01-italy-knockout",
+      "native": "/Users/user/marmot/Races/marbleformula/artwork/thumbnails/italy-seed67/01-italy-knockout.png",
+      "youtubeReady": "/Users/user/marmot/Races/marbleformula/artwork/thumbnails/italy-seed67/01-italy-knockout.jpg",
+      "dimensions": [
+        1672,
+        941
+      ],
+      "jpegBytes": 548750,
+      "sha256": "330c0a36efb08ab1726dc4f57ae3098229093087435ffeb3c83be4a87f5805b5"
+    },
+    {
+      "variant": "02-dont-be-last",
+      "native": "/Users/user/marmot/Races/marbleformula/artwork/thumbnails/italy-seed67/02-dont-be-last.png",
+      "youtubeReady": "/Users/user/marmot/Races/marbleformula/artwork/thumbnails/italy-seed67/02-dont-be-last.jpg",
+      "dimensions": [
+        1672,
+        941
+      ],
+      "jpegBytes": 497214,
+      "sha256": "36792220c6d674c637c868d6565db87e2e241cda0ec9a54c13220659997ba6f4"
+    },
+    {
+      "variant": "03-20-countries",
+      "native": "/Users/user/marmot/Races/marbleformula/artwork/thumbnails/italy-seed67/03-20-countries.png",
+      "youtubeReady": "/Users/user/marmot/Races/marbleformula/artwork/thumbnails/italy-seed67/03-20-countries.jpg",
+      "dimensions": [
+        1672,
+        941
+      ],
+      "jpegBytes": 543413,
+      "sha256": "d1c17862c0cb45feb451e19833cf2ef75f4d8792b07183860544a27d5a290e77"
+    }
+  ]
+}

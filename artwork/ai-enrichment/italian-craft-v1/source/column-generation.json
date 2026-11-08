@@ -1,0 +1,29 @@
+{
+  "status": "mesh-exported-review-required",
+  "model": "microsoft/TRELLIS-image-large",
+  "modelRole": "Image-conditioned geometry and colour; roughnessFactor authored, not TRELLIS.2 inferred PBR",
+  "seed": 70511,
+  "checkedAt": "2026-11-05T13:58:30.641791+00:00",
+  "inputSha256": "fd7371c2e57b693e2d0c919f7cf97dceb4b305b3213d93b4b9faa882a945e98a",
+  "inferenceSeconds": 14.934358554892242,
+  "peakGpuGiB": 10.395933628082275,
+  "exportSeconds": 56.48711238009855,
+  "vertices": 26382,
+  "faces": 38938,
+  "bounds": [
+    [
+      -0.3253474235534668,
+      -0.5013377666473389,
+      -0.3229154050350189
+    ],
+    [
+      0.32549354434013367,
+      0.500387966632843,
+      0.3230392634868622
+    ]
+  ],
+  "watertight": false,
+  "meshFile": "italian-carved-column.glb",
+  "sha256": "cf7d2e249e7d78ddf44dc7c6c43df7ad2729e0d33f6438a93007806b497dd3bc",
+  "productionApproved": false
+}
